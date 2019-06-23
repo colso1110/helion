@@ -1,0 +1,82 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: ../../barbican-common/tasks/_set_directories.yml
+  vars:
+    install_package_result: "{{ barbican_worker_install_result }}"
+
+- name: KEYMGR-WKR | configure  | Touch the log file
+  file:
+    path: "{{ item }}"
+    owner: "{{ barbican_user }}"
+    group: "{{ barbican_centralized_log_group }}"
+    mode: 0640
+    state: touch
+  become: yes
+  with_items:
+    - "/var/log/barbican/barbican-worker.log"
+    - "/var/log/barbican/barbican-worker-json.log"
+  tags:
+    - barbican
+
+- name: KEYMGR-WKR | configure  | Configure the barbican worker logging conf
+  template:
+    src: "../../KEYMGR-API/templates/barbican.conf.j2"
+    dest: "{{ barbican_conf_dir }}/barbican-worker.conf"
+    mode: "0600"
+    owner: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+  become: yes
+  register: hlm_notify_barbican_worker_restart_required
+  tags:
+    - barbican
+
+- name: KEYMGR-WKR | configure  | Configure the barbican worker logging conf
+  template:
+    src: "worker-logging.conf.j2"
+    dest: "{{ barbican_conf_dir }}/worker-logging.conf"
+    mode: "0600"
+    owner: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+  become: yes
+  register: hlm_notify_barbican_worker_restart_required
+  tags:
+    - barbican
+
+- name: KEYMGR-WKR | configure | Create barbican-worker symlinks
+  become: yes
+  file:
+    src: "{{ barbican_conf_dir }}/{{ item }}"
+    dest: "/etc/barbican/{{ item }}"
+    owner: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+    state: "link"
+  with_items:
+    - worker-logging.conf
+    - barbican-worker.conf
+  tags:
+    - barbican
+
+- name: KEYMGR-WKR | configure  | Configure the barbican_worker script
+  become: yes
+  template:
+    src: "barbican_worker"
+    dest: "{{ barbican_bin_dir }}/barbican_worker"
+    mode: "0755"
+  register: hlm_notify_barbican_worker_restart_required
+  tags:
+    - barbican

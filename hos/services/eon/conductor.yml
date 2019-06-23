@@ -1,0 +1,44 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+    version: 2
+
+service-components:
+-   name: eon-conductor
+    mnemonic: EON-CND
+    service: eon
+
+    consumes-services:
+    -   service-name: FND-MDB
+
+    -   service-name: FND-RMQ
+
+    -   service-name: HUX-SVC
+
+    -   service-name: KEY-API
+        optional: true
+
+    -   service-name: NEU-SVR
+        optional: true
+
+    -   service-name: NOV-API
+        optional: true
+
+    requires:
+    # required for eon-encrypt to encrypt passwords.
+    - name: eon-client
+      scope: host

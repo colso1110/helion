@@ -1,0 +1,40 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
+# Contains packages needed by all neutron roles, specific to Debian Systems
+---
+# packages listed here will be installed by neutron-common | install
+required_packages:
+  - ipset
+  - iptables
+  - iputils-ping
+
+ovs_dpdk_enabled: "
+  {% set temp_list = [] %}
+    {%- if dpdk_network_devices is defined -%}
+      {%- if dpdk_network_devices.FND_OVS is defined -%}
+        {%- if dpdk_network_devices.FND_OVS.devices is defined -%}
+          {%- for device in dpdk_network_devices.FND_OVS.devices -%}
+            {%- if temp_list.append( device ) -%}{%- endif -%}
+          {%- endfor -%}
+        {%- endif -%}
+      {%- endif -%}
+    {%- endif -%}
+    {%- if temp_list != [] -%}
+      {% set result = True %}
+    {% else %}
+      {% set result = False %}
+    {%- endif -%}
+    {{ result }}"

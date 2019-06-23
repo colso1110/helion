@@ -1,0 +1,48 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: freezer-post-configure |  keystone_change_pwd | Get a domain scoped token
+  keystone_v3:
+    endpoint: "{{ keystone_endpoint }}"
+    login_username: "{{ keystone.admin_user }}"
+    login_password: "{{ keystone.admin_password }}"
+    login_user_domain_name: "{{ keystone.default_domain_name }}"
+    login_domain_name: "{{ keystone.default_domain_name }}"
+    action: "token_get"
+  run_once: true
+  register: domain_scoped_token
+
+- name: freezer-post-configure | keystone_change_pwd | Update the password for freezer user
+  keystone_v3:
+    action: "reset_password_by_admin"
+    login_token: "{{ domain_scoped_token.result }}"
+    endpoint: "{{ keystone_endpoint }}"
+    user_name: "{{ freezer_service_username }}"
+    user_password: "{{ freezer_service_password }}"
+    description: Freezer service user
+    user_domain_name: Default
+  run_once: true
+
+- name: freezer-post-configure | keystone_change_pwd | Update the password for backup user
+  keystone_v3:
+    action: "reset_password_by_admin"
+    login_token: "{{ domain_scoped_token.result }}"
+    endpoint: "{{ keystone_endpoint }}"
+    user_name: "{{ backup_username }}"
+    user_password: "{{ backup_password }}"
+    description: User used to upload backup of Helion's infrastructure to swift
+    user_domain_name: Default
+  run_once: true

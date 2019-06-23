@@ -1,0 +1,341 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: Installs kafka
+  hosts: FND-KFK
+  sudo: yes
+  tags: [kafka]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  roles:
+    - {role: kafka, tags: [kafka]}
+
+- name: Installs kafka dynamic retention cron job
+  hosts: FND-KFK--first-member
+  sudo: yes
+  tags: [kafka]
+  vars_files:
+    - roles/kafka/defaults/main.yml
+    - roles/kafka/vars/main.yml
+  tasks:
+    - include: roles/kafka/tasks/dynamic-retention.yml
+      when: run_mode == 'Configure' or run_mode == 'Install' or
+            run_mode == 'Deploy' or run_mode == 'Upgrade'
+
+- include: kafka-configure-monasca.yml
+
+- name: Upgrade Vertica Version
+  hosts: FND-VDB
+  sudo: yes
+  tags: [vertica]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  vars:
+    check_version_upgrade: True
+    vertica_group_size: "{{ groups['FND-VDB'] | length }}"
+  roles:
+    - {role: vertica, when: database_type == 'vertica' and run_mode == 'Upgrade', tags: [vertica]}
+
+- name: Configures Vertica on primary node
+  hosts: FND-VDB--first-member
+  sudo: yes
+  tags: [vertica]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  roles:
+    - {role: vertica, when: database_type == 'vertica', tags: [vertica]}
+
+- name: Configures Vertica on secondary nodes, if any
+  hosts: FND-VDB:!FND-VDB--first-member
+  sudo: yes
+  tags: [vertica]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  roles:
+    - {role: vertica, when: database_type == 'vertica', tags: [vertica]}
+
+- name: Installs Influxdb
+  hosts: FND-IDB
+  sudo: yes
+  tags: [influxdb]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  roles:
+    - {role: influxdb, when: database_type == 'influxdb', tags: [influxdb]}
+
+- name: Set up mysql
+  hosts: MON-API--first-member
+  sudo: yes
+  tags: [monasca-schema-mysql, monasca-schema]
+  vars:
+    influxdb_schema_enabled: False
+    kafka_topics_enabled: False
+    vertica_schema_enabled: False
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  roles:
+    - {role: monasca-schema, tags: [monasca-schema-mysql, monasca-schema]}
+
+- name: Sets up kafka
+  hosts: FND-KFK--first-member
+  sudo: yes
+  tags: [monasca-schema-kafka, monasca-schema]
+  vars:
+    influxdb_schema_enabled: False
+    kafka_topics_enabled: True
+    mysql_schema_enabled: False
+    winchester_schema_enabled: False
+    vertica_schema_enabled: False
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  roles:
+    - {role: monasca-schema, tags: [monasca-schema-kafka, monasca-schema]}
+
+- name: Set up influxdb
+  hosts: FND-IDB--first-member
+  sudo: yes
+  tags: [monasca-schema-influx, monasca-schema]
+  vars:
+    influxdb_schema_enabled: True
+    kafka_topics_enabled: False
+    mysql_schema_enabled: False
+    winchester_schema_enabled: False
+    vertica_schema_enabled: False
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  roles:
+    - {role: monasca-schema, tags: [monasca-schema-influx, monasca-schema]}
+
+- name: Set up vertica schema
+  hosts: FND-VDB--first-member
+  sudo: yes
+  tags: [monasca-schema-vertica, monasca-schema]
+  vars:
+    influxdb_schema_enabled: False
+    kafka_topics_enabled: False
+    mysql_schema_enabled: False
+    winchester_schema_enabled: False
+    vertica_schema_enabled: True
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+    - roles/vertica/defaults/main.yml
+    - roles/vertica/vars/main.yml
+  roles:
+    - {role: monasca-schema, tags: [monasca-schema-vertica, monasca-schema]}
+
+- name: Delete vertica licenses
+  hosts: FND-VDB
+  sudo: yes
+  tags: [vertica]
+  vars_files:
+    - roles/vertica/vars/main.yml
+  tasks:
+    - name: vertica | license | remove original unencrypted vertica license
+      file: path={{vertica_config_dir}}/license.key state=absent
+    - name: vertica | license | remove unencrypted vertica license
+      file: path={{vertica_config_dir}}/share/license.key state=absent
+    - name: vertica | license | remove encrypted vertica license
+      file: path={{vertica_config_dir}}/license.key.gpg state=absent
+
+- name: Set up Vertica logrotate and Monasca Agent configuration
+  hosts: FND-VDB
+  sudo: yes
+  tags: [vertica]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  vars:
+    run_mode: Logging
+  roles:
+    - {role: vertica, when: database_type == 'vertica' and run_mode == 'Logging', tags: [vertica]}
+  tasks:
+    - name: Run Monasca Agent detection plugin for Vertica
+      monasca_agent_plugin:
+        name="Vertica"
+        args="user={{ FND_VDB.vars.monitor_user_name }} password={{ FND_VDB.vars.monitor_user_password }} timeout=10"
+      no_log: True
+
+- name: Set up Monasca keystone users
+  hosts: MON-API
+  sudo: yes
+  tags: [monasca-keystone]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+    - roles/hlm-monasca-keystone/defaults/main.yml
+  tasks:
+    - include: roles/hlm-monasca-keystone/tasks/main.yml
+      ansible_python_interpreter: "{{KEY_CLI.vars.keystone_client_python_interpreter}}"
+
+- name: Sets up Monasca API
+  hosts: MON-API
+  sudo: yes
+  tags: [monasca-api]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  roles:
+    - {role: monasca-api, tags: [monasca-api]}
+  tasks:
+    - name: Run Monasca Agent detection plugin for the API
+      monasca_agent_plugin: name="MonAPI"
+
+- name: Sets up Monasca Persister
+  hosts: MON-PST
+  sudo: yes
+  tags: [persister]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  roles:
+    - {role: monasca-persister, tags: [persister]}
+  tasks:
+    - name: Run Monasca Agent detection plugin for the persister
+      monasca_agent_plugin: name="MonPersister"
+
+- name: Sets up Monasca Notification Engine
+  hosts: MON-NTF
+  sudo: yes
+  tags: [notification]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  roles:
+    - {role: monasca-notification, tags: [notification]}
+  tasks:
+    - name: Run Monasca Agent detection plugin for the notifier
+      monasca_agent_plugin: name="MonNotification"
+
+- name: Sets up Monasca default alarms
+  hosts: MON-API--first-member
+  tags: [alarms]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  pre_tasks:
+    - name: Compute Maximum Kafka Lag for Alarm Definitions
+      set_fact:
+        monasca_create_definitions: True
+        monasca_kafka_alarms_max_lag: "{{ monasca_persister_alarm_threads | int *
+                                          monasca_persister_alarm_batch_size | int *
+                                          ( groups['MON-PST'] | length ) | int }}"
+        monasca_kafka_persister_metrics_max_lag: "{{ ( monasca_persister_metric_threads | int *
+                                                       monasca_persister_metric_batch_size | int *
+                                                       ( groups['MON-PST'] | length ) | int * (3/2) ) | int }}"
+  roles:
+    - {role: monasca-default-alarms, tags: [alarms]}
+
+- name: Stop Thresh and Storm on Upgrade of Storm
+  hosts: MON-THR
+  sudo: yes
+  tags: [thresh, storm]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+    - roles/storm/vars/nodes.yml
+    - roles/storm/defaults/main.yml
+  tasks:
+    - include: roles/storm/tasks/stop_on_upgrade.yml
+
+- name: Sets up Storm
+  hosts: MON-THR
+  sudo: yes
+  tags: [thresh, storm]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  pre_tasks:
+    - name: Install the monasca venv
+      install_package: name=monasca service=monasca state=present
+  roles:
+    - {role: storm, tags: [storm, thresh]}
+
+- name: Sets up Threshold engine
+  hosts: MON-THR
+  sudo: yes
+  tags: [thresh]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+    - roles/monasca-thresh/vars/nodes.yml
+  roles:
+    - role: monasca-thresh
+      tags: [thresh]
+      when: thresh_start_enabled
+  tasks:
+    - name: Run Monasca Agent detection plugin for the Threshold engine
+      monasca_agent_plugin:
+        name="MonThresh"
+        args="backtype.storm.daemon=true"
+
+- name: Configure active host checks for all machines
+  hosts: MON-LVC
+  sudo: yes
+  tags: [active_ping_checks]
+  roles:
+    - {role: monasca-agent, run_mode: Use}
+  tasks:
+    - name: Determine compute nodes
+      set_fact:
+        compute_node: "{{ MON_LVC.consumes_MON_AGN.members.ping |
+                            selectattr('hlm_ansible_host','equalto', item) |
+                              map(attribute='host') | first }}"
+      register: compute_node_result
+      with_items: groups | item((verb_hosts.NOV_CMP | default('')),default=[])
+      when: (MON_LVC.consumes_MON_AGN.members.ping | length) > 1
+    - name: Create compute node list
+      set_fact:
+        compute_nodes: >
+          {%- if not compute_node_result | skipped -%}
+            {{ compute_node_result.results |
+                 map(attribute='ansible_facts.compute_node') | list }}
+          {%- else -%}
+            []
+          {%- endif -%}
+      when: (MON_LVC.consumes_MON_AGN.members.ping | length) > 1
+    - name: Setup ping active checks for control hosts
+      monasca_agent_plugin:
+        name: "HostAlive"
+        args:
+          type: ping
+          hostname: >
+            {{ MON_LVC.consumes_MON_AGN.members.ping |
+                 map(attribute='host') |
+                   difference(MON_LVC.consumes_MON_AGN.members.ping |
+                     selectattr('hlm_ansible_host','equalto',inventory_hostname) |
+                     map(attribute='host')) |
+                   difference(compute_nodes) |
+                 join(',') }}
+      when: (MON_LVC.consumes_MON_AGN.members.ping | length) > 1 and
+            (groups[verb_hosts.MON_LVC] | length) > 1
+    - name: Setup ping active checks for compute hosts
+      monasca_agent_plugin:
+        name: "HostAlive"
+        args:
+          type: ping
+          hostname:  "{{ compute_nodes | join(',') }}"
+          dimensions: "service:compute"
+      when: (MON_LVC.consumes_MON_AGN.members.ping | length) > 1 and
+            (compute_nodes | length) > 0

@@ -1,0 +1,234 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+    version: 2
+
+services:
+-   name: keystone
+    mnemonic: KEY
+    service-class: security
+    description: "Identity and Authentication"
+
+    consumes-services:
+    -   service-name: FND-RMQ
+        relationship-vars:
+        -   name: accounts
+            vars:
+                keystone:
+                -   name: username
+                    value: rmq_keystone_user
+                -   name: password
+                    value: '%random-password%'
+                    properties:
+                        max-length: 12
+                        min-length: 8
+                        key-name: rmq_keystone_password
+
+    -   service-name: FND-MDB
+        relationship-vars:
+        -   name: accounts
+            vars:
+                keystone:
+                -   name: username
+                    alias: mysql_admin_user
+                    value: keystone
+                -   name: password
+                    alias: mysql_admin_password
+                    value: '%random-password%'
+                    properties:
+                        max-length: 12
+                        min-length: 8
+                        key-name: mysql_admin_password
+                -   name: grants
+                    value:
+                        -   priv: .*:ALL,GRANT
+                            dbname: keystone
+        -   name: databases
+            vars:
+                keystone:
+                -   name: dbname
+                    value: keystone
+
+
+
+service-components:
+-   name: keystone-api
+    mnemonic: KEY-API
+    service: keystone
+
+    advertises-to-services:
+    -   service-name: KEY-API
+        entries:
+        -   service-name: keystone
+            service-type: identity
+            service-description: "Identity Service"
+            url-suffix: "/v2.0"
+
+    # Needed for now until we can update all the playbooks that read
+    # the "KEY_API.advertises" variables
+    advertises_global: true
+
+
+    config-set:
+    -   name: keystone.conf
+        ansible-vars:
+        -   name: keystone_admin_tenant
+            value: admin
+
+        -   name: keystone_admin_user
+            value: admin
+
+        -   name: keystone_admin_pwd
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: keystone_admin_token
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: keystone_admin_role
+            value: admin
+
+        -   name: keystone_service_role
+            value: service
+
+        -   name: keystone_KeystoneAdmin_role
+            value: KeystoneAdmin
+
+        -   name: keystone_KeystoneSeviceAdmin_role
+            value: KeystoneServiceAdmin
+
+        -   name: keystone_member_role
+            value: _member_
+
+        -   name: keystone_monitoring_role
+            value: monitor
+
+        -   name: keystone_project_observer_role
+            value: project_observer
+
+        -   name: keystone_demo_tenant
+            value: demo
+
+        -   name: keystone_demo_user
+            value: demo
+
+        -   name: keystone_demo_pwd
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: keystone_service_tenant
+            value: services
+
+        -   name: keystone_monitoring_tenant
+            value: monitor
+
+        -   name: keystone_default_domain
+            value: Default
+
+        -   name: keystone_cloudadmin_domain
+            value: cloud_admin
+
+    # Needed for now until we can update all the playbooks that read
+    # the "KEY_API.vars" variables
+    global-vars:
+      - keystone_admin_pwd
+      - keystone_admin_role
+      - keystone_admin_tenant
+      - keystone_admin_token
+      - keystone_admin_user
+      - keystone_cloudadmin_domain
+      - keystone_default_domain
+      - keystone_member_role
+      - keystone_monitoring_role
+      - keystone_monitoring_tenant
+      - keystone_service_role
+      - keystone_service_tenant
+      - keystone_demo_tenant
+      - keystone_demo_user
+      - keystone_demo_pwd
+      - keystone_project_observer_role
+
+    consumes-services:
+    -   service-name: FND-MDB
+
+    -   service-name: FND-RMQ
+
+    endpoints:
+    -   port: '5000'
+        has-vip: true
+        vip-options:
+        - "balance source"
+        - "mode http"
+        - "option httpchk LBCHK /"
+        - "option redispatch"
+        - "option forwardfor"
+        - "reqadd X-Forwarded-Proto:\\ https if { ssl_fc }"
+        - "http-request set-header X-SSL                   %[ssl_fc]"
+        - "http-request set-header X-SSL-Client-Verify     %[ssl_c_verify]"
+        - "http-request set-header X-SSL-Client-SHA1       %{+Q}[ssl_c_sha1]"
+        - "http-request set-header X-SSL-Client-DN         %{+Q}[ssl_c_s_dn]"
+        - "http-request set-header X-SSL-Client-CN         %{+Q}[ssl_c_s_dn(cn)]"
+        - "http-request set-header X-SSL-Client-O          %{+Q}[ssl_c_s_dn(o)]"
+        - "http-request set-header X-SSL-Issuer            %{+Q}[ssl_c_i_dn]"
+        - "http-request set-header X-SSL-Issuer-CN         %{+Q}[ssl_c_i_dn(cn)]"
+        roles:
+        - public
+    -   port: '5000'
+        has-vip: true
+        vip-options:
+        - "http-request set-header X-Vip-Name internal"
+        - "balance leastconn"
+        - "mode http"
+        - "option httpchk LBCHK /"
+        - "option redispatch"
+        - "option forwardfor"
+        - "reqadd X-Forwarded-Proto:\\ https if { ssl_fc }"
+        - "http-request set-header X-SSL                   %[ssl_fc]"
+        - "http-request set-header X-SSL-Client-Verify     %[ssl_c_verify]"
+        - "http-request set-header X-SSL-Client-SHA1       %{+Q}[ssl_c_sha1]"
+        - "http-request set-header X-SSL-Client-DN         %{+Q}[ssl_c_s_dn]"
+        - "http-request set-header X-SSL-Client-CN         %{+Q}[ssl_c_s_dn(cn)]"
+        - "http-request set-header X-SSL-Client-O          %{+Q}[ssl_c_s_dn(o)]"
+        - "http-request set-header X-SSL-Issuer            %{+Q}[ssl_c_i_dn]"
+        - "http-request set-header X-SSL-Issuer-CN         %{+Q}[ssl_c_i_dn(cn)]"
+        roles:
+        - internal
+    -   port: '35357'
+        has-vip: true
+        vip-options:
+        - "balance leastconn"
+        - "mode http"
+        - "option httpchk LBCHK /"
+        - "option redispatch"
+        - "option forwardfor"
+        - "reqadd X-Forwarded-Proto:\\ https if { ssl_fc }"
+        roles:
+        - admin
+
+    requires:
+    -   name: apache2
+        scope: host
+    # Needed for keystone registration of service.
+    -   name: keystone-client
+        scope: host

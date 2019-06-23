@@ -1,0 +1,67 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: ../../eon-common/tasks/_set_directories.yml
+  vars:
+    eon_install_package_result: "{{ eon_api_install_result }}"
+
+- include: ../../eon-common/tasks/_write_conf.yml
+  src: "eon.conf.j2"
+  dest: "{{ eon_service_conf_dir }}/{{ eon_common }}.conf"
+
+- name: eon-api | configure | save eon.conf status
+  set_fact:
+    write_eon_conf: "{{ write_conf_result }}"
+
+- include: ../../eon-common/tasks/_write_conf.yml
+  src: "../../eon-api/templates/api.conf.j2"
+  dest: "{{ eon_service_conf_dir }}/{{ eon_component }}.conf"
+
+- name: eon-api | configure | save eon-api.conf status
+  set_fact:
+    write_api_conf: "{{ write_conf_result }}"
+
+- name: eon-api | configure | notify on eon.conf change
+  become: yes
+  shell: echo "notify change"
+  register: hlm_notify_eon_api_restart_required
+  when: write_eon_conf.changed or write_api_conf.changed
+
+- name: eon-api | configure | Create eon-api-logging.conf
+  become: yes
+  template:
+    src: "../../eon-common/templates/logging.conf.j2"
+    dest: "{{ eon_service_conf_dir }}/eon-api-logging.conf"
+    owner: "{{ eon_user }}"
+    group: "{{ eon_group }}"
+    mode: 0400
+  register: hlm_notify_eon_api_restart_required
+
+- include: _auditing_configure.yml
+  when: enable_eon_api_auditing | bool
+
+- name: eon-api | configure | Copy files to eon-api service conf_dir
+  become: yes
+  copy:
+    src: "{{ item }}"
+    dest: "{{ eon_service_conf_dir }}"
+    owner: "{{ eon_user }}"
+    group: "{{ eon_group }}"
+    mode: 0640
+  with_items:
+    - policy.json
+  register: hlm_notify_eon_api_restart_required

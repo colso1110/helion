@@ -1,0 +1,104 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Install/Upgrade Beaver
+#-------------------------------------------------------------------------------
+- name: logging-producer | install | Update Package cache
+  become: yes
+  install_package:
+    cache: update
+
+- name: logging-producer | install | Install Beaver from venv
+  become: yes
+  install_package:
+    name: beaver
+    service: beaver
+    state: present
+    activate: act_off
+  register: hlm_notify_beaver_install
+
+- name: logging-producer | install | Set Beaver venv variables
+  become: yes
+  set_fact:
+    beaver_bin_dir: >-
+      {{ hlm_notify_beaver_install.name |
+      bin_dir(hlm_notify_beaver_install.version) }}
+
+- name: logging-producer | install | Create Beaver user
+  become: yes
+  user:
+    name: "{{ beaver_user }}"
+    group: "{{ beaver_group }}"
+    shell: /sbin/nologin
+    createhome: no
+    home: /tmp
+  register: hlm_notify_beaver_restart
+
+- name: logging-producer | install | Install Beaver log directory
+  become: yes
+  file:
+    path: /var/log/beaver
+    state: directory
+    owner: "{{ beaver_user }}"
+    group: "{{ beaver_group }}"
+    mode: 0750
+  register: hlm_notify_beaver_restart
+
+- name: logging-producer | install | Install Beaver conf directory
+  become: yes
+  file:
+    path: "{{ beaver_conf_dir }}/conf.d"
+    state: directory
+    mode: 0755
+  register: hlm_notify_beaver_restart
+
+- name: logging-producer | install | Install Beaver systemd service file
+  become: yes
+  template:
+    src: beaver.service.j2
+    dest: /etc/systemd/system/beaver.service
+    mode: 0644
+  register: hlm_notify_beaver_restart
+
+- name: logging-producer | install | Reload systemd to pick up new services
+  become: yes
+  command: systemctl daemon-reload
+
+- name: logging-producer | install | Check beaver service enabled
+  become: yes
+  stat:
+    path: /etc/systemd/system/multi-user.target.wants/beaver.service
+  register: beaver_enabled_result
+
+- name: logging-producer | install | Configure Beaver to start on boot
+  become: yes
+  service:
+    name: beaver
+    enabled: yes
+  when: not beaver_enabled_result.stat.exists
+  register: hlm_notify_beaver_restart
+
+# Logrotate related installation
+#-------------------------------------------------------------------------------
+- name: logging-producer | install | Create Kronos user
+  become: yes
+  user:
+    name: "{{ kronos_user }}"
+    group: "{{ kronos_group }}"
+    shell: /sbin/nologin
+    createhome: no
+    home: /tmp

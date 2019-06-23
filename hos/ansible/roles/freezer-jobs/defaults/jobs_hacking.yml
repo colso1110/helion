@@ -1,0 +1,116 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# When adding a new job, it it necessary to assign it to specific nodes in _freezer_manage_jobs.yml
+# This is how you define which server should execute which backup in function of their role:
+#
+#- hosts: <which ansible role should execute this job, use FRE-AGN to target all>
+#  roles:
+#    - freezer-jobs
+#  tasks:
+#    - include: roles/freezer-jobs/tasks/_manage_job.yml job_name=<job_name>
+#
+#jobs:
+#  <job_name>:
+#    # [mandatory] If the job should be created
+#    enabled: <true or false> #If the job should be created
+#
+#    # [mandatory] If the job should be created to store its backup in swift
+#    store_to_swift: <true or false>
+#
+#    # [mandatory] If the job should be created to store its backup to an SSH server. The job won't be created if valid ssh credentials aren't provided in ssh_credentials.yml
+#    store_to_ssh: <true or false>
+#
+#    # [mandatory] If the job should be created to store its backup localy, require you to set local_storage_base_dir as well
+#    store_to_local: <true or false>
+#
+#    #The base directory to store backups to when using storage_local
+#    local_storage_base_dir: <path>
+#
+#    # [mandatory] If we should create matching restore jobs
+#    also_create_restore_job: <true or false>
+#
+#    # [mandatory] Name of the container to store backup to.
+#    container: freezer_lifecycle_manager_backup
+#
+#    # [mandatory] Repeat the backup every <value>
+#    schedule: <"n hours|minutes|days">
+#
+#    actions: # The order of your actions matters, they will be executed in the specified order.
+#
+#        # [mandatory] Name of the backup
+#      - backup_name: <name>
+#
+#        # [mandatory] Path to backup
+#        backup_path: <path>
+#
+#        # Path to restore the backup when using also_create_restore_job
+#        restore_path: <path>
+#
+#        # Any valid freezer-agent option to pass to the freezer agent when executing the backup
+#        backup_options:
+#          <option1_name> : <option1_value>
+#          <option2_name> : <option2_value>
+#
+#        # Any valid freezer-agent option to pass to the freezer agent when executing the restore
+#        restore_options:
+#          <option1_name> : <option1_value>
+#          <option2_name> : <option2_value>
+#
+#        # Number of time to retry the action if it fails [defaults 5]
+#        max_retries: <int>
+#
+#        # Amount of time in seconds to wait between retries [defaults 60]
+#        max_retries_interval: <int>
+#
+#
+#
+#
+# For example:
+#
+#  foo:
+#    enabled: true
+#    storage_swift: true
+#    storage_ssh: true
+#    storage_local: false
+#    also_create_restore_job: true
+#    container: foo_container
+#    schedule: "24 hours"
+#    actions:
+#      - backup_name: action_1
+#        backup_path: /home/user1/
+#        restore_path: /tmp/user1_restore/
+#        backup_options:
+#          snapshot: true
+#          max_level: 15
+#        max_retries_interval: 2
+#        max_retries_interval: 10
+#      - backup_name: action_2
+#        backup_path: /etc/passwd
+#        restore_path: /etc/
+#        restore_options:
+#          max_priority: true
+#          overwrite: true
+#
+#
+# Then the _freezer_manage_jobs.yml needs to be edited to add this.
+#
+#- hosts: NOV-CMP:&FRE-AGN     # only on compute node, Don't forget to add ":&FRE-AGN" to the role name
+#  roles:
+#    - freezer-jobs
+#  tasks:
+#    - include: roles/freezer-jobs/tasks/_manage_job.yml job_name=foo

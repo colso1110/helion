@@ -1,0 +1,163 @@
+#!/usr/bin/env python
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+import datetime
+import sys
+
+import MySQLdb
+
+def write_schema(cursor):
+    cursor.execute("SHOW TABLES LIKE '%'")
+    result = cursor.fetchone()
+    if result:
+        return False
+    else:
+        # Create Tables
+        schema_file = open("{{ monasca_schema_file }}")
+        query = " ".join(schema_file.readlines())
+        cursor.execute(query)
+        return True
+
+
+def create_version_table(cursor):
+    cursor.execute("SHOW TABLES LIKE 'schema_version'")
+    result = cursor.fetchone()
+    if not result:
+        version_table = """
+                CREATE TABLE `schema_version` (
+                    `version` int NOT NULL,
+                    `hos_version` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+                    `updated_at` datetime NOT NULL,
+                    UNIQUE KEY (`version`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"""
+        cursor.execute(version_table)
+        return True
+    return False
+
+
+def upgrade_schema(cursor, new_schema_version):
+    # get_last_version from version table
+    query = """
+        SELECT version
+        FROM schema_version
+        ORDER BY version DESC"""
+    cursor.execute(query)
+    result = cursor.fetchone()
+    # set schema changes for each version
+    version_2_changes = ["ALTER TABLE alarm "
+                         "MODIFY created_at datetime(3), "
+                         "MODIFY updated_at datetime(3), "
+                         "MODIFY state_updated_at datetime(3)",
+                         "ALTER TABLE sub_alarm "
+                         "MODIFY created_at datetime(3), "
+                         "MODIFY updated_at datetime(3)"]
+    version_3_changes = ["ALTER TABLE sub_alarm "
+                         "ADD COLUMN state enum('UNDETERMINED','OK','ALARM') COLLATE utf8mb4_unicode_ci "
+                         "NOT NULL DEFAULT 'OK'"]
+    version_4_changes = ["ALTER table notification_method modify type varchar(20) ",
+                         """CREATE TABLE `notification_method_type` (
+                             `name` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL, PRIMARY KEY (`name`)
+                         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
+                         "INSERT  into notification_method_type (name) values('EMAIL')"]
+
+    # Schema's version is before version 1
+    if not result:
+        cursor.execute("ALTER TABLE notification_method ADD COLUMN period int NOT NULL DEFAULT 0")
+        cursor.execute("ALTER TABLE sub_alarm_definition ADD COLUMN is_deterministic tinyint(1) NOT NULL DEFAULT '0'")
+        cursor.execute("DROP TABLE stream_actions, event_transform, stream_definition, schema_migrations")
+        for query in (version_2_changes + version_3_changes + version_4_changes):
+            cursor.execute(query)
+        return True
+    current_version = result[0]
+    if new_schema_version > current_version:
+        if current_version < 2:
+            for query in version_2_changes:
+                cursor.execute(query)
+        if current_version < 3:
+            for query in version_3_changes:
+                cursor.execute(query)
+        if current_version < 4:
+            for query in version_4_changes:
+                cursor.execute(query)
+        return True
+    return False
+
+
+def write_version(cursor, new_schema_version, hos_version):
+    query = """
+            insert into schema_version(
+                  version,
+                  hos_version,
+                  updated_at
+            ) values (%s, %s, %s)"""
+    now = datetime.datetime.utcnow()
+    cursor.execute(query, (new_schema_version, hos_version, now))
+
+
+def get_hos_version():
+    hos_file = open("/etc/HPE_Helion_version")
+    hos_file_contents = hos_file.read()
+    start_index = hos_file_contents.find("hos-") + 4
+    end_index = start_index + 5
+    return hos_file_contents[start_index:end_index]
+
+
+def main():
+    return_code = 0
+    try:
+        ssl = {'ca': '{{ monasca_schema_system_cacert_file }}' }
+        con = MySQLdb.connect('{{ mysql_host }}', '{{ monasca_api_mysql_user }}', '{{ monasca_api_mysql_password }}',
+                              '{{ monasca_mysql_db }}', ssl=ssl)
+
+        con.autocommit(True)
+
+        cursor = con.cursor()
+
+        # Write schema to database if it is not created yet
+        wrote_schema = write_schema(cursor)
+
+        cursor.close()
+
+        # Check if we need to create the version table and upgrade the schema
+        if not wrote_schema:
+            cursor = con.cursor()
+            create_version_table(cursor)
+            upgraded_schema = upgrade_schema(cursor, {{ monasca_schema_version }})
+            cursor.close()
+
+        if wrote_schema or upgraded_schema:
+            hos_version = get_hos_version()
+            cursor = con.cursor()
+            write_version(cursor, {{ monasca_schema_version }}, hos_version)
+            cursor.close()
+
+
+    except MySQLdb.MySQLError as sql_error:
+        print "Mysql error {0} when running the script".format(sql_error)
+        return_code = 1
+    except Exception as e:
+        print "Error {0} when running the script".format(e)
+        return_code = 1
+
+    finally:
+        if cursor:
+            cursor.close()
+        if con:
+            con.close()
+        sys.exit(return_code)
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,41 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: monasca-agent | install | Install required packages in Debian
+  apt:
+    name: "{{ item }}"
+    state: present
+  with_items: monasca_agent_required_packages
+  when: ansible_os_family == 'Debian'
+
+- name: monasca-agent | install | Install required packages in RedHat
+  yum:
+    name: "{{ item }}"
+    state: present
+  with_items: monasca_agent_required_packages
+  when: ansible_os_family == 'RedHat'
+
+- name: monasca-agent | install | Update venv cache
+  install_package:
+    cache: update
+
+- name: monasca-agent | install |
+    Install the monasca-agent service from the monasca-agent venv
+  install_package:
+    name: monasca_agent
+    service: monasca-agent
+    state: present
+  register: hlm_notify_monasca_agent_restart_required

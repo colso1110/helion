@@ -1,0 +1,54 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+    version: 2
+
+service-components:
+-   name: nova-compute-kvm
+    mnemonic: NOV-KVM
+    service: nova
+    aliases:
+      - nova-kvm
+
+    endpoints:
+    -   port: '49152:49215'
+        roles:
+        - live-migration
+    -   port: '16509'
+        roles:
+        - migration
+    -   port: '22'
+        roles:
+        - resize-cold-migration
+
+    requires:
+    -   name: nova-compute
+        scope: host
+
+    config-set:
+    -   name: id_rsa
+        ansible-vars:
+        -   name: nova_ssh_key
+            value: '%random-sshkey%'
+            properties:
+                length: 2048
+                comment: "Generated Key for Nova User"
+
+    supported-resource-allocations:
+       cpu: true
+       cpu-roles:
+          - vm

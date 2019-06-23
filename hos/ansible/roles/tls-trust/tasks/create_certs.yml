@@ -1,0 +1,87 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: tls-trust | create_certs | Create vip cert requests
+  template:
+    src: "helion-vip-temp.req"
+    dest: "{{ tls_temp_dir }}/{{ item.cert_name }}.req"
+    mode: 0644
+  with_items:
+    - "{{ ip_cluster_certs }}"
+
+- name: tls-trust | create_certs | Create node cert requests
+  template:
+    src: "{{ item.cert_name }}.req"
+    dest: "{{ tls_temp_dir }}/{{ item.cert_name }}.req"
+    mode: 0644
+  with_items:
+    - "{{ tls_certs }}"
+
+- name: tls-trust | create_certs | Create mysql cert requests
+  template:
+    src: "mysql-admin.req"
+    dest: "{{ tls_temp_dir }}/{{ item.cert_name }}.req"
+    mode: 0644
+  with_items:
+    - "{{ tls_mysql.certs }}"
+
+- name: tls-trust | create_certs | Create mysql cert requests
+  template:
+    src: "rmq-internal.req"
+    dest: "{{ tls_temp_dir }}/{{ item.cert_name }}.req"
+    mode: 0644
+  with_items:
+    - "{{ tls_rmq.certs }}"
+
+- name: tls-trust | create_certs | create vip certs
+  hos_ca:
+    req: "{{ item.cert_name }}.req"
+    cert: "{{ item.cert_name }}"
+    chdir: "{{ tls_temp_dir }}"
+    cakey: "{{ helion_internal_ca.key }}"
+    cacert: "{{ helion_internal_ca.cert }}"
+    conf: "{{ helion_internal_ca.conf }}"
+    subj: "{{ helion_internal_ca.subj }}"
+    combined: True
+  with_items:
+    - "{{ ip_cluster_certs }}"
+    - "{{ tls_certs }}"
+    - "{{ tls_mysql.certs }}"
+    - "{{ tls_rmq.certs }}"
+
+- name: tls-trust | create_certs | fetch certs to deployer
+  fetch:
+    src: "{{ tls_temp_dir }}/{{ item.cert_name }}"
+    dest: "{{ tls_certs_dir }}"
+    flat: yes
+    validate_checksum: no
+  with_items:
+    - "{{ ip_cluster_certs }}"
+    - "{{ tls_certs }}"
+    - "{{ tls_mysql.certs }}"
+    - "{{ tls_rmq.certs }}"
+
+- name: tls-trust | create_certs | fetch reqs to deployer
+  fetch:
+    src: "{{ tls_temp_dir }}/{{ item.cert_name }}.req"
+    dest: "{{ tls_certs_dir }}"
+    flat: yes
+    validate_checksum: no
+  with_items:
+    - "{{ ip_cluster_certs }}"
+    - "{{ tls_certs }}"
+    - "{{ tls_mysql.certs }}"
+    - "{{ tls_rmq.certs }}"

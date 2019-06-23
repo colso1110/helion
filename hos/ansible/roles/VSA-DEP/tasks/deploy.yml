@@ -1,0 +1,54 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: VSA-DEP | deploy | Create VSA appliance (sync)
+  become: yes
+  command: ./vsa_automation {{ vsa_install_params }}
+  environment:
+    VSA_CONFIG_DIR: "{{ vsa_installer_dir }}"
+    VSA_PACKAGE_PATH: "{{ vsa_installer_dir }}"
+    VSA_IMAGE_PATH: "{{ vsa_installer_dir }}/KVM-VSA-11.5.01.0079.img.gz"
+    VSA_INSTALLER: "{{ vsa_installer_script }}"
+    VSA_NETWORK_CONFIG_FILE: "{{ vsa_conf_dir }}/vsa_network_config.json"
+    VSA_CONFIG_FILE: "{{ vsa_conf_dir }}/vsa_config.json"
+  args:
+    chdir: "{{ vsa_installer_dir }}"
+  register: vsa_installer_result
+  when: not (vsa_installer_async | bool)
+
+- name: VSA-DEP | deploy | Create VSA appliance (async)
+  become: yes
+  command: "{{ vsa_installer_dir }}/vsa_automation {{ vsa_install_params }}"
+  environment:
+    VSA_CONFIG_DIR: "{{ vsa_installer_dir }}"
+    VSA_PACKAGE_PATH: "{{ vsa_installer_dir }}"
+    VSA_IMAGE_PATH: "{{ vsa_installer_dir }}/KVM-VSA-11.5.01.0079.img.gz"
+    VSA_INSTALLER: "{{ vsa_installer_script }}"
+    VSA_NETWORK_CONFIG_FILE: "{{ vsa_conf_dir }}/vsa_network_config.json"
+    VSA_CONFIG_FILE: "{{ vsa_conf_dir }}/vsa_config.json"
+  async: "{{ vsa_installer_timeout }}"
+  poll: "{{ vsa_installer_poll_intvl }}"
+  register: vsa_installer_async_result
+  when: (vsa_installer_async | bool)
+
+- name: VSA-DEP | deploy | Display VSA VM setup details (sync)
+  debug: var=vsa_installer_result
+  when: not (vsa_installer_async | bool)
+
+- name: VSA-DEP | deploy | Display VSA VM setup details (async)
+  debug: var=vsa_installer_async_result
+  when: (vsa_installer_async | bool)
+

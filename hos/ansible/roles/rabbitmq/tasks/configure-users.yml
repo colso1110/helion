@@ -1,0 +1,66 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: rabbitmq | configure-users | Find all RabbitMQ user accounts
+  set_fact:
+    _rabbitmq_user_accounts: |
+      [{% for component in rabbitmq_cp.credentials -%}
+        {% if component.vars.accounts is defined -%}
+          {% for account in component.vars.accounts -%}
+            {{ component.vars.accounts[account] | to_json }}
+            {%- if not loop.last -%}
+              ,
+            {% endif -%}
+          {% endfor -%}
+        {% endif -%}
+        {%- if not loop.last -%}
+          ,
+        {% endif -%}
+      {% endfor %}]
+  changed_when: true
+  register: _rabbitmq_configure_users_result
+  when: _rabbitmq_user_accounts is not defined
+
+- name: rabbitmq | configure-users | Remove guest user if not used
+  become: yes
+  rabbitmq_user:
+    node: "{{ rabbitmq_nodename }}"
+    user: guest
+    state: absent
+  when: _rabbitmq_configure_users_result is defined and
+        _rabbitmq_configure_users_result.changed and
+        not ('guest' in (_rabbitmq_user_accounts | map(attribute='username')))
+  run_once_per: rabbitmq_cp.group_name
+
+- name: rabbitmq | configure-users | Create RabbitMQ users
+  become: yes
+  no_log: true
+  rabbitmq_user:
+    node: "{{ rabbitmq_nodename }}"
+    user: "{{ item.username }}"
+    password: "{{ item.password | quote }}"
+    vhost: "{{ item.vhost }}"
+    configure_priv: "{{ item.conf_permissions }}"
+    read_priv: "{{ item.read_permissions }}"
+    write_priv: "{{ item.write_permissions }}"
+    tags: "{{ item.tags }}"
+    state: present
+    force: yes
+  run_once_per: rabbitmq_cp.group_name
+  when: _rabbitmq_configure_users_result is defined and
+        _rabbitmq_configure_users_result.changed and
+        item.username is defined and item.password is defined
+  with_items: "{{ _rabbitmq_user_accounts | unique }}"

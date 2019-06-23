@@ -1,0 +1,46 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+vsa_user: root
+vsa_group: root
+vsa_service_bin_dir: "{{ 'storevirtual-installer' | bin_dir }}"
+vsa_conf_dir: /etc/vsa
+vsa_installer_dir: /home/vsa-installer
+vsa_persist_dir: /mnt/state/vsa-kvm-storage
+vsa_bridge_name: "{{ host.my_network_tags | extract_network_attr('device', 'vsa.iscsi') }}"
+vsa_bridge_ip_address: "{{ host.my_network_tags | extract_network_attr('address', 'vsa.iscsi') }}"
+vsa_network_interface: "{{ host.my_network_tags | extract_network_attr('bridge_port', 'vsa.iscsi') }}"
+vsa_ip_address: "{{ host.my_service_ips.vsa }}"
+vsa_image_dir: /mnt/state/vsa-kvm-storage
+vsa_enable_AO: False
+vsa_install_params: -f /etc/vsa/vsa_disks.json -ao {{ vsa_enable_AO }}
+vsa_package_version: 11.5.01.1.0079_3.0.1
+vsa_pkg_venv_dir: /opt/stack/service/vsa/venv
+vsa_installer_log_path: /var/log/storevirtual-installer.log
+vsa_installer_log_level: "{{ helion_loglevel | default('INFO') }}"
+vsa_vm_hostname: VSA-VM-{{ host.my_id }}
+vsa_scsi_file: "{{ vsa_installer_dir }}/scsi-controller.xml"
+vsa_installer_script: "{{ vsa_installer_dir }}/StoreVirtual_VSA_for_HPE_Helion_OpenStack_Installer-11.5.01.0079"
+vsa_autostart : True
+# install using ansible async with an overall timeout of 45 mins
+vsa_installer_async: True
+vsa_installer_timeout: 2700
+vsa_installer_poll_intvl: 10
+
+# upgrading a package mentioned in below list will trigger restart of VSA VM
+vsa_packages:
+  - libvirt-bin

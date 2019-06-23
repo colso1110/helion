@@ -1,0 +1,45 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+win_service: nova
+win_service_name: HPE Helion Nova Compute Service
+win_nova_conf_dir: etc\nova
+win_conf_dir: "{{ [win_helion_dir, win_service, build_url.svc_dir,
+    win_nova_conf_dir] | join(path_separator) }}"
+win_bin_dir: "{{ [win_helion_dir, win_service, build_url.svc_dir, 'bin'] |
+    join(path_separator) }}"
+win_nova_conf_name: nova.conf
+win_nova_conf_path: "{{ [win_conf_dir, win_nova_conf_name] |
+    join(path_separator) }}"
+win_hypervisor_conf_name: hypervisor.conf
+win_hypervisor_conf_path: "{{ [win_conf_dir, win_hypervisor_conf_name] |
+    join(path_separator) }}"
+win_compute_conf_name: compute.conf
+win_compute_conf_path: "{{ [win_conf_dir, win_compute_conf_name] |
+    join(path_separator) }}"
+win_compute_logging_conf_name: compute-logging.conf
+win_compute_logging_conf_path: "{{ [win_conf_dir, win_compute_logging_conf_name
+    ] | join(path_separator) }}"
+win_service_conf_name: novaservice.conf
+win_service_conf_path: "{{ [win_helion_dir, 'setup', win_service_conf_name] |
+    join(path_separator) }}"
+win_policy_file_name: policy.json
+win_policy_file_path: "{{ [win_conf_dir, win_policy_file_name] |
+    join(path_separator) }}"
+win_jinja_vars: '#jinja2: newline_sequence:"\\r\\n"'
+nova_service_conf_dir: "{{ win_conf_dir }}"
+nova_service_bin_dir: "{{ win_bin_dir }}"

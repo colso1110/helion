@@ -1,0 +1,30 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: tls-trust | win_install | Delete old cert file on Windows
+  win_file:
+    path: "{{ win_certs_path }}"
+    state: absent
+
+- name: tls-trust | win_install | Create new cert file on Windows
+  raw: powershell New-Item '{{ win_certs_path }}' -t file
+
+- name: tls-trust | win_install | Install ca certificate on windows
+  win_lineinfile:
+    dest: "{{ win_certs_path }}"
+    line: "{{ lookup('file', item ) }}"
+  with_fileglob:
+    - "public/*.crt"

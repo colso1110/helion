@@ -1,0 +1,74 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+# Install Ceilometer polling agent
+---
+- include: ../../_CEI-CMN/tasks/install.yml
+
+- name: CEI-POL | install | Remove Ceilometer polling Agent DPKG if exists
+  become: yes
+  apt:
+    name: ceilometer-polling
+    install_recommends: no
+    state: absent
+    force: yes
+  ignore_errors: True
+
+- name: CEI-POL | install | Update venv Cache
+  become: yes
+  install_package:
+    cache: update
+
+- name: CEI-POL | install | Installing Ceilometer Polling Agent code
+  become: yes
+  install_package:
+    name: ceilometer
+    service: ceilometer-polling
+    state: present
+    activate: act_off
+  register: ceilometer_polling_install_result
+
+- name: CEI-POL | install | Register Venv Change
+  command: echo "ceilometer polling venv changed"
+  register: hlm_notify_ceilometer_polling_venv_change
+  when: ceilometer_polling_install_result.changed
+
+- name: CEI-POL | install | Register restart required
+  command: echo "ceilometer polling restart required"
+  register: hlm_notify_ceilometer_polling_restart_required
+  when: ceilometer_polling_install_result.changed
+
+- name: CEI-POL | install | Set service conf directories
+  set_fact:
+    ceilometer_polling_conf_dir: "{{ 'ceilometer-polling' |
+      config_dir(ceilometer_polling_install_result.version) }}"
+    ceilometer_polling_venv_share_dir: "{{ 'ceilometer-polling' |
+      share_dir(ceilometer_polling_install_result.version) }}/ceilometer"
+    ceilometer_polling_bin_dir: "{{ 'ceilometer-polling' |
+      bin_dir(ceilometer_polling_install_result.version) }}"
+
+- name: CEI-POL | install | Setup systemd for ceilometer-polling
+  become: yes
+  setup_systemd:
+    name: ceilometer-polling
+    service: ceilometer-polling
+    user: "{{ ceilometer_user }}"
+    group: "{{ ceilometer_group }}"
+    cmd: ceilometer-polling
+    args: >
+      --polling-namespaces central
+      --config-file {{ ceilometer_polling_conf_dir }}/ceilometer.conf
+      --config-file {{ ceilometer_polling_conf_dir }}/polling.conf

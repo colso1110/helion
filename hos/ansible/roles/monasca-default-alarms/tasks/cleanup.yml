@@ -1,0 +1,51 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: monasca-default-alarms | cleanup | Install Nova Client
+  install_package:
+    name: novaclient
+    service: novaclient
+    state: present
+  become: yes
+  when: service_topology.services.nova is defined and
+        service_topology.services.nova.components['nova-compute']['control_planes'] is defined
+- name: monasca-default-alarms | cleanup | Add VM alarm cleanup cron job
+  template:
+    src: vm_alarm_cleanup.py.j2
+    dest: /opt/monasca/bin/vm_alarm_cleanup.py
+    owner: root
+    group: root
+    mode: 0700
+  become: yes
+  when: service_topology.services.nova is defined and
+        service_topology.services.nova.components['nova-compute']['control_planes'] is defined
+- name: monasca-default-alarms | cleanup | Remove obsolete file
+  file:
+    path: "/opt/monasca/bin/vm_alarm_cleanup"
+    state: absent
+  become: yes
+  when: service_topology.services.nova is defined and
+        service_topology.services.nova.components['nova-compute']['control_planes'] is defined
+- name: monasca-default-alarms | cleanup | Add VM alarm cleanup to crontab
+  cron:
+    name: "Alarm cleanup for deleted VMs"
+    minute: "*/5"
+    job: /opt/monasca/bin/vm_alarm_cleanup.py 2>&1 | /usr/bin/logger -t vm_alarm_cleanup
+    state: present
+  become: yes
+  run_once: True
+  when: service_topology.services.nova is defined and
+        service_topology.services.nova.components['nova-compute']['control_planes'] is defined

@@ -1,0 +1,83 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+influxdb_schema_enabled: true
+kafka_topics_enabled: true
+mysql_schema_enabled: true
+influxdb_admin: "{{ FND_IDB.vars.influxdb_admin_user_name }}"
+influxdb_admin_password: "{{ FND_IDB.vars.influxdb_admin_user_password }}"
+influxdb_admin_old_password: "{% if FND_IDB.old_vars is defined and FND_IDB.old_vars.influxdb_admin_user_password is defined %}{{ FND_IDB.old_vars.influxdb_admin_user_password }}{% else %}{{ influxdb_admin_password }}{% endif %}"
+influxdb_dbname: mon
+influxdb_retention_policy: "90d"
+influxdb_shard_duration: "7d"
+influxdb_script_dir: /root
+mysql_admin: root
+monasca_mysql_db: "{{ MON_API.consumes_FND_MDB.vars.databases.monasca.dbname }}"
+vertica_database_name: mon
+vertica_env: {LC_ALL: en_US.UTF-8, LANG: en_US.UTF-8}
+vertica_schema_enabled: true
+vertica_dbadmin_old_password: "{% if FND_VDB.old_vars is defined and FND_VDB.old_vars.dbadmin_user_password is defined %}{{ FND_VDB.old_vars.dbadmin_user_password }}{% else %}{{ vertica_dbadmin_password }}{% endif %}"
+
+mysql_root_dir: /var/lib/mysql
+mysql_schema_dir: /root
+monasca_schema_version: 4
+monasca_schema_file: "{{ mysql_schema_dir }}/mon.sql"
+monasca_script_file: "{{ mysql_schema_dir }}/mysql_schema.py"
+
+kafka_events_partitions: 12
+kafka_metrics_partitions: 64
+# This should be the number of systems running the Notification Engine
+kafka_retry_periodic_notifications_partitions: 3
+kafka_replicas: 3
+
+kafka_topics:
+  metrics: { replicas: "{{ kafka_replicas }}", partitions: "{{ kafka_metrics_partitions }}" }
+  events: { replicas: "{{ kafka_replicas }}", partitions: "{{ kafka_events_partitions }}" }
+  raw-events: { replicas: "{{ kafka_replicas }}", partitions: "{{ kafka_events_partitions }}" }
+  transformed-events: { replicas: "{{ kafka_replicas }}", partitions: "{{ kafka_events_partitions }}" }
+  stream-definitions: { replicas: "{{ kafka_replicas }}", partitions: "{{ kafka_events_partitions }}" }
+  transform-definitions: { replicas: "{{ kafka_replicas }}", partitions: "{{ kafka_events_partitions }}" }
+  alarm-state-transitions: { replicas: "{{ kafka_replicas }}", partitions: "{{ kafka_events_partitions }}" }
+  alarm-notifications: { replicas: "{{ kafka_replicas }}", partitions: "{{ kafka_events_partitions }}" }
+  stream-notifications: { replicas: "{{ kafka_replicas }}", partitions: "{{ kafka_events_partitions }}" }
+  retry-notifications: { replicas: "{{ kafka_replicas }}", partitions: "{{ kafka_retry_periodic_notifications_partitions }}" }
+  60-seconds-notifications: { replicas: "{{ kafka_replicas }}", partitions: "{{ kafka_retry_periodic_notifications_partitions }}" }
+
+kafka_node_count: "{{ FND_KFK.members.private | length }}"
+kafka_replicas: "{% if kafka_node_count | int > 3 %}3{% else %}{{ kafka_node_count }}{% endif %}"
+kafka_segment_minutes: 15
+
+zookeeper_nodes: "{{ FND_KFK.consumes_FND_ZOO.members.private }}"
+zookeeper_hosts: "{% for node in zookeeper_nodes %}{{ node.host }}:{{ node.port }}{% if not loop.last %},{% endif %}{% endfor %}"
+
+influxdb_node_count: "{{ FND_IDB.members.private | length }}"
+influxdb_replication_factor: "{% if influxdb_node_count | int > 3 %}3{% else %}{{ influxdb_node_count }}{% endif %}"
+influxdb_url: "{% if database_type == 'influxdb' %}{{ MON_API.consumes_FND_IDB.vips.private[0].url }}{% endif %}"
+mon_influxdb_users:
+  - username: "{{ MON_API.consumes_FND_IDB.vars.influxdb_monasca_api_user }}"
+    password: "{{ MON_API.consumes_FND_IDB.vars.influxdb_monasca_api_password | quote }}"
+  - username: "{{ MON_PST.consumes_FND_IDB.vars.influxdb_monasca_persister_user }}"
+    password: "{{ MON_PST.consumes_FND_IDB.vars.influxdb_monasca_persister_password | quote }}"
+
+vertica_nodes: "{{ FND_VDB.members.private }}"
+vertica_cluster: "{% for node in vertica_nodes %}{{ node.host }}{% if not loop.last %},{% endif %}{% endfor %}"
+rebuild: False
+
+monasca_api_mysql_user: "{{ MON.consumes_FND_MDB.vars.accounts.monasca_api.username }}"
+monasca_api_mysql_password: "{{ MON.consumes_FND_MDB.vars.accounts.monasca_api.password | quote }}"
+mysql_host: "{{ MON_API.consumes_FND_MDB.vips.private[0].host }}"
+
+monasca_schema_system_cacert_file: "/etc/ssl/certs/ca-certificates.crt"

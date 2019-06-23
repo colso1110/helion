@@ -1,0 +1,45 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: evaluate_admin_node.yml
+
+- name: _CEP-CMN | check_ceph_cluster_status | Query ceph cluster status
+  become: yes
+  command: ceph --cluster {{ ceph_cluster }} -s  --connect-timeout 60
+  register: ceph_cluster_status_result
+  delegate_to: "{{ ceph_admin_node }}"
+  ignore_errors: yes
+
+- name: _CEP-CMN | check_ceph_cluster_status | Fail if ceph cluster is down
+  fail:
+    msg: |
+      ceph cluster is down.
+      ceph --cluster {{ ceph_cluster }} -s --connect-timeout 60 output:
+      {{ ceph_cluster_status_result.stderr }}
+  when: ceph_cluster_status_result | failed
+
+- name: _CEP-CMN | check_ceph_cluster_status | Display ceph cluster status
+  debug:
+    var: ceph_cluster_status_result.stdout
+  when: ceph_cluster_status_result is defined
+
+- name: _CEP-CMN | check_ceph_cluster_status |
+        Fail if ceph cluster is in error state
+  fail: msg="Ceph cluster has gone bad, please check service logs for details."
+  when: >
+    ceph_cluster_status_result is defined and 'HEALTH_ERR' in
+    ceph_cluster_status_result.stdout

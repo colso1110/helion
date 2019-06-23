@@ -1,0 +1,42 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# variables to go into hypervisor.conf in vcenter compute proxy
+vcenter_encrypted_password: "{%- if global.pass_through is defined -%}
+                              {%- if global.pass_through.vmware is defined -%}
+                                {%- for vc in global.pass_through.vmware -%}
+                                     {%- if vc.id == host.pass_through.vmware.vcenter_id -%}
+                                        {{ vc.password }}
+                                     {%- endif -%}
+                                {%- endfor -%}
+                               {%- endif -%}
+                             {%- endif -%}"
+
+vmware_vcenter_id: "{{ host.pass_through.vmware.vcenter_id }}"
+
+esx_default_driver: "vmwareapi.VMwareVCDriver"
+esx_compute_driver_list: "{{ NOV_ESX | get_provided_data_values('compute_driver') }}"
+esx_compute_driver: "{%- if esx_compute_driver_list|length > 0 -%}
+                         {{ esx_compute_driver_list | last }}
+                     {%- else -%}
+                         {{ esx_default_driver }}
+                     {%- endif -%}"
+
+# keystone related conf to get vcenter password from EON
+eon_admin_tenant_name : "{{ KEY_API.vars.keystone_service_tenant }}"
+eon_admin_password : "{{ EON_API.consumes_KEY_API.vars.keystone_eon_password | quote }}"
+eon_admin_user : "{{ EON_API.consumes_KEY_API.vars.keystone_eon_user }}"
+eon_os_region_name: "{{ NOV.regions | first }}"

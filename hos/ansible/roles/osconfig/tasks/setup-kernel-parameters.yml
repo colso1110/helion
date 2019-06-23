@@ -1,0 +1,171 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+---
+
+- name: osconfig | setup-kernel-parameters |
+    Remove any existing default hugepage references
+  become: yes
+  replace:
+    dest: /etc/default/grub
+    regexp: '\s?default_hugepagesz=\w+'
+    replace: ''
+
+- name: osconfig | setup-kernel-parameters |
+    Remove any existing hugepage references
+  become: yes
+  replace:
+    dest: /etc/default/grub
+    regexp: '(\s?hugepagesz?=\w+)+'
+    replace: ''
+
+- name: osconfig | setup-kernel-parameters | setup crashkernel
+  become: yes
+  command: >-
+    sed -i \
+        -e '/^GRUB_CMDLINE_LINUX=/ s#\([" ]*\)crashkernel=[^ "]*[ ]*#\1#g' \
+        -e '/^GRUB_CMDLINE_LINUX=/ s# *"$# crashkernel=384M-2G:64M,2G-:256M"#g' \
+        -e '/^GRUB_CMDLINE_LINUX=/ s#" #"#g' \
+        /etc/default/grub
+  register: grub_mod
+
+- name: osconfig | setup-kernel-parameters | setup hugepages
+  become: yes
+  lineinfile:
+    dest: /etc/default/grub
+    backrefs: True
+    state: present
+    regexp: '(GRUB_CMDLINE_LINUX=)"(.*)"'
+    line: '\1\"\2 hugepagesz={{ item.size }} hugepages={{ item.count }}\"'
+  # we limit this to non NUMA pages since there is no mechanism in the
+  # kernel parameters to specify which NUMA node a page should be allocated to.
+  with_items:
+    non_numa_huge_pages
+  when:
+    non_numa_huge_pages | length > 0
+
+- name: osconfig | setup-kernel-parameters | setup hugepage default size
+  become: yes
+  lineinfile:
+    dest: /etc/default/grub
+    backrefs: True
+    state: present
+    regexp: '(GRUB_CMDLINE_LINUX=)"(.*)"'
+    line: '\1\"\2 default_hugepagesz={{ default_huge_page_size }}\"'
+  when:
+    non_numa_huge_pages | length > 0 and
+    default_huge_page_size != ''
+
+- name: osconfig | setup-kernel-parameters | remove existing cpu isolation
+  become: yes
+  replace:
+    dest: /etc/default/grub
+    regexp: '\s?isolcpus=[0-9,]*'
+    replace: ''
+
+- name: osconfig | setup-kernel-parameters | isolate cpus
+  become: yes
+  lineinfile:
+    dest: /etc/default/grub
+    backrefs: True
+    state: present
+    regexp: 'GRUB_CMDLINE_LINUX="(.*)"'
+    line: 'GRUB_CMDLINE_LINUX="\1 isolcpus={{ processor_list }}"'
+  when:
+    processor_list != ''
+
+- name: osconfig | setup-kernel-parameters |
+    check if GRUB_CMDLINE_LINUX is found
+  become: yes
+  command: grep "GRUB_CMDLINE_LINUX" /etc/default/grub
+  register: check_attr
+  ignore_errors: True
+
+- name: osconfig | setup-kernel-parameters | remove existing intel_iommu
+  become: yes
+  replace:
+    dest: /etc/default/grub
+    regexp: '\s?intel_iommu=\w+'
+    replace: ''
+
+- name: osconfig | setup-kernel-parameters | remove existing iommu
+  become: yes
+  replace:
+    dest: /etc/default/grub
+    regexp: '\s?iommu=\w+'
+    replace: ''
+
+- name: osconfig | setup-kernel-parameters | set intel_iommu and iommu
+  become: yes
+  lineinfile:
+    dest: /etc/default/grub
+    backrefs: True
+    state: present
+    regexp: 'GRUB_CMDLINE_LINUX="(.*)"'
+    line: 'GRUB_CMDLINE_LINUX="\1 intel_iommu=on iommu=pt"'
+  when:
+    network_pci_pt_sriov_interfaces is defined or {{ dpdk_enable_iommu }}
+
+- name: osconfig | setup-kernel-parameters |
+    set intel_iommu and iommu when GRUB_CMDLINE_LINUX is not found
+  become: yes
+  lineinfile:
+    dest: /etc/default/grub
+    line: 'GRUB_CMDLINE_LINUX="intel_iommu=on iommu=pt"'
+  when:
+    (network_pci_pt_sriov_interfaces is defined or {{ dpdk_enable_iommu }}) and check_attr.rc != 0
+
+- name: osconfig | setup-kernel-parameters | apt install kdump-tools
+  become: yes
+  apt:
+    pkg: kdump-tools
+    force: yes
+  when: ansible_os_family == 'Debian'
+
+- name: osconfig | setup-kernel-parameters | yum install kexec-tools
+  become: yes
+  yum:
+    pkg: kexec-tools
+  when: ansible_os_family == 'RedHat'
+
+- name: osconfig | setup-kernel-parameters | configure kdump settings
+  become: yes
+  copy:
+    src: kdump_config
+    dest: /etc/default/kdump-tools
+  register: kdump_mod
+  when: ansible_os_family == 'Debian'
+
+- name: osconfig | setup-kernel-parameters | restart kdump-tools
+  become: yes
+  service:
+    name: kdump-tools
+    state: restarted
+  when: kdump_mod.changed and ansible_os_family == 'Debian'
+
+- name: osconfig | setup-kernel-parameters | update-grub
+  become: yes
+  command: /usr/sbin/update-grub
+  when: grub_mod.changed and ansible_os_family == 'Debian'
+
+- name: osconfig | setup-kernel-parameters | update-grub RedHat
+  become: yes
+  command: grub2-mkconfig -o /boot/grub2/grub.cfg
+  when: grub_mod.changed and ansible_os_family == 'RedHat'
+
+- name: osconfig | setup-kernel-parameters | restart kdump RedHat
+  become: yes
+  service:
+    name: kdump
+    state: restarted
+  when: ansible_os_family == 'RedHat'

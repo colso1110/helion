@@ -1,0 +1,32 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# This task sets the parameters you need to cluster a node
+# After this task if you start the node will attempt to join the cluster
+---
+- name: FND-MDB | cluster_node | Change provider to join cluster
+  become: yes
+  lineinfile:
+    dest: /etc/mysql/my.cnf
+    state: present
+    regexp: "^wsrep_provider = "
+    line: "wsrep_provider =  /usr/lib/libgalera_smm.so"
+
+- name: FND-MDB | cluster_node | Set readonly to off
+  become: yes
+  lineinfile:
+    dest: /etc/mysql/my.cnf
+    state: absent
+    regexp: "^read_only = ON"

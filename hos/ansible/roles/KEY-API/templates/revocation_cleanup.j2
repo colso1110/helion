@@ -1,0 +1,8 @@
+#! /bin/bash
+
+echo "Running revocation cleanup job"
+source {{ hlmuser_home }}/keystone.osrc
+token=`openstack token issue | grep -iw id  | cut -d'|' -f3`
+token="$(echo -e "${token}" |  tr -d  '[[:space:]]')"
+echo $token
+curl -k -H "X-Auth-Token:$token" -H "X-Subject-Token:$token" -X DELETE $OS_AUTH_URL/auth/tokens

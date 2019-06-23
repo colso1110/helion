@@ -1,0 +1,41 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: MON-TRA | ghost_processes | Copy ghosting script
+  become_user: "{{ mon_tra_service_user }}"
+  become: true
+  copy:
+    src: "{{ item }}"
+    dest: "{{ mon_tra_tools_dir }}/{{ item }}"
+    owner: "{{ mon_tra_service_user }}"
+    group: "{{ mon_tra_service_group }}"
+    mode: 0755
+  with_items:
+    - "create_ghost_process.sh"
+    - "ghost_process.sh"
+
+- name: MON-TRA | ghost_processes | Ghost processes with deferred start
+  become_user: "{{ mon_tra_service_user }}"
+  become: true
+  shell: ./create_ghost_process.sh {{ item }} 100
+  args:
+    chdir: "{{ mon_tra_tools_dir }}"
+  with_items:
+    "{{ mon_tra_deferred_start_monitored_processes }}"
+
+
+

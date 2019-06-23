@@ -1,0 +1,29 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# This playbook installs and performs an initial configuration of Tempest
+# tests. It is used as part of the HLM deploy playbook to install Tempest
+# on the deployer, so that it may be used by developers, deployers and CI
+- hosts: TPS-TST
+  roles:
+    - tempest
+  tasks:
+    - include: roles/tempest/tasks/install.yml
+    - include: roles/tempest/tasks/configure.yml
+
+- include: _tempest-parallel-run.yml
+  vars:
+    tempest_task: static-config.yml

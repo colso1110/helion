@@ -1,0 +1,9 @@
+#!/bin/bash
+
+
+CONFIG_DIR={{ barbican_conf_dir }}
+
+echo "Command line arguments: [$@]"
+
+echo "Barbican worker process."
+{{ barbican_bin_dir }}/python {{ barbican_bin_dir }}/barbican-worker $@

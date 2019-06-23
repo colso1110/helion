@@ -1,0 +1,65 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+    version: 2
+
+services:
+-   name: heat
+    mnemonic: HEA
+    service-class: orchestration
+    description: "Orchestration"
+
+    consumes-services:
+    -   service-name: FND-RMQ
+        relationship-vars:
+        -   name: accounts
+            vars:
+                heat:
+                -   name: username
+                    value: guest
+                -   name: password
+                    value: '%random-password%'
+                    properties:
+                        max-length: 12
+                        min-length: 8
+                        key-name: rmq_service_password
+
+    -   service-name: FND-MDB
+        relationship-vars:
+        -   name: accounts
+            vars:
+                heat:
+                -   name: username
+                    alias: mysql_admin_user
+                    value: heat
+                -   name: password
+                    alias: mysql_admin_password
+                    value: '%random-password%'
+                    properties:
+                        max-length: 12
+                        min-length: 8
+                        key-name: mysql_admin_password
+                -   name: grants
+                    value:
+                        -   priv: .*:ALL,GRANT
+                            dbname: heat
+
+        -   name: databases
+            vars:
+                heat:
+                -   name: dbname
+                    value: heat

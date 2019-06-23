@@ -1,0 +1,142 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: vmfactory-vms | image_setup | check state of the deployer image
+  become: yes
+  delegate_to: localhost
+  stat:
+    path: "{{ lookup('env','HOME') }}/{{ vmf_deployer_image }}"
+    # only need one checksum, and md5 is cheaper to calculate
+    get_checksum: no
+    get_md5: yes
+  register: vmf_deployer_image_result
+
+- name: vmfactory-vms | image_setup | fail if deployer image file doesn't exist
+  fail:
+    msg: Cannot find image file {{ vmf_deployer_image }} on localhost
+  when: not vmf_deployer_image_result.stat.exists
+
+- name: vmfactory-vms | image_setup | check state of the dist image file on host
+  become: yes
+  stat:
+    path: "{{ vmf_dest_dist_image }}"
+    # only need one checksum, and md5 is cheaper to calculate
+    get_checksum: no
+    get_md5: yes
+  register: vmf_dest_dist_image_result
+
+# copy newer image from deployer if different than existing image
+- name: vmfactory-vms | image_setup | copy deployer image to dist image
+  become: yes
+  copy:
+    src: "{{ lookup('env','HOME') }}/{{ vmf_deployer_image }}"
+    dest: "{{ vmf_dest_dist_image }}"
+    mode: 0664
+  when: not vmf_dest_dist_image_result.stat.exists or
+        (vmf_dest_dist_image_result.stat.md5 != vmf_deployer_image_result.stat.md5)
+  register: vmf_copy_to_dist_image_result
+
+# delete customised image if we actually copied an image from deployer
+- name: vmfactory-vms | image_setup | remove customised image if dist image updated
+  become: yes
+  file:
+    state: absent
+    path: "{{ vmf_dest_image }}"
+  when: vmf_copy_to_dist_image_result | changed
+
+# if the customised image doesn't exist we want to generate it
+- name: vmfactory-vms | image_setup | check if customised image exists
+  become: yes
+  stat:
+    path: "{{ vmf_dest_image }}"
+    # only care about existence here, no need for checksums
+    get_checksum: no
+    get_md5: no
+  register: vmf_dest_image_result
+
+- name: vmfactory-vms | image_setup | create a temporary directory
+  become: yes
+  command: mktemp -d
+  register: vmf_vm_tmpdir_result
+  when: not vmf_dest_image_result.stat.exists
+
+- name: vmfactory-vms | image_setup | generate account setup script
+  become: yes
+  template:
+    src: account_setup.bash.j2
+    dest: "{{ vmf_vm_tmpdir_result.stdout }}/setup"
+    mode: 0600
+  when: not vmf_dest_image_result.stat.exists
+
+- name: vmfactory-vms | image_setup | extract password from /etc/shadow
+  become: yes
+  shell: |
+    set -e
+    grep "^{{ vmf_vm_ansible_user }}:" /etc/shadow | \
+        cut -d: -f2 > \
+        "{{ vmf_vm_tmpdir_result.stdout }}/passwd"
+  when: not vmf_dest_image_result.stat.exists
+
+# using cp --sparse=always rather than qemu-img convert to copy image
+# here as it seems to result in a smaller size for the copied image
+- name: vmfactory-vms | image_setup | create temporary image to customise
+  become: yes
+  command: |
+    cp --sparse=always {{ vmf_dest_dist_image }} {{ vmf_dest_image }}.tmp
+  when: not vmf_dest_image_result.stat.exists
+
+- name: vmfactory-vms | image_setup | rename qcow2 user account if necessary
+  become: yes
+  command:
+    virt-customize
+      --add {{ vmf_dest_image }}.tmp
+      --no-network
+      --upload "{{ vmf_vm_tmpdir_result.stdout }}/setup:{{ vmf_vm_setup_script }}"
+      --upload "{{ vmf_vm_tmpdir_result.stdout }}/passwd:{{ vmf_vm_passwd_file }}"
+      --run-command 'bash -e /tmp/setup_account'
+      --scrub {{ vmf_vm_passwd_file }}
+      --scrub {{ vmf_vm_setup_script }}
+  register: vmf_vm_virt_customize_result
+  when: not vmf_dest_image_result.stat.exists
+  ignore_errors: True
+
+- name: vmfactory-vms | image_setup | rename temporary customised image to final name
+  become: yes
+  command:
+    mv {{ vmf_dest_image }}.tmp {{ vmf_dest_image }}
+  when: vmf_vm_virt_customize_result | success
+
+- name: vmfactory-vms | image_setup | remove possibly broken image on failure
+  become: yes
+  file:
+    state: absent
+    path: "{{ vmf_dest_image }}.tmp"
+  when: vmf_vm_virt_customize_result | failed
+
+- name: vmfactory-vms | image_setup | remove temporary directory
+  become: yes
+  file:
+    state: absent
+    path: "{{ vmf_vm_tmpdir_result.stdout }}"
+  when: vmf_vm_tmpdir_result | success
+
+- name: vmfactory-vms | image_setup | report virt-customize failure
+  fail:
+    msg: |
+      virt-customize failed to setup qcow2 image correctly:
+      {{ vmf_vm_virt_customize_result.stdout }}
+      {{ vmf_vm_virt_customize_result.stderr }}
+  when: vmf_vm_virt_customize_result | failed

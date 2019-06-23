@@ -1,0 +1,80 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: ../../eon-common/tasks/_set_directories.yml
+  vars:
+    eon_install_package_result: "{{ eon_conductor_install_result }}"
+
+- name: eon-conductor | configure | get the hlinux server on deployer
+  include: ../../../roles/cobbler/tasks/set-vars.yml
+
+- name: eon-conductor | configure | get public ssh key of deployer
+  command: cat {{ hlm_user_home }}/.ssh/id_rsa.pub
+  register: sshkeyoutput_result
+  delegate_to: localhost
+
+- name: eon-conductor | configure | save public ssh key of deployer
+  set_fact:
+    deployer_ssh_pub_key: "{{ sshkeyoutput_result.stdout }}"
+
+- name: eon-conductor | configure | copy eon-encrypt to /usr/bin folder
+  become: yes
+  copy:
+    src: "{{ eon_encrypt_file }}"
+    dest: "{{ eon_encrypt_path }}"
+    mode: 0775
+
+- name: eon-conductor | configure | copy eon-encrypt to /usr/bin of HLM node
+  delegate_to: localhost
+  become: yes
+  copy:
+    src: "{{ eon_encrypt_file }}"
+    dest: "{{ eon_encrypt_path }}"
+    mode: 0775
+
+- name: eon-conductor | configure | write eon.conf
+  include: ../../eon-common/tasks/_write_conf.yml
+  src: "eon.conf.j2"
+  dest: "{{ eon_service_conf_dir }}/{{ eon_common }}.conf"
+
+- name: eon-conductor | configure | save eon.conf status
+  set_fact:
+    write_eon_conf: "{{ write_conf_result }}"
+
+- name: eon-conductor | configure | write eon-conductor.conf
+  include: ../../eon-common/tasks/_write_conf.yml
+  src: "../../eon-conductor/templates/conductor.conf.j2"
+  dest: "{{ eon_service_conf_dir }}/{{ eon_component }}.conf"
+
+- name: eon-conductor | configure | save eon-conductor.conf status
+  set_fact:
+    write_conductor_conf: "{{ write_conf_result }}"
+
+- name: eon-conductor | configure | notify on eon.conf change
+  shell: echo "notify change"
+  register: hlm_notify_eon_conductor_restart_required
+  when: write_eon_conf.changed or write_conductor_conf.changed
+
+- name: eon-conductor | configure | Create eon-conductor-logging.conf
+  become: yes
+  template:
+    src: "../../eon-common/templates/logging.conf.j2"
+    dest: "{{ eon_service_conf_dir }}/eon-conductor-logging.conf"
+    owner: "{{ eon_user }}"
+    group: "{{ eon_group }}"
+    mode: 0400
+  register: hlm_notify_eon_conductor_restart_required

@@ -1,0 +1,57 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: vsalm | _postcreate-configure-cluster | Modify cluster to add or remove VSA node(s)
+  shell:
+    sshpass -p {{ vsa_mg_password }} ssh -o StrictHostKeyChecking=no -p 16022 -l
+    {{ vsa_mg_user }} {{ vsa_command_node_ip }} modifyCluster clustername={{
+    vsa_clustername }} node="{{ vsa_node_ips }}" vip="{{ vsa_cluster_ip }};{{
+    vsa_netmask }}" prompt=0
+  no_log: True
+  register: vsa_configure_cluster_result
+  ignore_errors: yes
+
+- name: vsalm | _postcreate-configure-cluster | Fail the play if configuration of cluster failed
+  fail:
+    msg: '{{ vsa_configure_cluster_result }}'
+  when: vsa_configure_cluster_result|failed
+
+- name: vsalm | _postcreate-configure-cluster | Display configuration status of cluster
+  debug:
+    msg: "Cluster modification status -
+      {{ vsa_configure_cluster_result.stdout }}"
+  when: vsa_configure_cluster_result.changed
+
+- name: vsalm | _postcreate-configure-cluster | Modify management group to add or remove VSA node(s)
+  shell:
+    sshpass -p {{ vsa_mg_password }} ssh -o StrictHostKeyChecking=no -p 16022 -l
+    {{ vsa_mg_user }} {{ vsa_command_node_ip }} modifyGroup node="{{
+    vsa_node_ips }}" prompt=0
+  no_log: True
+  register: vsa_configure_mg_result
+  ignore_errors: yes
+
+- name: vsalm | _postcreate-configure-cluster | Fail the play if configuration of management group failed
+  fail:
+    msg: '{{ vsa_configure_mg_result }}'
+  when: vsa_configure_mg_result|failed
+
+- name: vsalm | _postcreate-configure-cluster | Display configuration status of management group
+  debug:
+    msg: "Managment group modification status -
+      {{ vsa_configure_mg_result.stdout }}"
+  when: vsa_configure_mg_result.changed

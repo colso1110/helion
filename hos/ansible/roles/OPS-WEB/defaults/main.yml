@@ -1,0 +1,107 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Ops Console Web Configuration
+
+# Configuration file/directory
+ops_console_config_dir: /etc/leia
+ops_console_config: "{{ ops_console_config_dir }}/config.py"
+
+# Log files
+ops_console_log_dir: /var/log/ops-console
+ops_console_error_log: "{{ ops_console_log_dir }}/error.log"
+ops_console_access_log: "{{ ops_console_log_dir }}/access.log"
+
+# Log level
+ops_console_loglevel: "{{ helion_loglevel | default('INFO') }}"
+
+# OS Account
+ops_console_os_user: opscon
+ops_console_os_group: opscon
+ops_console_centralized_log_group: adm
+
+# Keystone configuration
+keystone_service_tenant: "{{ KEY_API.vars.keystone_service_tenant }}"
+keystone_private_url: "{{ KEY_API.advertises.vips.private[0].url }}"
+
+# urls
+opsconsole_url_path: "/api/v1/"
+
+# Virtual environment
+ops_console_venv: "{{ 'ops-console-web' | venv_dir }}"
+ops_console_site_packages: "{{ ops_console_venv }}/lib/python2.7/site-packages"
+
+# Opscon UI config
+kibana_vip_url: "{{ LOG_SVR.advertises.vips.private[0].url }}"
+
+# Points to Horizon UI, but there are cases in Cloudsystem, where
+# there are no Openstack components, such as Horizon
+tenant_console_vip_url: "{% if HZN_WEB is defined -%}
+                             {{ HZN_WEB.advertises.vips.private[0].url }}
+                         {%- endif %}"
+
+# Database configuration
+ops_console_schema_path: "{{ ops_console_site_packages }}/leia/schema.sql"
+ca_file: "/etc/ssl/certs/ca-certificates.crt"
+
+mysql:
+  host: >
+    {{ OPS_WEB | item('consumes_FND_MDB.vips.private[0].host',
+       default=( OPS_WEB | item('consumes_FND_MDB.vips.public[0].host') )) }}
+  port: 3306
+  ops_user: "{% if OPS_WEB.consumes_FND_MDB.vars.accounts.operations.username is defined -%}
+                 {{ OPS_WEB.consumes_FND_MDB.vars.accounts.operations.username }}
+             {%- else -%}
+                 {{ OPS_WEB.consumes_FND_MDB.vars.mysql_user }}
+             {%- endif %}"
+  ops_password: "{% if OPS_WEB.consumes_FND_MDB.vars.accounts.operations.password is defined -%}
+                     {{ OPS_WEB.consumes_FND_MDB.vars.accounts.operations.password }}
+                 {%- else -%}
+                     {{ OPS_WEB.consumes_FND_MDB.vars.mysql_password }}
+                 {%- endif %}"
+  ops_db: "{{ OPS_WEB.consumes_FND_MDB.vars.databases.operations.dbname }}"
+  use_ssl: "{{ OPS_WEB.consumes_FND_MDB.vips.private[0].use_tls }}"
+
+# detect and set install env
+opsconsole_install_env: "{% if global.pass_through.install_env is defined and global.pass_through.install_env == 'cs'-%}
+                            cs
+                         {%- else -%}
+                            hos
+                         {%- endif %}"
+
+install_env_version: "{% if global.pass_through.install_version is defined -%}
+                        {{ global.pass_through.install_version }}
+                      {%- else -%}
+                        hos
+                      {%- endif %}"
+
+is_foundation_installed_env: "{% if global.pass_through.is_foundation_installed is defined -%}
+                                 {{ global.pass_through.is_foundation_installed }}
+                              {%- else -%}
+                                 false
+                              {%- endif %}"
+
+# Static Web Server Configuration
+ops_console_site_name: ops-console
+ops_console_ui_host: "{{ host.bind.OPS_WEB.internal.ip_address }}"
+ops_console_ui_port: "{{ host.bind.OPS_WEB.internal.port }}"
+ops_console_web_root: "/var/www/{{ ops_console_site_name }}"
+
+ops_console_wsgi_dir:  "/var/www/{{ ops_console_site_name }}/api"
+ops_console_wsgi: "{{ ops_console_wsgi_dir }}/app.wsgi"
+
+ops_console_private_url: "{{ OPS_WEB.advertises.vips.private[0].url }}"

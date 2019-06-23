@@ -1,0 +1,42 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: barbican-common | _set_directories |
+    set service etc directory - configure
+  set_fact:
+    barbican_bin_dir:
+      "{{ component_service_name | bin_dir(install_package_result.version) }}"
+    barbican_conf_dir:
+      "{{ component_service_name | config_dir(install_package_result.version)
+      }}/{{ service }}"
+    barbican_share_dir:
+      "{{ component_service_name | share_dir(install_package_result.version) }}"
+    barbican_venv_dir:
+      "{{ component_service_name | venv_dir(install_package_result.version) }}"
+  when: install_package_result.version is defined
+
+- name: barbican-common | _set_directories |
+    set service etc directory - reconfigure
+  set_fact:
+    barbican_bin_dir:
+      "{{ component_service_name | bin_dir() }}"
+    barbican_conf_dir:
+      "{{ component_service_name | config_dir() }}/{{ service }}"
+    barbican_share_dir:
+      "{{ component_service_name | share_dir() }}"
+    barbican_venv_dir: "{{ component_service_name | venv_dir }}"
+  when: install_package_result.version is undefined

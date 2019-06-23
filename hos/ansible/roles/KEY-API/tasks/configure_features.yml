@@ -1,0 +1,41 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: _configure_deployment_options.yml
+
+- include: _configure_ldap.yml
+  when: keystone_domainldap_conf is defined
+
+- include: _configure_ldap_certs.yml
+  when: keystone_domainldap_certs is defined
+
+- include: _configure_auditing.yml
+
+- include: _configure_fernet.yml
+  when:  keystone_configure_fernet
+
+- include: _configure_federation_sp.yml
+  when: keystone_trusted_idp is defined and keystone_trusted_idp == "k2k"
+
+- include: _configure_k2k_idp.yml
+  when:  keystone_k2k_idp_conf is defined
+
+- include: _configure_websso_with_adfs.yml
+  when: keystone_trusted_idp is defined and keystone_trusted_idp == "adfs"
+
+- include: _configure_x509auth.yml
+  when: keystone_x509auth_conf is defined

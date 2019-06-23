@@ -1,0 +1,132 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+# Making Keystone changes to set up ceilometer API endpoint:
+# Refer: http://docs.openstack.org/juno/install-guide/install/\
+#        apt/content/ceilometer-controller-install.html
+# Step 5 & 6
+#
+---
+- name: CEI-API | keystone_conf | Get a domain scoped token
+  keystone_v3:
+    endpoint: "{{ id_admin_uri }}/{{ service_config_keystone_ver }}"
+    login_username: "{{ keystone.admin_user }}"
+    login_password: "{{ keystone.admin_password }}"
+    login_user_domain_name: "{{ keystone.default_domain_name }}"
+    login_domain_name: "{{ keystone.default_domain_name }}"
+    action: "token_get"
+  run_once: true
+  register: domain_scoped_token_result
+
+- name: CEI-API | keystone_conf | Create Admin User
+  become: yes
+  keystone_v3:
+    user_name: ceilometer
+    user_password: "{{ id_password }}"
+    user_domain_name: "Default"
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ id_admin_uri }}/{{ service_config_keystone_ver }}"
+    action: "create_user"
+  register: result_ceilkey_result
+  until : not result_ceilkey_result|failed
+  retries: 6
+  delay: 5
+  run_once: true
+
+- name: CEI-API | keystone_conf | Apply admin Role to admin user service project
+  become: yes
+  keystone_v3:
+    user_name: ceilometer
+    user_domain_name: "Default"
+    project_domain_name: "Default"
+    project_name: "{{ id_service_tenant }}"
+    role_name: "{{ id_admin_role }}"
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ id_admin_uri }}/{{ service_config_keystone_ver }}"
+    action: "grant_project_role"
+  run_once: true
+
+- name: CEI-API | keystone_conf | Apply admin Role to admin user admin project
+  become: yes
+  keystone_v3:
+    user_name: ceilometer
+    user_domain_name: "Default"
+    project_domain_name: "Default"
+    project_name: "{{ keystone.admin_tenant }}"
+    role_name: "{{ id_admin_role }}"
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ id_admin_uri }}/{{ service_config_keystone_ver }}"
+    action: "grant_project_role"
+  run_once: true
+
+- name: CEI-API | keystone_conf | Search if Reseller admin role exists
+  keystone_v3:
+    role_name: ResellerAdmin
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ id_admin_uri }}/{{ service_config_keystone_ver }}"
+    action: "find_role"
+  run_once: true
+  register: find_role_result
+
+- name: CEI-API | keystone_conf | Apply ResellerAdmin Role to admin User
+  become: yes
+  keystone_v3:
+    user_name: ceilometer
+    user_domain_name: "Default"
+    project_domain_name: "Default"
+    project_name: "{{ id_service_tenant }}"
+    role_name: ResellerAdmin
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ id_admin_uri }}/{{ service_config_keystone_ver }}"
+    action: "grant_project_role"
+  run_once: true
+  when: find_role_result.result
+
+- name: CEI-API | keystone_conf | Apply monasca-user Role to service User
+  become: yes
+  keystone_v3:
+    user_name: ceilometer
+    user_domain_name: "Default"
+    project_domain_name: "Default"
+    project_name: "{{ id_service_tenant }}"
+    role_name: monasca-user
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ id_admin_uri }}/{{ service_config_keystone_ver }}"
+    action: "grant_project_role"
+  run_once: true
+
+- name: CEI-API | keystone_conf | Search if Keystone-Observer role exists
+  keystone_v3:
+    role_name: "{{ keystone.project_observer_role }}"
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ id_admin_uri }}/{{ service_config_keystone_ver }}"
+    action: "find_role"
+  run_once: true
+  register: find_observer_role_result
+
+- name: CEI-API | keystone_conf | Apply Keystone-Observer Role to service User
+  become: yes
+  keystone_v3:
+    user_name: ceilometer
+    user_domain_name: "Default"
+    project_domain_name: "Default"
+    project_name: "{{ id_service_tenant }}"
+    role_name: "{{ keystone.project_observer_role }}"
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ id_admin_uri }}/{{ service_config_keystone_ver }}"
+    action: "grant_project_role"
+  run_once: true
+  when: find_observer_role_result.result

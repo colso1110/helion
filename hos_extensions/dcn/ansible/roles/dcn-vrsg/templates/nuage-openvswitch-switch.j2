@@ -1,0 +1,159 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# This configuration file includes the default values for Helion Openstack
+# Changes may be made to this file by customers.
+# The changes here apply to all DCN components.
+
+# This is a POSIX shell fragment -*- sh -*-
+
+# FORCE_COREFILES: If 'yes' then core files will be enabled.
+# FORCE_COREFILES=yes
+
+# OVS_CTL_OPTS: Extra options to pass to ovs-ctl. This is, for example,
+# a suitable place to specify --ovs-vswitchd-wrapper=valgrind.
+# OVS_CTL_OPTS=
+
+# OVSDB_SERVER_PRIORITY: "nice" priority at which to run ovsdb-server.
+#
+# OVSDB_SERVER_PRIORITY=-10
+
+# VSWITCHD_PRIORITY: "nice" priority at which to run ovs-vswitchd.
+# VSWITCHD_PRIORITY=-10
+
+# VSWITCHD_MLOCKALL: Whether to pass ovs-vswitchd the --mlockall option.
+# This option should be set to "yes" or "no". The default is "yes".
+# Enabling this option can avoid networking interruptions due to
+# system memory pressure in extraordinary situations, such as multiple
+# concurrent VM import operations.
+# VSWITCHD_MLOCKALL=yes
+
+# BRCOMPAT: If 'yes' and the openvswitch-brcompat package is installed, then
+# Linux bridge compatibility will be enabled.
+# BRCOMPAT=no
+
+# DELETE_BRIDGES: Delete the previously existing ones, default is "no".
+# DELETE_BRIDGES=no
+
+# PERSONALITY: vrs/vrs-g/none (default: vrs)
+PERSONALITY=vrs-g
+
+# PLATFORM: kvm/xen/esx-i. Only apply when in VRS personality
+PLATFORM={{ dcn_vrs_platform }}
+
+# DEFAULT_BRIDGE: DCN managed bridge
+DEFAULT_BRIDGE={{ dcn_vrs_bridge }}
+
+# CONNID_TYPE: This could be set to type uuid or string
+# CONNID_TYPE=
+
+# CONNID_VAL: This could be a uuid value or a string
+# CONNID_VAL=
+
+# CLIENT_KEY_PATH: SSL client key file path
+# CLIENT_KEY_PATH=
+
+# CLIENT_CERT_PATH: SSL client certificate file path
+# CLIENT_CERT_PATH=
+
+# CA_CERT_PATH: CA certificate file path
+# CA_CERT_PATH=
+
+# CONN_TYPE: ssl or tcp
+CONN_TYPE=tcp
+
+# ACTIVE_CONTROLLER: Primary controller IP. Only valid IP addresses will be
+# accepted. To delete the controller comment out the ACTIVE_CONTROLLER
+# variable below
+ACTIVE_CONTROLLER={{ dcn_vsc_active_ip }}
+#
+# STANDBY_CONTROLLER: Secondary controller IP. Only valid IP addresses
+# will be accepted. To delete the controller comment out the STANDBY_CONTROLLER
+# variable below
+STANDBY_CONTROLLER={{ dcn_vsc_passive_ip }}
+#
+# NUAGE_MONITOR_PRIORITY:
+# NUAGE_MONITOR_PRIORITY= -10
+#
+# VM_MONITOR_PRIORITY:
+# VM_MONITOR_PRIORITY= -10
+
+# TUNNEL_CACHING_ENABLED: "yes" to enable caching, "no" to disable.
+TUNNEL_CACHING_ENABLED=no
+
+# MANAGEMENT_INTERFACE: Management interface (example: eth0)
+# MANAGEMENT_INTERFACE=eth0
+
+#Sample Mcast Underlay interface and range configuration. 1--4
+# MCAST_UNDERLAY_INTF_1: mcast interface
+
+# MCAST_UNDERLAY_INTF_RANGE_1: mcast interface range
+
+# DHCP_RELAY_ADDRESS: IP Address of the DHCP relay server
+#DHCP_RELAY_ADDRESS=
+
+# VRSG_PEER_IP: Applies only when in GateWay mode
+# VRSG_PEER_IP=0.0.0.0
+# FLOW_EVICTION_THRESHOLD: Number of flows at which eviction from
+# kernel flow table will be triggered (default : 2500)
+#FLOW_EVICTION_THRESHOLD=
+# DATAPATH_SYNC_TIMEOUT: Datapath flow stats sync timeout
+# specified in milliseconds (default: 1000)
+#DATAPATH_SYNC_TIMEOUT=
+
+# UUID: uuid assigned to nsg
+UUID=
+
+# CPE_ID: 4 byte id assigned to nsg
+CPE_ID=
+
+# DATAPATH_ID: Datapath id of the nsg
+DATAPATH_ID=
+
+# UPLINK_ID: uplink id assigned to nsg
+UPLINK_ID=
+
+# NETWORK_UPLINK_INTF: uplink interface of the host
+NETWORK_UPLINK_INTF=
+
+# NETWORK_NAMESPACE: namespace to create pat interfaces, iptables & route rules
+NETWORK_NAMESPACE=
+
+# MCAST_UNDERLAY_TX_INTF: mcast tx interface
+#MCAST_UNDERLAY_TX_INTF=
+
+# STATS_COLLECTOR_ADDRESS: IP Address of the STATS relay server (used only in VNS setup)
+#STATS_COLLECTOR_ADDRESS=
+
+# STATS_COLLECTOR_PORT: ssl port of the STATS relay server (used only in VNS setup)
+#STATS_COLLECTOR_PORT=
+
+# SKB_LRO_MOD_ENABLED: enable or disable LRO modification in skb for
+# improving performance. Allowed values: 'yes' or 'no'
+SKB_LRO_MOD_ENABLED=no
+
+# BRIDGE_MTU: Configurable bridge MTU
+#BRIDGE_MTU=
+
+# DEFAULT_LOG_LEVEL: default log level at openvswitch start
+# DEFAULT_LOG_LEVEL=any:file:dbg
+
+NUAGE_METADATA_AGENT_START_WITH_OVS=false
+
+
+# Add additional options here
+
+
+# Do not add anything after this line

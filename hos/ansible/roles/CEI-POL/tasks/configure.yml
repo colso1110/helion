@@ -1,0 +1,65 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: ../../_CEI-CMN/tasks/configure.yml
+  vars:
+    ceilometer_conf_dir: "{{ ceilometer_polling_conf_dir }}"
+
+- name: CEI-POL | configure | Register ceilometer polling restart
+  command: /bin/true
+  register: hlm_notify_ceilometer_polling_restart_required
+  when: hlm_notify_ceilometer_common_restart_required.changed
+
+- include: ../../_CEI-CMN/tasks/_write_conf.yml
+  src: "../../CEI-POL/templates/polling.conf.j2"
+  dest: "{{ ceilometer_polling_conf_dir }}/polling.conf"
+
+- name: CEI-POL | configure | configure polling.conf
+  command: /bin/true
+  register: hlm_notify_ceilometer_polling_restart_required
+  when: write_conf_result.changed
+
+- include: pipeline_configure.yml
+
+- include: ../../_CEI-CMN/tasks/_write_conf.yml
+  src: "../../CEI-POL/templates/polling-logging.conf.j2"
+  dest: "{{ ceilometer_polling_conf_dir }}/polling-logging.conf"
+
+- name: CEI-POL | configure | configure polling-logging.conf
+  command: /bin/true
+  register: hlm_notify_ceilometer_polling_restart_required
+  when: write_conf_result.changed
+
+- name: CEI-POL | configure | create ceilometer-polling log
+  become: yes
+  file:
+    path: "{{ ceilometer_log_dir }}/{{ item }}"
+    state: touch
+    owner: "{{ ceilometer_user }}"
+    group: "{{ ceilometer_log_group }}"
+    mode: 0640
+  with_items:
+    - ceilometer-polling.log
+    - ceilometer-polling-json.log
+  register: hlm_notify_ceilometer_polling_restart_required
+
+- name: CEI-POL | configure | Enable the ceilometer Polling agent
+    services to start on boot
+  become: yes
+  command: systemctl enable ceilometer-polling
+  register: hlm_notify_ceilometer_polling_restart_required
+

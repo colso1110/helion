@@ -1,0 +1,47 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+## upgrade is not yet implemented as this is the initial release
+
+- include: stop.yml
+
+- include: drop_db.yml
+
+- name: MON-TRA | upgrade | Remove old scripts from tools dir
+  become: True
+  file:
+    path: "{{ mon_tra_tools_dir }}/{{ item }}"
+    state: absent
+  with_items:
+    - "create_zip.py"
+    - "generate_ddl.sh"
+    - "generate_ddl.py"
+    - "pre_transform_specs_template.sql"
+    - "transform_specs_template.sql"
+
+- name: MON-TRA | upgrade | Remove old sql schema
+  become: True
+  file:
+    path: "{{ mon_tra_schema_file }}"
+    state: absent
+
+- include: install.yml
+
+- include: configure.yml
+
+- include: start.yml
+
+- include: monasca_configure.yml

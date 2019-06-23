@@ -1,0 +1,108 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# RabbitMQ 3.4.3-3.6.0 workaround rule.
+- hosts: FND-RMQ
+  gather_facts: no
+  max_fail_percentage: 0
+  roles:
+    - iptables
+    - rabbitmq
+  tasks:
+    - include: roles/rabbitmq/tasks/write-configuration.yml
+      when: (not
+              ((hlm_notify_rabbitmq_major_change | default(false)) and
+              hlm_notify_rabbitmq_major_change.changed))
+
+    - name: rabbitmq | _rabbitmq-minor-change | Set fact rabbitmq_minor_change
+      set_fact:
+        _rabbitmq_minor_change: "{{
+          (not
+            ((hlm_notify_rabbitmq_major_change | default(false)) and
+              hlm_notify_rabbitmq_major_change.changed)) and
+          (((hlm_notify_rabbitmq_reset_required | default(false)) and
+            hlm_notify_rabbitmq_reset_required.changed) or
+            ((hlm_notify_rabbitmq_restart_required | default(false)) and
+            hlm_notify_rabbitmq_restart_required.changed)) }}"
+
+    # Stop messages entering a node by blocking the '*_listener' ports. Need
+    # to make the cluster go silent to reduce the likelihood of getting an
+    # Erlang Mnesia held lock (OTP-13284).
+    - include: roles/iptables/tasks/iptables-add.yml
+      vars:
+        iptables_chain: "{{ rabbitmq_iptables_chain }}"
+        iptables_ip_port: "{{ rabbitmq_bind_addresses }}"
+      when: (_rabbitmq_minor_change | bool)
+
+
+- hosts: FND-RMQ
+  gather_facts: no
+  max_fail_percentage: 0
+  # IMPORTANT: This is performed one host at a time to keep cluster running.
+  serial: 1
+  roles:
+    - iptables
+    - rabbitmq
+  tasks:
+    # Stop messages entering a node by blocking the '*_listener' ports. Need
+    # to do this here to stop traffic entering a node that we are
+    # reconfiguring. This gives early indication to the proxy to move any vips
+    # pointing at the node.
+    - include: roles/iptables/tasks/iptables-add.yml
+      vars:
+        iptables_chain: "{{ rabbitmq_iptables_chain }}"
+        iptables_ip_port: "{{ rabbitmq_bind_addresses }}"
+      when: (_rabbitmq_minor_change | bool)
+
+    - include: roles/rabbitmq/tasks/stop.yml
+      when: (_rabbitmq_minor_change | bool)
+
+    - include: roles/rabbitmq/tasks/install.yml
+      when: (_rabbitmq_minor_change | bool) and
+            ((hlm_notify_rabbitmq_restart_required | default(false)) and
+              hlm_notify_rabbitmq_restart_required.changed)
+
+    - include: roles/rabbitmq/tasks/start.yml
+      when: (_rabbitmq_minor_change | bool)
+
+    # Remove block on '*_listener' ports.
+    - include: roles/iptables/tasks/iptables-delete.yml
+      vars:
+        iptables_chain: "{{ rabbitmq_iptables_chain }}"
+        iptables_ip_port: "{{ rabbitmq_bind_addresses }}"
+      when: (not
+              ((hlm_notify_rabbitmq_workaround_required | default(false)) and
+                hlm_notify_rabbitmq_workaround_required.changed)) and
+            (_rabbitmq_minor_change | bool)
+
+    - include: roles/rabbitmq/tasks/status.yml
+      when: (_rabbitmq_minor_change | bool)
+
+# RabbitMQ 3.4.3-3.6.0 workaround rule.
+- hosts: FND-RMQ
+  gather_facts: no
+  max_fail_percentage: 0
+  roles:
+    - iptables
+    - rabbitmq
+  tasks:
+    - include: roles/iptables/tasks/iptables-delete.yml
+      vars:
+        iptables_chain: "{{ rabbitmq_iptables_chain }}"
+        iptables_ip_port: "{{ rabbitmq_bind_addresses }}"
+      when: (hlm_notify_rabbitmq_workaround_required | default(false)) and
+            hlm_notify_rabbitmq_workaround_required.changed and
+            (_rabbitmq_minor_change | bool)

@@ -1,0 +1,43 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+cinder_component: cinder-api
+cinder_service_data: "{{ CND_API }}"
+cinder_service_group_name: "{{ verb_hosts.CND_API }}"
+
+# flag to track if venv activation is required during start
+cinder_api_activate_required: false
+
+# Default service directories
+cinder_api_conf_dir: "{{ 'cinder-api' | config_dir() }}"
+cinder_api_venv_share_dir: "{{ 'cinder-api' | share_dir() }}/cinder"
+
+# Files that need to be symlinked from versioned conf dir to
+# global conf dir
+cinder_api_conf_symlinks:
+  - { dst: '{{ cinder_dir }}/cinder.conf', src: 'cinder.conf' }
+
+# Cinder API auditing settings
+cinder_api_audit_enable: "{{ CND.audit.enabled }}"
+cinder_audit_log_base_location: "{{ CND.audit.dir }}"
+cinder_audit_notification_driver: log
+
+cinder_public_endpoint: "{{ CND_API.advertises.vips.public[0].url }}"
+
+cinder_glance_url: "{% if CND_API.consumes_GLA_API is defined %}{{ CND_API.consumes_GLA_API.vips.private[0].url }}{% endif %}"
+cinder_keymgr_url: "{% if CND_API.consumes_KEYMGR_API is defined %}{{ CND_API.consumes_KEYMGR_API.vips.private[0].url }}{% endif %}"
+

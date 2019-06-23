@@ -1,0 +1,86 @@
+{#
+#
+# (c) Copyright 2015, 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+{{ interface_file_marker }}
+allow-ovs {{ item.device }}
+{% include 'if_ipinfo_Debian.j2' %}
+  pre-up ovs-vsctl --timeout=5 -- --may-exist add-br {{ item.device }} \
+{% if item.hwaddr is defined %}
+                               -- set bridge {{ item.device }} other-config:hwaddr={{ item.hwaddr }} \
+{% endif %}
+                               -- set bridge {{ item.device }} datapath_type={{ item.datapath_type }} || true
+{% if item.bond_mode is defined %}
+  pre-up ovs-vsctl --timeout=5 -- --may-exist add-bond {{ item.device }} {{ item.port }}
+   {%- for slave in item.bond_slaves %}
+ {{ slave }}
+   {%- endfor %}
+ bond_mode={{ item.bond_mode }}
+  {%- if item.bond_options is defined %}
+  {%- for key, value in item.bond_options.iteritems() %}
+  {%- if key == "lacp" or key == "bond_updelay" or key == "bond_downdelay"  %}
+ {{ key }}={{ value }}
+  {%- else %}
+ other-config:{{ key }}={{ value }}
+  {%- endif %}
+  {%- endfor %}
+  {%- endif %}
+  {%- if item.dpdk_port is defined %}
+   {%- for slave in item.bond_slaves %}
+ -- set Interface {{ slave }} type=dpdk
+   {%- endfor %}
+  {%- endif %}
+ -- || true
+
+{% if item.dpdk_port is not defined %}
+{% for slave in item.bond_slaves %}
+  pre-up ip link set {{ slave }} up
+  {%- if item.interface_mtu is defined %}
+ mtu {{ item.interface_mtu }}
+  {%- endif %}
+ || true
+  down ip link set {{ slave }} down || true
+{% endfor %}
+{%- endif %}
+  down ovs-vsctl --timeout=5 -- --if-exists del-port {{ item.device }} {{ item.port }} -- || true
+{% elif item.vlanid is defined %}
+  pre-up ovs-vsctl --timeout=5 -- --may-exist add-br {{ item.port }} || true
+  pre-up ovs-vsctl --timeout=5 -- --may-exist add-port {{ item.device }} u-{{ item.port }}-{{ item.vlanid }} \
+                               -- set interface u-{{ item.port }}-{{ item.vlanid }} type=patch options:peer=l-{{ item.port }}-{{ item.vlanid }} \
+                               -- --may-exist add-port {{ item.port }} l-{{ item.port }}-{{ item.vlanid }} tag={{ item.vlanid }} \
+                               -- set interface l-{{ item.port }}-{{ item.vlanid }} type=patch options:peer=u-{{ item.port }}-{{ item.vlanid }} || true
+
+  down ovs-vsctl --timeout=5 -- --if-exists del-port {{ item.port }} l-{{ item.port }}-{{ item.vlanid }} \
+                             -- --if-exists del-port {{ item.device }} u-{{ item.port }}-{{ item.vlanid }} || true
+{% else %}
+{% if item.port is defined %}
+  pre-up ip addr flush dev {{ item.port }} || true
+{% if item.dpdk_port is defined %}
+  pre-up ovs-vsctl --timeout=5 -- --may-exist add-port {{ item.device }} {{ item.port }} -- set Interface {{ item.port }} type=dpdk -- || true
+{% else %}
+  pre-up ovs-vsctl --timeout=5 -- --may-exist add-port {{ item.device }} {{ item.port }} -- || true
+{% if item.force_interface_mtu is defined and item.interface_mtu is defined %}
+  post-up ip link set dev {{ item.port }} mtu {{ item.interface_mtu }} || true
+{% endif %}
+{% endif %}
+  pre-up ifconfig {{ item.port }} up || true
+  down ovs-vsctl --timeout=5 -- --if-exists del-port {{ item.device }} {{ item.port }} -- || true
+{% endif %}
+{% endif %}
+{% if item.mtu is defined %}
+  post-up ip link set dev {{ item.device }} mtu {{ item.mtu }} || true
+{% endif %}
+{% include 'if_routes_Debian.j2' %}

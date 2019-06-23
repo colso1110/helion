@@ -1,0 +1,46 @@
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+---
+network_pkgs:
+  - libselinux-python
+  - bridge-utils
+  - iputils
+
+openvswitch_packages:
+  - openvswitch
+
+openvswitch_packages_dpdk: []
+
+linuxbridge_packages:
+  - bridge-utils
+
+disable_svcs:
+  - NetworkManager
+
+net_path: "/etc/sysconfig/network-scripts"
+shadow_dir: "/etc/sysconfig/.shadow"
+
+ovsd_cve_name: "ovs-vswitchd.CVE-2016-2074"
+switchd:
+  file_path: "/usr/sbin/ovs-vswitchd"
+  orig_checksum: "8a7fa0b8be60d1f5c049e56b84a32804ecaed79e"
+  cve_name: "{{ ovsd_cve_name }}"
+  cve_path: "/usr/sbin/{{ ovsd_cve_name }}"
+
+dpdk_enabled: "False"
+dpdk_eal_opts: ""
+dpdk_core_mask: ""
+dpdk_pmd_mask: ""
+dpdk_rx_queues: ""
+dpdk_bindings: ""
+dpdk_drivers: ""

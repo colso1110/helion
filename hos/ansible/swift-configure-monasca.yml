@@ -1,0 +1,74 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# The monasca agent tasks need to run after swift has started
+- hosts: SWF-PRX:SWF-ACC:SWF-CON:SWF-OBJ:&MON-AGN
+  no_log: True
+  roles:
+    - {role: monasca-agent, run_mode: Use}
+    - swift-monitor
+    - swiftlm-aggregate
+    - access-tailer
+  tasks:
+  - include: roles/swift-monitor/tasks/monasca_custom_plugins.yml
+    become: yes
+  - include: roles/swift-monitor/tasks/monasca_agents.yml
+    become: yes
+    vars:
+      swiftlm_check_metrics_files:
+        "{{ swiftlm_scan_metrics }}"
+    when: swiftlm_uptime_monitor_enabled is not defined
+  - include: roles/swift-monitor/tasks/monasca_agents.yml
+    become: yes
+    vars:
+      swiftlm_check_metrics_files:
+        "{{ swiftlm_uptime_monitor_stats_file }},{{ swiftlm_aggregated_metrics }},{{ access_tailer_metrics }},{{ swiftlm_scan_metrics }}"
+    when: swiftlm_uptime_monitor_enabled is defined
+
+- hosts: SWF-PRX:&MON-AGN
+  no_log: True
+  roles:
+    - {role: monasca-agent, run_mode: Use}
+    - monasca-alarm-definition
+    - swift-monitor
+  tasks:
+  - include: roles/swift-monitor/tasks/monasca_alarms.yml
+    become: yes
+
+- hosts: SWF-PRX:&MON-AGN
+  roles:
+  - SWF-PRX
+  tasks:
+  - include: roles/SWF-PRX/tasks/local_monitor.yml
+
+- hosts: SWF-ACC:&MON-AGN
+  roles:
+  - SWF-ACC
+  tasks:
+  - include: roles/SWF-ACC/tasks/local_monitor.yml
+
+- hosts: SWF-CON:&MON-AGN
+  roles:
+  - SWF-CON
+  tasks:
+  - include: roles/SWF-CON/tasks/local_monitor.yml
+
+- hosts: SWF-OBJ:&MON-AGN
+  roles:
+  - SWF-OBJ
+  tasks:
+  - include: roles/SWF-OBJ/tasks/local_monitor.yml

@@ -1,0 +1,50 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: ../../neutron-common/tasks/_set_service_directories.yml
+
+- include_vars: cms_id_ini.yml
+
+# Get the cms_id uuid from VSD, uuid is put into vsd_cms_id.ini
+- include: _run_set_and_audit_cms.yml
+
+- name: dcn-server-cms | post-configure | Get the new vsd_cms_id
+  become: yes
+  shell: ". {{ vsd_cms_id_ini_file }}; echo $cms_id"
+  register: cms_id_env
+
+- name:  dcn-server-cms | post-configure | Save the vsd_cms_id
+  set_fact:
+    dcn_vsd_cms_id: '{{ cms_id_env.stdout|trim }}'
+
+- name: dcn-server-cms | post-configure | Print the cms_id
+  debug:
+    msg: "The new cms_id UUID is '{{ dcn_vsd_cms_id }}'"
+
+# Write out the final nuage_plugin.ini file -- with the correct cms_id value
+- include: ../../neutron-common/tasks/_write_conf.yml
+  src: "../../dcn-common/templates/nuage_plugin.ini.j2"
+  dest: "nuage_plugin.ini"
+
+- name: dcn-server-cms | configure |
+    Notify neutron-server to restart if nuage_plugin.ini changed
+  command: /bin/true
+  register:  hlm_notify_neutron_server_restart_required
+  when: write_conf_result.changed == true
+
+# Write out the other neutron-server related config files
+- include: ../../neutron-common/tasks/_configure_neutron_server.yml

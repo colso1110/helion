@@ -1,0 +1,53 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: _set_directories.yml
+
+- name: dcn-mda | configure | Create /etc/default/nuage-metadata-agent
+  become: yes
+  template:
+    src: "nuage-metadata-agent.j2"
+    dest: "/etc/default/nuage-metadata-agent"
+    owner: "root"
+    group: "root"
+    mode: 0600
+  register: hlm_notify_dcn_mda_restart_required
+
+- name: dcn-mda | configure | Set fact on dcn-mda python site packages
+  set_fact:
+    dcn_mda_site_pkg:
+      "{{ dcn_mda_real_venv_dir }}/lib/python2.7/site-packages"
+
+- name: dcn-mda | configure |
+    Update python binary source in /usr/sbin/nuage_metadata_agent
+  become: yes
+  replace:
+    dest: "/usr/sbin/nuage-metadata-agent"
+    regexp: "^(#!).*"
+    replace: "#!{{ dcn_mda_real_bin_dir }}/python2"
+  register: _dcn_mda_python_result
+
+- name: dcn-mda | configure |
+    Create symlink to dependencies (ovs, httplib2* and setproctitle*)
+  become: yes
+  script: ../files/dcn_link_debian_deps /usr/lib/python2.7/dist-packages
+          {{ dcn_mda_site_pkg }}
+
+- name: dcn-mda | configure | Notify restart
+  command: /bin/true
+  register: hlm_notify_dcn_mda_restart_required
+  when: _dcn_mda_python_result.changed

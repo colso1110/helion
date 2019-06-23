@@ -1,0 +1,88 @@
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+---
+- name: osconfig-network-pci | configure | Copy the PCI configuration script to hosts
+  become: yes
+  copy:
+    src: "../files/hlm_network_pci.py"
+    dest: "/etc/udev/hlm_network_pci.py"
+    owner: root
+    group: root
+    mode: 0755
+  register: network_pci_file_result
+  when: sriov_interfaces is defined and sriov_interfaces != []
+
+- name: osconfig-network-pci | configure | Copy config_scripts to hosts
+  become: yes
+  copy:
+    src: "../files/{{ item }}"
+    dest: "{{ udev_dir }}"
+    owner: root
+    group: root
+    mode: 0755
+  register: config_script_result
+  with_items: config_scripts
+
+- name: osconfig-network-pci | configure | Create network-pci context
+  include: _write_conf.yml
+  src: "../templates/network-pci.j2"
+  dest: "{{ udev_dir }}/network-pci.yml"
+
+- name: osconfig-network-pci | configure |
+    Set network_pci_restart_required for later use
+  set_fact: network_pci_restart_required="{{ network_pci_file_result.changed or config_script_result.changed or is_pci_changed }}"
+  when: sriov_interfaces is defined and sriov_interfaces != []
+
+- name: osconfig-network-pci | configure |
+    Get a list of interfaces required for pre-configure operation
+  set_fact: preconfigure_list="{{ sriov_interfaces | default([]) | pci_add_update_delete_list(pci_entries|default([])) }}"
+
+- name: osconfig-network-pci | configure |
+    Pre-configure operation for added/modified/deleted interfaces for simple port
+  become: yes
+  script: "{{ item.config_script }} {{ ansible_os_family }} \
+           {{ item.device }} {{ item.vf_count }} pre_configure \
+           {{ item.bus_address }} \
+           {{ item.port_num }}"
+  when: item.port_num is defined
+  with_items: preconfigure_list
+
+- name: osconfig-network-pci | configure |
+    Pre-configure operation for added/modified/deleted interfaces for simple port
+  become: yes
+  script: "{{ item.config_script }} {{ ansible_os_family }} \
+           {{ item.device }} {{ item.vf_count }} pre_configure \
+           {{ item.bus_address }} \
+           '0'"
+  when: item.port_num is not defined and item.port_attributes is not defined
+  with_items: preconfigure_list
+
+- name: osconfig-network-pci | configure |
+    Pre-configure operation for added/modified/deleted interfaces for multi port
+  become: yes
+  script: "{{ item.config_script }} {{ ansible_os_family }} \
+           {{ item.device }} {{ item.vf_count }} pre_configure \
+           {{ item.bus_address }} \
+           {{ item.port_attributes.port_num }}"
+  when: item.port_attributes is defined
+  with_items: preconfigure_list
+
+- name: osconfig-network-pci | configure |
+    Delete stale VFs on interfaces that are now made as non-PCI interfaces
+  become: yes
+  script: "{{ item.config_script }} {{ item.distro }} \
+           {{ item.device }} '0' 'configure' \
+           {{ item.bus_address }} \
+           {{ item.port_num }}"
+  with_items: pci_deleted
+  when: pci_deleted is defined

@@ -1,0 +1,199 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: FND-MDB | configure | Remove lost+found if it exists
+  become: yes
+  file:
+    path: "{{ mysql_datadir }}/lost+found"
+    state: absent
+
+- include: _configure_tls.yml
+  when: mysql_bind_tls | bool
+
+- name: FND-MDB | configure | Copy my.cnf
+  become: yes
+  template:
+    src: etc/mysql/my.cnf.j2
+    dest: /etc/mysql/my.cnf
+    owner: mysql
+    group: mysql
+    mode: 0600
+  register: hlm_notify_mysql_restart_required
+
+- name: FND-MDB | configure | Check initialised
+  become: yes
+  stat:
+    path: "{{ mysql_initialised }}"
+  register: checkinitialise_result
+
+- name: FND-MDB | configure | stat the logfile
+  become: yes
+  stat:
+    path: "{{ item }}"
+  with_items:
+    - /var/lib/mysql/ib_logfile0
+    - /var/lib/mysql/ib_logfile1
+  register: checklogfile_result
+
+- name: FND-MDB | configure | list backup logfiles
+  become: yes
+  shell: find /var/lib/ -name "*.hlmbck*"
+  register: old_logs_result
+  when: not checkinitialise_result.stat.exists
+
+- name: FND-MDB | configure | remove old innodb logfiles
+  become: yes
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items: old_logs_result.stdout_lines
+
+- name: FND-MDB | configure | set time for backup logfile
+  shell: date +"%Y%m%d_%H:%M:%S:%N"
+  register: mysql_innodb_time_result
+
+- name: FND-MDB | configure | Backup InnoDB logfile
+  become: yes
+  shell: >
+    mv {{ item.item }}
+    /var/lib/"$(basename {{ item.item }})".hlmbck.\
+    {{ mysql_innodb_time_result.stdout }}
+  with_items: checklogfile_result.results
+  when: item.stat.exists and (not checkinitialise_result.stat.exists)
+
+- name:  FND-MDB | configure | Check initialised anywhere else also
+  become: yes
+  stat:
+      path: "{{ mysql_initialised }}"
+  delegate_to: "{{ item }}"
+  with_items: "{{ mysql_mdb_hosts }}"
+  register: mysqlhere_result
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | configure | set bootstrapped
+  set_fact:
+    mysql_bootstrapped: true
+  when: item.stat.exists
+  with_items:   mysqlhere_result.results
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | configure | Notify I am bootstrapping
+  set_fact:
+    mysql_bootstrapping: true
+  when: not checkinitialise_result.stat.exists
+
+- include: bootstrap.yml
+  when: not checkinitialise_result.stat.exists
+
+- name: FND-MDB | configure | Copy logrotate file
+  become: yes
+  template:
+    src: etc/logrotate.d/mysql.j2
+    dest: /etc/logrotate.d/mysql
+    owner: root
+    group: root
+    mode: 0644
+
+# On an add node the password may already be set so ignore errors here
+- name: FND-MDB | configure | Set MDB root password
+  become: yes
+  mysql_user:
+    name: root
+    password: "{{ mysql_root_pwd }}"
+  run_once_per: verb_hosts.FND_MDB
+  failed_when: false
+
+# store root password so the previous task does not fail on subsequent runs
+- name: FND-MDB | configure | Store MDB root password
+  become: yes
+  template:
+    src: home/.my.cnf
+    dest: ~/
+    owner: root
+    group: root
+    mode: 0600
+
+- name: FND-MDB | configure | Create SST user
+  become: yes
+  mysql_user:
+    login_user: root
+    login_password: "{{ mysql_root_pwd }}"
+    name: "{{ mysql_sst_user }}"
+    password: "{{ mysql_sst_pwd }}"
+    host: localhost
+    priv: "*.*:RELOAD,LOCK TABLES,REPLICATION CLIENT"
+    state: present
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | configure | Create clustercheck user
+  become: yes
+  mysql_user:
+    login_user: "{{ mysql_root_user }}"
+    login_password: "{{ mysql_root_pwd }}"
+    name: "{{ mysql_clustercheck_user }}"
+    password: "{{ mysql_clustercheck_pwd }}"
+    host: 'localhost'
+    priv: "*.*:USAGE"
+    state: present
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | configure | Update services with mysql status service
+  become: yes
+  lineinfile:
+    dest: /etc/services
+    state: present
+    line: "mysqlchk {{ mysql_clustercheck_port }}/tcp"
+    regexp: '^\s*mysqlchk'
+  notify: restart xinetd
+
+- name: FND-MDB | configure | configure mysqlchk
+  include: configure_mysqlchk.yml
+
+# NOTE direct changes to mysql tables are not replicated.
+# However it is safe to run this once here as only the bootstrap
+# is up
+- name: FND-MDB | configure | Delete blank users if mysql up
+  become: yes
+  command: mysql mysql -e "
+    delete from user where User=\"\";
+    flush privileges;"
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | configure | Update root password for all hosts
+  become: yes
+  command: mysql mysql -e "
+    update mysql.user
+      set password=PASSWORD( \"{{ mysql_root_pwd }}\" )
+      where User=\"root\";
+    flush privileges;"
+  no_log: true
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | configure | Change password in Debian.cnf
+  become: yes
+  replace:
+    dest: /etc/mysql/debian.cnf
+    regexp: 'password(.*)'
+    replace: 'password = {{ mysql_root_pwd }}'
+  no_log: true
+
+- name: FND-MDB | configure | Change password for debian-sys-maint
+  become: yes
+  no_log: true
+  command: >
+    mysql --execute="SET PASSWORD FOR 'debian-sys-maint'@'localhost' =
+    PASSWORD('"{{ mysql_root_pwd }}"');flush privileges;"
+  run_once_per: verb_hosts.FND_MDB

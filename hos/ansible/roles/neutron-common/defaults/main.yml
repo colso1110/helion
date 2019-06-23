@@ -1,0 +1,456 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Config Processor defined variables
+
+# variables needed for TLS
+ca_file: "/etc/ssl/certs/ca-certificates.crt"
+
+mysql:
+  db_ssl: "{% if NEU_SVR.consumes_FND_MDB.vips.private[0].use_tls %}?ssl_ca={{ ca_file }}{% endif %}"
+  host: "{{ NEU_SVR.consumes_FND_MDB.vips.private[0].host }}"
+  admin_user: "{{ NEU_SVR.consumes_FND_MDB.vars.accounts.neutron.username }}"
+  admin_password: "{{ NEU_SVR.consumes_FND_MDB.vars.accounts.neutron.password | quote }}"
+
+keystone:
+  admin_tenant_name: "{{ KEY_API.vars.keystone_admin_tenant }}"
+  service_tenant: "{{ KEY_API.vars.keystone_service_tenant }}"
+  neutron_admin_user: "{{ NEU_SVR.consumes_KEY_API.vars.keystone_neutron_user }}"
+  neutron_admin_password: "{{ NEU_SVR.consumes_KEY_API.vars.keystone_neutron_password | quote }}"
+  auth_uri: "{{ NEU_SVR.consumes_KEY_API.vips.private[0].url }}"
+  identity_uri: "{{ NEU_SVR.consumes_KEY_API.vips.private[0].url }}"
+  endpoint: "{{ NEU_SVR.consumes_KEY_API.vips.private[0].url }}/v3"
+  admin_user: "{{ KEY_API.vars.keystone_admin_user }}"
+  admin_password: "{{ KEY_API.vars.keystone_admin_pwd | quote }}"
+  default_domain_name: "{{ KEY_API.vars.keystone_default_domain }}"
+  region_name: "{{ NEU.regions | first }}"
+
+rabbit:
+  member: "{{ NEU.consumes_FND_RMQ.members.private }}"
+  username: "{{ NEU.consumes_FND_RMQ.vars.accounts.neutron.username }}"
+  passwd: "{{ NEU.consumes_FND_RMQ.vars.accounts.neutron.password }}"
+  use_ssl: "{{ NEU.consumes_FND_RMQ.members.private[0].use_tls }}"
+
+nova:
+  private_host: "{{ NEU_SVR.consumes_NOV_API.vips.private[0].host }}"
+  private_port: "{{ NEU_SVR.consumes_NOV_API.vips.private[0].port }}"
+  admin_host: "{{ NEU_SVR.consumes_NOV_API.vips.private[0].host }}"
+  user: "{{ NOV_API.consumes_KEY_API.vars.keystone_nova_user }}"
+  passwd: "{{ NOV_API.consumes_KEY_API.vars.keystone_nova_password | quote }}"
+  metadata_ip: "{% if NEU_MDA is defined %}{% if NEU_MDA.consumes_NOV_MTD is defined %}{{ NEU_MDA.consumes_NOV_MTD.vips.private[0].ip_address }}{% else %}{{ NEU_SVR.consumes_NOV_API.vips.private[0].host }}{% endif %}{% endif %}"
+  metadata_port: "{% if NEU_MDA is defined %}{% if NEU_MDA.consumes_NOV_MTD is defined %}{{ NEU_MDA.consumes_NOV_MTD.vips.private[0].port }}{% else %}8775{% endif %}{% endif %}"
+  metadata_protocol: "{% if NEU_MDA is defined %}{% if NEU_MDA.consumes_NOV_MTD is defined %}{{ NEU_MDA.consumes_NOV_MTD.vips.private[0].protocol }}{% else %}http{% endif %}{% endif %}"
+  metadata_proxy_shared_secret: "{%- if NOV_MTD is defined and NOV_MTD.vars.metadata_proxy_shared_secret is defined -%}
+                                         {{ NOV_MTD.vars.metadata_proxy_shared_secret }}
+                                 {%- endif -%}"
+  region_name: "{{ NEU.regions | first }}"
+
+barbican:
+ admin_role: "{% if KEYMGR_API is defined and KEYMGR_API.vars.barbican_admin_role is defined %}{{ KEYMGR_API.vars.barbican_admin_role }}{% else %}{{''}}{% endif %}"
+
+neutron_api:
+  public_region: "{{ NEU.regions | first }}"
+  admin_url: "{{ NEU_SVR.advertises.vips.admin[0].url }}/"
+  internal_url: "{{ NEU_SVR.advertises.vips.private[0].url }}/"
+
+octavia_api:
+  api_url: "{% if NEU_SVR.consumes_OCT_API is defined and NEU_SVR.consumes_OCT_API.vips is defined %}{{ NEU_SVR.consumes_OCT_API.vips.private[0].url }}{% else %}{{''}}{% endif %}"
+
+# Other variables
+
+installation_directory: /usr/share
+neutron_user: neutron
+neutron_group: neutron
+neutron_l3_agent_mode: dvr
+neutron_ovs_datapath_type: system
+neutron_tenant_network_types: "{% set vlan_set = [] %}{% set vxlan_set = [] %}{% set comma = joiner(',') %}
+                         {%- if network_tag_values is defined -%}
+                            {%- for ntv in network_tag_values -%}
+                                {%- for netgroup in network_tag_values[ntv] -%}
+                                    {%- if 'neutron.networks.vxlan' in network_tag_values[ntv][netgroup] -%}
+                                        {%- if not vxlan_set -%}
+                                            {{ comma() }}{{ 'vxlan' }}
+                                            {%- if vxlan_set.append(1) -%}{%- endif -%}
+                                        {%- endif -%}
+                                    {%- endif -%}
+                                    {%- if 'neutron.networks.vlan' in network_tag_values[ntv][netgroup] -%}
+                                        {%- if not vlan_set -%}
+                                            {{ comma() }}{{ 'vlan' }}
+                                            {%- if vlan_set.append(1) -%}{%- endif -%}
+                                        {%- endif -%}
+                                    {%- endif -%}
+                                {%- endfor -%}
+                            {%- endfor -%}
+                        {%- endif -%}"
+neutron_vni_ranges: "{{ network_tag_values | _get_vni_ranges }}"
+neutron_vlan_ranges: "{{ network_tag_values | _get_vlan_ranges }}"
+neutron_flat_networks: "{% set comma = joiner(',') %}
+                        {%- if network_tag_values is defined -%}
+                            {%- if 'neutron' in network_tag_values -%}
+                                {%- for netgroup in network_tag_values['neutron'] -%}
+                                    {%- if 'neutron.networks.flat' in network_tag_values['neutron'][netgroup] -%}
+                                        {%- if network_tag_values['neutron'][netgroup]['neutron.networks.flat'] -%}
+                                            {%- if 'provider-physical-network' in network_tag_values['neutron'][netgroup]['neutron.networks.flat'] -%}
+                                                {{ comma() }}{{ network_tag_values['neutron'][netgroup]['neutron.networks.flat']['provider-physical-network'] }}
+                                            {%- endif -%}
+                                        {%- endif -%}
+                                    {%- endif -%}
+                                {%- endfor -%}
+                            {%- endif -%}
+                        {%- endif -%}"
+neutron_db_connection: "mysql://{{ mysql.admin_user }}:{{ mysql.admin_password | urlencode }}@{{ mysql.host }}/ovs_neutron{{ mysql.db_ssl }}"
+neutron_bridge_mappings: "{% set temp_list = [] %}
+                            {%- if host.my_network_tags is defined -%}
+                                {%- for network_tag in host.my_network_tags -%}
+                                    {%- if network_tag.bridge_port is defined -%}
+                                        {%- for tag in network_tag.tags -%}
+                                            {%- if tag.tag == 'neutron.networks.flat' or tag.tag == 'neutron.networks.vlan' -%}
+                                                {%- if tag.data_values -%}
+                                                    {%- if 'provider-physical-network' in tag.data_values -%}
+                                                        {%- set mapping = tag.data_values['provider-physical-network']+':'+network_tag.device -%}
+                                                        {%- if temp_list.append( mapping ) -%}{%- endif -%}
+                                                    {%- endif -%}
+                                                {%- endif -%}
+                                            {%- endif -%}
+                                        {%- endfor -%}
+                                    {%- endif -%}
+                                {%- endfor -%}
+                            {%- endif -%}
+                            {{ temp_list|unique|join(',')}}"
+neutron_local_ip: "{%- if host.my_network_tags is defined -%}
+                       {%- for network_tag in host.my_network_tags -%}
+                           {%- for tag in network_tag.tags -%}
+                               {%- if tag.tag == 'neutron.networks.vxlan' -%}
+                                   local_ip = {{ network_tag.address }}
+                               {%- endif -%}
+                           {%- endfor -%}
+                       {%- endfor -%}
+                   {%- endif -%}"
+neutron_tunnel_types: "{%- if network_tag_values is defined -%}
+                           {%- if 'neutron' in network_tag_values -%}
+                               {%- for netgroup in network_tag_values['neutron'] -%}
+                                   {%- if 'neutron.networks.vxlan' in network_tag_values['neutron'][netgroup] -%}
+                                       {{ 'vxlan' }}
+                                   {%- endif -%}
+                               {%- endfor -%}
+                           {%- endif -%}
+                       {%- endif -%}"
+neutron_admin_user: "{{ keystone.neutron_admin_user }}"
+neutron_admin_password: "{{ keystone.neutron_admin_password }}"
+keystone_admin_tenant_name: "{{ keystone.service_tenant }}"
+neutron_auth_url: "{{ keystone.auth_uri }}"
+neutron_nova_metadata_ip: "{{ nova.metadata_ip }}"
+neutron_nova_metadata_port: "{{ nova.metadata_port }}"
+neutron_nova_metadata_protocol: "{{ nova.metadata_protocol }}"
+neutron_nova_region_name: "{{ nova.region_name }}"
+neutron_log_dir: /var/log/neutron
+neutron_common_rundir: /var/run/neutron
+router_distributed: "{% if false in NEU_SVR | get_provided_data_values('router_distributed') %}False{% else %}True{% endif %}"
+neutron_l3_ha: "{% if true in NEU_SVR | get_provided_data_values('neutron_l3_ha') %}True{% else %}False{% endif %}"
+neutron_vlan_transparent: "{%- if config_data.NEU is defined and config_data.NEU.vlan_transparent is defined and config_data.NEU.vlan_transparent -%}vlan_transparent = True{%- endif -%}"
+
+# vmware vcenter specific attributes
+vcenter_cluster_dvs_mapping: "{% if host.pass_through.vmware is defined %}{% if host.pass_through.vmware.cluster_dvs_mapping is defined %}{{ host.pass_through.vmware.cluster_dvs_mapping }} {% else %}no_mapping{% endif %}{% endif %}"
+vcenter_esx_hostname: "{% if host.pass_through.vmware is defined %}{% if host.pass_through.vmware.esx_hostname is defined %}{{ host.pass_through.vmware.esx_hostname }} {% else %}hostname{% endif %}{% endif %}"
+vcenter_id: "{% if host.pass_through.vmware is defined %}{{ host.pass_through.vmware.vcenter_id }}{% else %}vcenter_id{% endif %}"
+vcenter_encrypted_password: "{%- if global.pass_through is defined -%}
+                              {%- if global.pass_through.vmware is defined -%}
+                                {%- for vc in global.pass_through.vmware -%}
+                                     {%- if vc.id == host.pass_through.vmware.vcenter_id -%}
+                                        {{ vc.password }}
+                                     {%- endif -%}
+                                {%- endfor -%}
+                               {%- endif -%}
+                             {%- endif -%}"
+
+# OVSvApp specific attributes
+enable_l2_population: "{% if false in NEU_ML2 | get_provided_data_values('l2_population') %}False{% else %}True{% endif %}"
+enable_distributed_routing: "{% if false in NEU_ML2 | get_provided_data_values('enable_distributed_routing') %}False{% else %}True{% endif %}"
+ovsvapp_bridge_mappings: "{{ neutron_bridge_mappings }}"
+ovsvapp_security_bridge_mapping: "{%- if host.my_network_tags is defined -%}
+                                      {%- for network_tag in host.my_network_tags -%}
+                                          {%- if network_tag.tags is defined -%}
+                                              {%- for tag in network_tag.tags -%}
+                                                  {%- if tag.tag is defined -%}
+                                                      {%- if tag.tag == 'neutron.ovsvapp.sec_bridge_if' -%}
+                                                          {{ network_tag.device }}:{{ network_tag.bridge_port }}
+                                                      {%- endif -%}
+                                                  {%- endif -%}
+                                              {%- endfor -%}
+                                          {%- endif -%}
+                                      {%- endfor -%}
+                                  {%- endif -%}"
+ovsvapp_monitoring_ip: "{%- if host.my_network_tags is defined -%}
+                            {%- for network_tag in host.my_network_tags -%}
+                                {%- if network_tag.tags is defined -%}
+                                    {%- for tag in network_tag.tags -%}
+                                        {%- if tag.tag is defined -%}
+                                            {%- if tag.tag == 'neutron.ovsvapp.management_if' -%}
+                                                {{ network_tag.address }}
+                                            {%- endif -%}
+                                        {%- endif -%}
+                                    {%- endfor -%}
+                                {%- endif -%}
+                            {%- endfor -%}
+                        {%- endif -%}"
+ovsvapp_mgmt_device: "{%- if host.my_network_tags is defined -%}
+                          {%- for network_tag in host.my_network_tags -%}
+                              {%- if network_tag.tags is defined -%}
+                                  {%- for tag in network_tag.tags -%}
+                                      {%- if tag.tag is defined -%}
+                                          {%- if tag.tag == 'neutron.ovsvapp.management_if' -%}
+                                              {{ network_tag.device }}
+                                          {%- endif -%}
+                                      {%- endif -%}
+                                  {%- endfor -%}
+                              {%- endif -%}
+                          {%- endfor -%}
+                      {%- endif -%}"
+vlan_tag_present: "{%- if host.my_network_tags is defined -%}
+                       {%- for network_tag in host.my_network_tags -%}
+                           {%- if network_tag.tags is defined -%}
+                               {%- for tag in network_tag.tags -%}
+                                   {%- if tag.tag is defined -%}
+                                       {%- if tag.tag == 'neutron.networks.vlan' and network_tag.address == ovsvapp_monitoring_ip -%}
+                                           {{ 'True' }}
+                                       {%- endif -%}
+                                   {%- endif -%}
+                               {%- endfor -%}
+                           {%- endif -%}
+                       {%- endfor -%}
+                   {%- endif -%}"
+ovsvapp_mgmt_subnet: "{%- if vlan_tag_present == 'True' and ovs_bridge_interfaces is defined -%}
+                          {%- for bridge_interface in ovs_bridge_interfaces -%}
+                              {%- if bridge_interface.routing_table is defined -%}
+                                  {%- if bridge_interface.cidr is defined -%}
+                                      {%- if bridge_interface.device == ovsvapp_mgmt_device -%}
+                                          {{ bridge_interface.cidr }}
+                                      {%- endif -%}
+                                  {%- endif -%}
+                              {%- endif -%}
+                          {%- endfor -%}
+                      {%- else -%}
+                          {%- if ovsvapp_mgmt_device | search('vlan') and network_vlan_interfaces is defined -%}
+                              {%- for vlan_interface in network_vlan_interfaces -%}
+                                  {%- if vlan_interface.routing_table is defined -%}
+                                      {%- if vlan_interface.cidr is defined -%}
+                                          {%- if vlan_interface.device == ovsvapp_mgmt_device -%}
+                                              {{ vlan_interface.cidr }}
+                                          {%- endif -%}
+                                      {%- endif -%}
+                                  {%- endif -%}
+                              {%- endfor -%}
+                          {%- else -%}
+                              {%- if network_ether_interfaces is defined -%}
+                                  {%- for eth_interface in network_ether_interfaces -%}
+                                      {%- if eth_interface.routing_table is defined -%}
+                                          {%- if eth_interface.cidr is defined -%}
+                                              {%- if eth_interface.device == ovsvapp_mgmt_device -%}
+                                                  {{ eth_interface.cidr }}
+                                              {%- endif -%}
+                                          {%- endif -%}
+                                      {%- endif -%}
+                                  {%- endfor -%}
+                              {%- endif -%}
+                          {%- endif -%}
+                      {%- endif -%}"
+ovsvapp_network_types: "{% set temp = [] %}
+                           {%- if host is defined -%}
+                               {%- if host.my_network_tags is defined -%}
+                                   {%- for tag in host.my_network_tags -%}
+                                       {%- if tag.tags is defined -%}
+                                           {%- for item in tag.tags -%}
+                                               {%- if item.tag is defined -%}
+                                                   {%- if item.tag == 'neutron.networks.vxlan' -%}
+                                                       {%- if temp.append('vxlan') -%}{%- endif -%}
+                                                   {%- endif -%}
+                                                   {%- if item.tag == 'neutron.networks.vlan' -%}
+                                                       {%- if temp.append('vlan') -%}{%- endif -%}
+                                                   {%- endif -%}
+                                               {%- endif -%}
+                                           {%- endfor -%}
+                                       {%- endif -%}
+                                   {%- endfor -%}
+                               {%- endif -%}
+                           {%- endif -%}
+                        {{ temp | unique | join(',') }}"
+
+neutron_core_plugin: >
+    {{ NEU_SVR | get_provided_data_values('core_plugin', default=['']) | last }}
+
+neutron_service_plugins: >
+    {{ NEU_SVR | get_provided_data_values('service_plugins') | unique | join(',') }}
+
+neutron_server_policy_json: >
+    {{ NEU_SVR | get_provided_data_values('policy_json') | unique }}
+
+neutron_server_config_files: >
+    {{ NEU_SVR | get_provided_data_values('config_files') | unique }}
+
+neutron_server_config_dests: >
+    {{ neutron_server_config_files | map(attribute='dest') | list }}
+
+ml2_conf_ini_in_list: >
+    {%- if 'ml2_conf.ini' in neutron_server_config_dests -%}
+        True
+    {%- else -%}
+        False
+    {%- endif -%}
+
+neutron_api_extensions_path: >
+    {%- set aep_list = NEU_SVR | get_provided_data_values('api_extensions_path') -%}
+    {%- if aep_list|length > 0 -%}
+        api_extensions_path = {{ aep_list | unique | join(',') }}
+    {%- endif -%}
+
+neutron_conf_snippets: >
+    {{ NEU_SVR | get_provided_data_values('config_file_snippets') | unique | selectattr('config_file', 'equalto', 'neutron.conf') | map(attribute='snippet') | list }}
+
+
+ml2_extension_drivers: >
+    {%- set ed_list = NEU_ML2 | get_provided_data_values('extension_drivers') -%}
+    {%- if ed_list|length > 0 -%}
+        extension_drivers = {{ ed_list | unique | join(',') }}
+    {%- endif -%}
+
+ml2_mechanism_drivers: >
+    {%- set md_list = [] -%}
+    {%- if enable_l2_population|bool == True -%}
+        {% if md_list.append('l2population') %}{%- endif -%}
+    {%- endif -%}
+    {%- if md_list.extend(NEU_ML2 | get_provided_data_values('mechanism_drivers')) -%}{%- endif -%}
+    {{ md_list | unique | join(',') }}
+
+ml2_conf_snippets: >
+    {{ NEU_ML2 | get_provided_data_values('config_file_snippets') | unique | selectattr('config_file', 'equalto', 'ml2_conf.ini') | map(attribute='snippet') |  list }}
+
+# Auditing variables
+neutron_audit_enabled: "{{ NEU.audit.enabled }}"
+neutron_audit_logging_dir: "{{ NEU.audit.dir }}/neutron"
+neutron_audit_log_file: "{{ neutron_audit_logging_dir }}/neutron-audit.log"
+neutron_centralized_log_group: adm
+
+# neutron-l3-agent
+## [DEFAULT]
+neutron_l3_agent_external_network_bridge: "{% if host.my_network_tags is defined %}{% for network_tag in host.my_network_tags %}{% for tag in network_tag.tags if tag.tag == 'neutron.l3_agent.external_network_bridge' %}{{ network_tag.device}}{% endfor %}{% endfor %}{% else %}br-ex{% endif %}"
+
+# neutron-dhcp-agent
+## [DEFAULT]
+neutron_enable_isolated_metadata: "True"
+
+# neutron-l2gw-agent
+## [ovsdb]
+neutron_l2gw_ovsdb_hosts: ""
+
+# neutron.conf
+## [DEFAULT]
+### API
+neutron_bind_host: "{% if host.bind.NEU_SVR is defined %}{{ host.bind.NEU_SVR.internal.ip_address }}{% endif %}"
+neutron_bind_port: "{% if host.bind.NEU_SVR is defined %}{{ host.bind.NEU_SVR.internal.port }}{% else %}9696{% endif %}"
+
+### Nova
+neutron_nova_url: "{{ NEU_SVR.consumes_NOV_API.vips.private[0].url }}/v2"
+neutron_nova_admin_username: "{{ nova.user }}"
+neutron_nova_admin_tenant_name: "{{ keystone.service_tenant }}"
+neutron_nova_admin_password: "{{ nova.passwd }}"
+neutron_nova_admin_auth_url: "{{ NEU_SVR.consumes_KEY_API.vips.private[0].url }}/v3"
+
+### RabbitMQ
+neutron_rabbit_hosts: "{% for x in rabbit.member %}{{ x.host }}:{{ x.port }}{%if not loop.last %},{% endif %}{% endfor %}"
+neutron_rabbit_username: "{{ rabbit.username }}"
+neutron_rabbit_password: "{{ rabbit.passwd }}"
+neutron_rabbit_use_ssl:  "{{ rabbit.use_ssl }}"
+
+## [AGENT]
+neutron_use_helper_for_ns_read: "False"
+
+### [Octavia]
+octavia_api_uri: "{{ octavia_api.api_url }}"
+
+neutron_lbaas_providers: "{%- if verb_hosts.OCT_API is defined -%}
+                                  {{ 'service_provider = LOADBALANCERV2:Octavia:neutron_lbaas.drivers.octavia.driver.OctaviaDriver:default' }}
+                                  {%- if verb_hosts.NEU_LBAV2 is defined -%}
+                                          {{'\n'}}{{ 'service_provider = LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver' }}
+                                  {%- elif verb_hosts.NEU_LBAV1 is defined -%}
+                                          {{'\n'}}{{ 'service_provider = LOADBALANCER:Haproxy:neutron.services.loadbalancer.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver' }}
+                                  {%- endif -%}
+                          {%- elif verb_hosts.NEU_LBAV2 is defined -%}
+                                  {{ 'service_provider = LOADBALANCERV2:Haproxy:neutron_lbaas.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default' }}
+                          {%- elif verb_hosts.NEU_LBAV1 is defined -%}
+                                  {{ 'service_provider = LOADBALANCER:Haproxy:neutron.services.loadbalancer.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default' }}
+                          {%- else -%}{{ '' }}{%- endif -%}"
+
+neutron_lbaas_plugin: "{%- if verb_hosts.OCT_API is defined or verb_hosts.NEU_LBAV2 is defined -%}
+                                  {{ 'neutron_lbaas.services.loadbalancer.plugin.LoadBalancerPluginv2,' }}
+                       {%- elif verb_hosts.NEU_LBAV1 is defined -%}
+                                  {{ 'neutron.services.loadbalancer.plugin.LoadBalancerPlugin,' }}
+                       {%- else -%}{{ '' }}{%- endif -%}"
+
+## [keystone_authtoken]
+neutron_auth_uri: "{{ keystone.auth_uri }}"
+neutron_identity_uri: "{{ keystone.identity_uri }}"
+neutron_admin_tenant_name: "{{ keystone.service_tenant }}"
+neutron_admin_user: "{{ keystone.neutron_admin_user }}"
+neutron_admin_password: "{{ keystone.neutron_admin_password }}"
+neutron_keystone_region_name: "{{ keystone.region_name }}"
+
+## variables needed by _write_conf.yml
+write_conf_file_owner: "{{ neutron_user }}"
+write_conf_file_group: "{{ neutron_group }}"
+
+## variables needed to load kernel modules
+file_marker: '# HELION-MANAGED - Managed by Helion - Do not edit'
+neutron_kernel_module_file: /etc/modules-load.d/helion_neutron-modules.conf
+
+monasca_agent_plugin_args: ""
+
+## variables needed for PCI
+sriov_mech_driver: ''
+phys_dev_mappings: ''
+
+## Variables needed to dynamically build command lines
+config_file_option: ''
+
+ml2_conf_write_result: false
+
+
+# keystone related conf to get vcenter password from EON
+eon_admin_tenant_name: "{%- if KEY_API is defined -%}
+                            {%- if KEY_API.vars is defined -%}
+                                {%- if KEY_API.vars.keystone_service_tenant is defined -%}
+                                    {{ KEY_API.vars.keystone_service_tenant }}
+                                {%- endif -%}
+                            {%- endif -%}
+                        {%- endif -%}"
+eon_admin_password: "{%- if EON_API is defined -%}
+                         {%- if EON_API.consumes_KEY_API is defined -%}
+                             {%- if EON_API.consumes_KEY_API.vars is defined -%}
+                                 {%- if EON_API.consumes_KEY_API.vars.keystone_eon_password is defined -%}
+                                     {{ EON_API.consumes_KEY_API.vars.keystone_eon_password | quote }}
+                                 {%- endif -%}
+                             {%- endif -%}
+                         {%- endif -%}
+                     {%- endif -%}"
+eon_admin_user: "{%- if EON_API is defined -%}
+                     {%- if EON_API.consumes_KEY_API is defined -%}
+                         {%- if EON_API.consumes_KEY_API.vars is defined -%}
+                             {%- if EON_API.consumes_KEY_API.vars.keystone_eon_user is defined -%}
+                                 {{ EON_API.consumes_KEY_API.vars.keystone_eon_user }}
+                             {%- endif -%}
+                         {%- endif -%}
+                     {%- endif -%}
+                 {%- endif -%}"

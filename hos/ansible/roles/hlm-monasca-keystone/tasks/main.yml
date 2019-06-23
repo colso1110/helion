@@ -1,0 +1,84 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# These tasks need a Keystone v3 endpoint
+- set_fact:
+     keystone_url_v3: "{{ keystone_url | replace('/v2.0', '/v3') }}"
+  run_once_per: verb_hosts.MON_API
+
+- name: Keystone Service - Get keystone domain scoped tokens
+  keystone_v3:
+    endpoint: "{{ keystone_url_v3 }}"
+    login_username: "{{ keystone_admin }}"
+    login_password: "{{ keystone_admin_password }}"
+    login_user_domain_name: "{{ keystone_default_domain_name }}"
+    login_domain_name: "{{ keystone_default_domain_name }}"
+    action: "token_get"
+  run_once_per: verb_hosts.MON_API
+  register: domain_scoped_token
+
+- name: Keystone Service - Define Monasca tenant(s)
+  become: yes
+  keystone_v3:
+    login_token: "{{ domain_scoped_token.result }}"
+    endpoint: "{{ keystone_url_v3 }}"
+    action: "create_project"
+    project_name: "{{ item.project }}"
+    project_domain_name: "Default"
+    description: "Create Monasca tenants"
+  no_log: True
+  run_once_per: verb_hosts.MON_API
+  with_items: "{{ mon_keystone_users }}"
+
+- name: Keystone - Define Monasca roles
+  keystone_v3:
+    login_token: "{{ domain_scoped_token.result }}"
+    endpoint: "{{ keystone_url_v3 }}"
+    action: "create_role"
+    role_name: "{{ item.role }}"
+    description: "Create Monasca user roles"
+  no_log: True
+  run_once_per: verb_hosts.MON_API
+  with_items: "{{ mon_keystone_users }}"
+
+- name: Keystone - Define Monasca users
+  become: yes
+  keystone_v3:
+    login_token: "{{ domain_scoped_token.result }}"
+    endpoint: "{{ keystone_url_v3 }}"
+    action: "create_user"
+    user_name: "{{ item.username }}"
+    user_password: "{{ item.password }}"
+    description: "Create Monasca users"
+    user_domain_name: "Default"
+  no_log: True
+  run_once_per: verb_hosts.MON_API
+  with_items: "{{ mon_keystone_users }}"
+
+- name: Keystone - Assign roles to users
+  become: yes
+  keystone_v3:
+    login_token: "{{ domain_scoped_token.result }}"
+    endpoint: "{{ keystone_url_v3 }}"
+    action: "grant_project_role"
+    user_name: "{{ item.username }}"
+    project_name: "{{ item.project }}"
+    user_domain_name: "Default"
+    project_domain_name: "Default"
+    role_name: "{{ item.role }}"
+  no_log: True
+  run_once_per: verb_hosts.MON_API
+  with_items: "{{ mon_keystone_users }}"

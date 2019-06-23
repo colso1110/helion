@@ -1,0 +1,53 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+  product:
+    version: 2
+
+  nic-device-families:
+
+      # Niantic
+      - name: INTEL-82599
+        vendor-id: '8086'
+        config-script: intel-82599.sh
+        driver: ixgbe
+        vf-count-type: port
+        max-vf-count: 63
+
+      # ConnectX-3 Pro
+      - name: MT-27520
+        vendor-id: '15b3'
+        config-script: connect-x3.sh
+        driver: mlx4
+        vf-count-type: port
+        max-vf-count: 16
+
+  nic-device-types:
+
+      - name: '8086:10fb'
+        family: INTEL-82599
+        device-id: '10fb'
+        type: simple-port
+
+      - name: '8086:10f8'
+        family: INTEL-82599
+        device-id: '10f8'
+        type: simple-port
+
+      - name: '15b3:1007'
+        family: MT-27520
+        device-id: '1007'
+        type: multi-port

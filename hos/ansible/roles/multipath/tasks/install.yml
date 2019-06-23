@@ -1,0 +1,154 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- include_vars: multipath_vars.yml
+
+# Is this the first ever run
+- name: multipath | install | Check if multipath ran
+  stat: path=/etc/hos/multipath-ran
+  register: multipath_ran_result
+
+- name: multipath | install | get pvs
+  shell: pvs | grep mapper
+  register: multipath_pv_devices
+  failed_when: multipath_pv_devices.rc > 1
+
+- name: multipath | install | get mount paths
+  shell: mount | grep mpath
+  register: multipath_mount_devices
+  failed_when: multipath_mount_devices.rc > 1
+
+- name: multipath | install | get mounts
+  set_fact:
+     multipath_used: True
+  when: multipath_mount_devices.rc == 0 or multipath_pv_devices.rc == 0
+
+- name: multipath | install | check fact
+  check_wildcard: blacklist='{{ multipath_blacklist | to_json }}'
+  when: multipath_blacklist is defined and multipath_used is defined and ansible_os_family == 'RedHat'
+
+- name: multipath | install | Check if multipath ran
+  stat: path=/etc/hos/osconfig-ran
+  register: osconfig_ran_result
+
+- name: multipath | install | Set fact if first run
+  set_fact:
+      multipath_first_run: True
+  when: (multipath_ran_result.stat.exists == False) and (osconfig_ran_result.stat.exists == False)
+
+- name: multipath | install | Load multipath configuration variables
+  include_vars: "multipath_vars.yml"
+
+- name: multipath | install | Get wwids of all devices in disk model
+  get_wwid: hlm_host_info='{{ host | to_json }}'
+  register: disk_model_mappings
+
+# For the very first time that multipath is configured need to set user friendly name
+# This will then be changed once the bindings file is updated
+# This could already be done during install phase
+- name: multipath | install | Check if multipath.conf exists
+  stat:
+      path: /etc/multipath.conf
+  register: multipath_conf_result
+
+- name: multipath | install | Set user_friendly_names yes
+  set_fact:
+      multipath_user_friendly_names: "yes"
+  when: multipath_conf_result.stat.exists == False
+
+- name: multipath | install | Set initial multipath configuration
+  template:
+    src: "multipath.conf.j2"
+    dest: "/etc/multipath.conf"
+  register: configuration_update
+  when: multipath_conf_result.stat.exists == False
+
+- name: multipath | install | Load the multipath daemon on redhat
+  command: modprobe dm-multipath
+  when: ansible_os_family == 'RedHat'
+
+- name: multipath | install | Install the required packages in Redhat derivatives
+  yum: name={{ item }} state=installed
+  with_items: multipath_pkgs
+  when: ansible_os_family == 'RedHat'
+
+- name: multipath | install | Install the required packages in Debian derivatives
+  apt: name={{ item }} state=installed
+  with_items: multipath_pkgs
+  when: ansible_os_family == 'Debian'
+
+- name: multipath | install | Ensure started
+  service:
+    name: "{{ item }}"
+    state: "started"
+    enabled: "yes"
+  with_items: service_daemons
+
+# Run multipath the first time
+- name: multipath | install | run multipath on first run
+  command: /sbin/multipath
+  when: multipath_first_run is defined or multipath_conf_result.stat.exists == False
+  ignore_errors: yes
+
+# The disk_binding_result is consumed in the multipath.conf template
+# This results in an updated multipath.conf next time
+- name: multipath | install | Get bindings of devices on system
+  get_bindings: hlm_host_info='{{ host | to_json }}'
+  register: disk_bindings_result
+
+- name: multipath | install | flush multipath on first run
+  command: /sbin/multipath -F
+  when: multipath_first_run is defined
+  failed_when: false
+
+- name: multipath | install | reinvoke multipath on first run
+  command: /sbin/multipath
+  when: multipath_first_run is defined
+
+# This is what we want
+- name: multipath | install | Set user_friendly_names no
+  set_fact:
+      multipath_user_friendly_names: "no"
+
+# This is with the aliases for the user friendly names for first run other wise normal
+- name: multipath | install | Set real multipath configuration
+  template:
+    src: "multipath.conf.j2"
+    dest: "/etc/multipath.conf"
+  register: configuration_update
+
+- name: multipath | install | run multipath on first run
+  command: /sbin/multipath
+  when: configuration_update.changed or multipath_first_run is defined
+
+# This may be redundant
+- name: multipath | install | Restart if there is a configuration update
+  service:
+    name: "{{ item }}"
+    state: "restarted"
+    enabled: "yes"
+  with_items: service_daemons
+  when: configuration_update.changed or multipath_first_run is defined
+
+- name: multipath | install | Update initramfs
+  command: "{{ initramfs_update_command }}"
+  when: initramfs_update_command is defined and configuration_update.changed
+
+- name: multipath | marker | create /etc/hos directory
+  file: path=/etc/hos state=directory
+
+- name: osconfig | marker | create marker
+  file: path=/etc/hos/multipath-ran state=touch

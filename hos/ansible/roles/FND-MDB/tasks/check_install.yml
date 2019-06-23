@@ -1,0 +1,73 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: FND-MDB | check_install | Assume this is not a major upgrade
+  set_fact:
+    is_major_upgrade: false
+
+# Check for versions of percona package available
+- name: FND-MDB | check_install | Search for Percona packages
+  become: yes
+  shell:  >
+    /usr/bin/apt-cache search
+    percona-xtradb-cluster-server-[0-9\.]+ 2>/dev/null |
+    awk '{NR==1split($1,ver,"-"); print ver[5]}' |sort  -r
+  register: percona_avail_versions_result
+
+# Check for version of percona installed
+- name: FND-MDB | check_install | Find percona version installed
+  become: yes
+  shell:  >
+    /usr/bin/dpkg -l |
+    awk '/percona-xtradb-cluster-server-[0-9\.]*/{NR==1split($2,ver,"[/-]") ;
+    print ver[5] }' | sort -r
+  register: percona_installed_versions_result
+
+- name: FND-MDB | check_install | Get latest available version
+  set_fact:
+    percona_latest_avail_version:
+      "{{ percona_avail_versions_result.stdout_lines[0] }}"
+  when: percona_avail_versions_result.stdout_lines[0] is defined
+
+- name: FND-MDB | check_install | Get latest installed version
+  set_fact:
+    percona_latest_installed_version:
+      "{{ percona_installed_versions_result.stdout_lines[0] }}"
+  when: percona_installed_versions_result.stdout_lines[0] is defined
+
+
+- name: FND-MDB | check_install | Print latest available version
+  debug:
+    msg: "percona_latest_avail_version {{ percona_latest_avail_version }}"
+  when: percona_latest_avail_version is defined
+
+- name: FND-MDB | check_install | Print latest installed version
+  debug:
+    msg: >
+      percona_latest_installed_version {{ percona_latest_installed_version }}
+  when: percona_latest_installed_version is defined
+
+# Bool will still be needed on a when to check this
+- name: FND-MDB | check_install | Check if this could be a major upgrade
+  set_fact:
+    mysql_is_major_upgrade: "{{ percona_latest_installed_version |
+    version_compare( percona_latest_avail_version , '<') }}"
+  when: percona_latest_installed_version is defined
+        and percona_latest_avail_version is defined
+
+- name: FND-MDB | check_install | Print mysql_is_major_upgrade
+  debug:
+    msg: "mysql_is_major_upgrade {{ mysql_is_major_upgrade }}"

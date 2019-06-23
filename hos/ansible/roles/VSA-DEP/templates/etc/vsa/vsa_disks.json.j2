@@ -1,0 +1,32 @@
+{#
+#
+# (c) Copyright 2015 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+{
+    "vsa_disks":
+   {
+{% if vsa_enable_AO %}
+{% set comma = joiner(",") %}
+    "Tier 0": [{% for device_group in host.my_disk_models.device_groups %}{% if device_group.consumer.name == "vsa" and device_group.consumer.usage == "adaptive-optimization" %}{% for device in device_group.devices %}{{ comma() }}"{{ device.name }}"{% endfor %}{% endif %}{% endfor %}],
+{% set comma = joiner(",") %}
+    "Tier 1": [{% for device_group in host.my_disk_models.device_groups %}{% if device_group.consumer.name == "vsa" and device_group.consumer.usage == "data" %}{% for device in device_group.devices %}{{ comma() }}"{{ device.name }}"{% endfor %}{% endif %}{% endfor %}]
+{% else %}
+    "Tier 0": [],
+{% set comma = joiner(",") %}
+    "Tier 1": [{% for device_group in host.my_disk_models.device_groups %}{% if device_group.consumer.name == "vsa" and device_group.consumer.usage == "data" %}{% for device in device_group.devices %}{{ comma() }}"{{ device.name }}"{% endfor %}{% endif %}{% endfor %}]
+{% endif %}
+   }
+}

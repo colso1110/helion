@@ -1,0 +1,64 @@
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
+---
+
+- name: diskconfig | wipe_one_check | Check the number of hosts
+  set_fact:
+    diskconfig_num_hosts="{{ play_hosts | length }}"
+  delegate_to: 127.0.0.1
+  run_once: True
+
+- name: diskconfig | wipe_one_check | Validate number of hosts
+  fail: msg="The number of nodes in this play must be exactly 1!"
+  when: diskconfig_num_hosts | int != 1
+  delegate_to: 127.0.0.1
+  run_once: True
+
+- name: diskconfig | wipe_one_check | Validate devices defined
+  fail: msg="You must specify wipe_one_disk as '-e wipe_one_disk=sdc' for example"
+  when: wipe_one_disk is not defined
+  delegate_to: 127.0.0.1
+  run_once: True
+
+- name: diskconfig | wipe_one_check | Validate number of devices
+  fail: msg="The number of disks must be exactly 1!"
+  when: "' ' in wipe_one_disk"
+  delegate_to: 127.0.0.1
+  run_once: True
+
+- name: diskconfig | wipe_one_check | Find device type
+  become: yes
+  command: "lsblk -n -d -o type /dev/{{ wipe_one_disk }}"
+  register: wipe_one_check_disk
+
+- name: diskconfig | wipe_one_check | Validate its a disk not a partition
+  fail: msg="You must specify a full disk device"
+  when: "'disk' not in wipe_one_check_disk.stdout"
+
+- name: diskconfig | wipe_one_check | Find any partitions
+  become: yes
+  shell: "lsblk -l -n -o type,name /dev/{{ wipe_one_disk }} |
+          grep ^part | awk '{print $2}'"
+  register: wipe_one_check_parts
+
+# lsof isnt a sufficient check
+- name: diskconfig | wipe_one_check | Validate no part of device is being used
+  any_errors_fatal: True
+  become: yes
+  command: "python -c 'import os; os.open(\"/dev/{{ item }}\", os.O_EXCL)'"
+  with_items:
+    - "{{ wipe_one_check_parts.stdout_lines }}"
+    - "{{ wipe_one_disk }}"
+  register: wipe_one_check_parts_used

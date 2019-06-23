@@ -1,0 +1,54 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: nova-monasca | start | Run Monasca agent Nova detection plugin
+  become: yes
+  monasca_agent_plugin:
+    name: "nova"
+    args:
+      service_api_url: "{{ nova_api_url }}"
+  when: (nova_api_url | length) > 0
+
+
+- name: nova-monasca | start | Run Monasca agent Nova detection plugin
+  become: yes
+  monasca_agent_plugin:
+    name: "nova"
+  when: (nova_api_url | length) == 0
+
+
+- name: nova-monasca | start | Setup active check against VNC endpoint
+  become: yes
+  monasca_agent_plugin:
+    name: "httpcheck"
+    args:
+      url: "{{ nova_vnc_url }}"
+      dimensions: service:compute,component:nova-vnc
+  when: (nova_vnc_url | length) > 0
+
+
+- name: nova-monasca | start | Setup active check against Nova admin VIP
+  become: yes
+  run_once_per: verb_hosts.NOV_API
+  monasca_agent_plugin:
+    name: "httpcheck"
+    args:
+      use_keystone: True
+      match_pattern: .*v2.0.*
+      url: "{{ nova_vip_url }}"
+      dimensions: service:compute,component:nova-api
+  when: (nova_vip_url | length) > 0

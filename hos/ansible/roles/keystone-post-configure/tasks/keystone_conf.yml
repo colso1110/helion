@@ -1,0 +1,230 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# keystone user and endpoint registration
+---
+
+- name: keystone-post-configure | keystone_conf | Get a domain scoped token
+  become: yes
+  keystone_v3:
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    login_username: "{{ keystone_admin_user }}"
+    login_password: "{{ keystone_admin_user_pwd }}"
+    login_user_domain_name: "{{ keystone_default_domain }}"
+    login_domain_name: "{{ keystone_default_domain }}"
+    action: "token_get"
+  run_once: true
+  register: domain_scoped_token_result
+  ignore_errors: True
+
+- name: keystone-post-configure | keystone_conf | Create bootstrap users
+  command: >
+      "{{ keystone_bin_dir }}/keystone-manage"
+      --config-file "{{ keystone_venv_install_conf_dir }}/keystone.conf"
+      --log-config "{{ keystone_venv_install_conf_dir }}/logging.conf"
+        bootstrap
+      --bootstrap-username "{{ keystone_admin_user }}"
+  environment:
+      OS_BOOTSTRAP_PASSWORD: "{{ keystone_admin_user_pwd }}"
+  run_once: true
+  become: yes
+  become_user: "{{ keystone_user }}"
+  tags:
+    - keystone
+
+- name: keystone-post-configure | keystone_conf | Create roles
+  keystone_v3:
+    login_token: "{{ keystone_admin_token }}"
+    endpoint: "{{ keystone_internal_endpoint }}/v3"
+    action: "create_role"
+    role_name: "{{ item }}"
+    description: "Bootstrap  roles  created via keystone deploy"
+  with_items:
+    - "{{ keystone_admin_role }}"
+    - "{{ keystone_service_role }}"
+    - "{{ keystone_member_role }}"
+    - "{{ keystone_keystoneadmin_role }}"
+    - "{{ keystone_monitor_role }}"
+    - "{{ keystone_project_observer_role }}"
+  when: domain_scoped_token_result | failed
+  run_once: true
+  tags:
+    - keystone
+
+- name: keystone-post-configure | keystone_conf | Create Admin User
+  become: yes
+  keystone_v3:
+    login_token: "{{ keystone_admin_token }}"
+    endpoint: "{{ keystone_internal_endpoint }}/v3"
+    action: "create_user"
+    user_name: "{{ keystone_admin_user }}"
+    user_password: "{{ keystone_admin_user_pwd }}"
+    description: "Admin use bootstrapped from ansible"
+    user_domain_name: "{{ keystone_v2_user_domain_name }}"
+  when: domain_scoped_token_result | failed
+  run_once: true
+  no_log: True
+  tags:
+    - keystone
+
+- name: keystone-post-configure | keystone_conf | Grant admin Role to admin User
+    on Default domain
+  become: yes
+  keystone_v3:
+    login_token: "{{ keystone_admin_token }}"
+    endpoint: "{{ keystone_internal_endpoint }}/v3"
+    action: "grant_domain_role"
+    user_name: "{{ keystone_admin_user }}"
+    domain_name: "Default"
+    role_name: "{{ keystone_admin_role }}"
+    user_domain_name: "{{ keystone_v2_user_domain_name }}"
+  when: domain_scoped_token_result | failed
+  run_once: true
+  tags:
+    - keystone
+
+# Admin token should be removed as soon as it is not used.
+# This prevents admin token from not being removed in keystone.conf, if errors
+# encountered in the later tasks.
+- include: "{{ playbook_dir }}/roles/KEY-API/tasks/remove_admin_token.yml"
+
+- name: keystone-post-configure | keystone_conf | Get a domain scoped token after bootstrap
+  keystone_v3:
+    endpoint: "{{ keystone_internal_endpoint }}/v3"
+    login_username: "{{ keystone_admin_user }}"
+    login_password: "{{ keystone_admin_user_pwd }}"
+    login_user_domain_name: "Default"
+    login_domain_name: "Default"
+    action: "token_get"
+  register: domain_scoped_token_result
+
+- name: keystone-post-configure | keystone_conf | Create bootstrap tenants
+  become: yes
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_internal_endpoint }}/v3"
+    action: "create_project"
+    project_name: "{{ item }}"
+    project_domain_name: "{{ keystone_v2_project_domain_name }}"
+    description: "Bootstrap accounts created via keystone deploy"
+  with_items:
+    - "{{ keystone_admin_project_name }}"
+    - "{{ keystone_demo_project_name }}"
+    - "{{ keystone_service_project_name }}"
+    - "{{ keystone_monitoring_project_name }}"
+  run_once: true
+  tags:
+    - keystone
+
+- name: keystone-post-configure | keystone_conf | Grant admin Role to admin User
+    on admin tenant
+  become: yes
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_internal_endpoint }}/v3"
+    action: "grant_project_role"
+    user_name: "{{ keystone_admin_user }}"
+    project_name: "{{ keystone_admin_project_name }}"
+    role_name: "{{ keystone_admin_role }}"
+    user_domain_name: "{{ keystone_v2_user_domain_name }}"
+    project_domain_name: "{{ keystone_v2_project_domain_name }}"
+  run_once: true
+  tags:
+    - keystone
+
+- name: keystone-post-configure | keystone_conf | Create Demo User
+  become: yes
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_internal_endpoint }}/v3"
+    action: "create_user"
+    user_name: "{{ keystone_demo_user }}"
+    user_password: "{{ keystone_demo_pwd }}"
+    description: "Bootstrap accounts created via keystone deploy"
+    user_domain_name: "{{ keystone_v2_user_domain_name }}"
+  run_once: true
+  tags:
+    - keystone
+
+- name: keystone-post-configure | keystone_conf | Grant member role to Demo User
+    on Admin Tenant
+  become: yes
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_internal_endpoint }}/v3"
+    action: "grant_project_role"
+    user_name: "{{ keystone_demo_user }}"
+    project_name: "{{ keystone_admin_project_name }}"
+    role_name: "{{ keystone_member_role }}"
+    user_domain_name: "{{ keystone_v2_user_domain_name }}"
+    project_domain_name: "{{ keystone_v2_project_domain_name }}"
+  run_once: true
+  tags:
+    - keystone
+
+- name: keystone-post-configure | keystone_conf | Grant admin user admin Role
+    on demo tenant
+  become: yes
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_internal_endpoint }}/v3"
+    action: "grant_project_role"
+    user_name: "{{ keystone_admin_user }}"
+    project_name: "{{ keystone_demo_project_name }}"
+    role_name: "{{ keystone_admin_role }}"
+    user_domain_name: "{{ keystone_v2_user_domain_name }}"
+    project_domain_name: "{{ keystone_v2_project_domain_name }}"
+  run_once: true
+  tags:
+    - keystone
+
+#
+# The Member role is used by Horizon and Swift
+- name: keystone-post-configure | keystone_conf | Grant Demo user Member Role
+    on Demo tenant
+  become: yes
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_internal_endpoint }}/v3"
+    action: "grant_project_role"
+    user_name: "{{ keystone_demo_user }}"
+    project_name: "{{ keystone_demo_project_name }}"
+    role_name: "{{ keystone_member_role }}"
+    user_domain_name: "{{ keystone_v2_user_domain_name }}"
+    project_domain_name: "{{ keystone_v2_project_domain_name }}"
+  run_once: true
+  tags:
+    - keystone
+
+
+- name: keystone-post-configure | keystone_conf | Grant admin user, admin Role
+    to services tenant
+  become: yes
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_internal_endpoint }}/v3"
+    action: "grant_project_role"
+    user_name: "{{ keystone_admin_user }}"
+    project_name: "{{ keystone_service_project_name }}"
+    role_name: "{{ keystone_admin_role }}"
+    user_domain_name: "{{ keystone_v2_user_domain_name }}"
+    project_domain_name: "{{ keystone_v2_project_domain_name }}"
+  run_once: true
+  tags:
+    - keystone
+
+- name: keystone-post-configure | keystone_conf | Configure Services
+  include: services_conf.yml
+

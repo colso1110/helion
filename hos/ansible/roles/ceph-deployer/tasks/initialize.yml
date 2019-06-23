@@ -1,0 +1,78 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: ceph-deployer | initialize | Create ceph directory /etc/ceph
+  become: yes
+  file:
+    path: /etc/ceph
+    state: directory
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0777
+
+- name: ceph-deployer | initialize |
+        Check /etc/ceph/{{ ceph_cluster }}.mon.keyring exists in deployer
+  stat:
+    path: /etc/ceph/{{ ceph_cluster }}.mon.keyring
+  register: ceph_deployer_mon_keyring_result
+
+- name: ceph-deployer | initialize | Fetch
+    /etc/ceph/{{ ceph_cluster }}.mon.keyring from admin node to /etc/ceph
+  become: yes
+  fetch:
+    src: /etc/ceph/{{ ceph_cluster }}.mon.keyring
+    dest: /etc/ceph/{{ ceph_cluster }}.mon.keyring
+    flat: yes
+  delegate_to: "{{ ceph_admin_node }}"
+  when: ceph_deployer_mon_keyring_result.stat.exists == False
+
+- name: ceph-deployer | initialize | Check
+    /etc/ceph/{{ ceph_cluster }}.client.admin.keyring exists in deployer
+  stat:
+    path: /etc/ceph/{{ ceph_cluster }}.client.admin.keyring
+  register: ceph_deployer_admin_keyring_result
+
+- name: ceph-deployer | initialize |
+        Fetch /etc/ceph/{{ ceph_cluster }}.client.admin.keyring from admin node
+  become: yes
+  fetch:
+    src: /etc/ceph/{{ ceph_cluster }}.client.admin.keyring
+    dest: /etc/ceph/{{ ceph_cluster }}.client.admin.keyring
+    flat: yes
+  delegate_to: "{{ ceph_admin_node }}"
+  when: ceph_deployer_admin_keyring_result.stat.exists == False
+
+- name: ceph-deployer | initialize | Change keyring permissions
+  become: yes
+  file:
+    path: "{{ item }}"
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0644
+  with_items:
+    - "/etc/ceph/{{ ceph_cluster }}.client.admin.keyring"
+    - "/etc/ceph/{{ ceph_cluster }}.mon.keyring"
+
+- name: ceph-deployer | initialize |
+        Restrict other users from writing into /etc/ceph directory
+  become: yes
+  file:
+    path: /etc/ceph
+    state: directory
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0755

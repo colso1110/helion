@@ -1,0 +1,109 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+    version: 2
+
+service-components:
+-   name: neutron-ovsvapp-agent
+    mnemonic: NEU-OVSVAPP
+    service: neutron
+
+    network-tags:
+    -   name: neutron.networks.vxlan
+        needs-value: false
+        needs-bridge: false
+        endpoints:
+        - port: '4789'
+          protocol: 'udp'
+          roles:
+          - vxlan
+    -   name: neutron.networks.vlan
+        needs-value: true
+        needs-bridge: true
+        bridge-provider: ovs
+        endpoints:
+        -   port: '8080'
+            roles:
+            - internal
+    # This tag is required to indicate to playbooks
+    # which interface to attach to sec-bridge.
+    -   name: neutron.ovsvapp.sec_bridge_if
+        needs-value: false
+        needs-bridge: true
+        bridge-provider: ovs
+
+    # This tag is required to indicate to
+    # playbooks that it is management interface.
+    -   name: neutron.ovsvapp.management_if
+        needs-value: false
+        needs-bridge: false
+
+    consumes-services:
+    -   service-name: FND-RMQ
+
+    endpoints:
+    - port: '8080'
+      roles:
+      - ovsvapp-nginx
+
+    requires:
+    - name: eon-client
+      scope: host
+
+    provides-data:
+      - to:
+          - name: neutron-ml2-plugin
+        data:
+          - option: mechanism_drivers
+            values:
+              - ovsvapp
+          - option: l2_population
+            values:
+              - False
+          - option: enable_distributed_routing
+            values:
+              - False
+      - to:
+          - name: neutron-server
+        data:
+          - option: service_plugins
+            values:
+              - networking_vsphere.services.ovsvapp_plugin.OVSvAppServicePlugin
+          - option: router_distributed
+            values:
+              - False
+          - option: neutron_l3_ha
+            values:
+              - True
+      - to:
+          - name: eon-api
+        data:
+          - option: esx_network_driver
+            values:
+              - ovsvapp
+      - to:
+          - name: eon-conductor
+        data:
+          - option: esx_network_driver
+            values:
+              - ovsvapp
+      - to:
+          - name: nova-esx-compute-proxy
+        data:
+          - option: compute_driver
+            values:
+              - vmwareapi.hp_driver.HPVMwareVCDriver

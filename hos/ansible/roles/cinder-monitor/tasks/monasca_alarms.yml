@@ -1,0 +1,136 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- include:
+    ../../_CND-CMN/tasks/_determine_volume_host.yml
+
+- name: cinder-monitor | monasca_alarms | Set cinder monitor not running here condition
+  set_fact:
+    _cinder_monitor_cond: " > {{ process_count_notrunning_upper_bound }}"
+  when: not _cinder_volume_running_here | bool
+
+- name: cinder-monitor | monasca_alarms | Set cinder monitor running here condition
+  set_fact:
+    _cinder_monitor_cond: " < {{ process_count_running_lower_bound }}"
+  when: _cinder_volume_running_here | bool
+
+- name: cinder-monitor | monasca_alarms | Set cinder monitor facts
+  set_fact: "{{ item.name }}='{{ item.pfx }}{{ item.daemon }}{{ item.sfx }}'"
+  with_items:
+    - daemon: "cinder-volume"
+      name: "cinder_volume_running_check"
+      pfx: "cinderlm.cinder.cinder_services{component="
+      sfx: ",hostname={{ host.my_dimensions.hostname }}}{{ _cinder_monitor_cond }}"
+    - daemon: "cinder-backup"
+      name: "cinder_backup_running_check"
+      pfx: "cinderlm.cinder.cinder_services{component="
+      sfx: ",hostname={{ host.my_dimensions.hostname }}}{{ _cinder_monitor_cond }}"
+
+- name: cinder-monitor | monasca_alarms | Setup default email notification method
+  monasca_notification_method:
+    name: "Default Email"
+    type: 'EMAIL'
+    address: "root@localhost"
+    keystone_url: "{{ cinder_keystone.admin_url }}"
+    keystone_user: "{{ cinder_keystone.admin_user }}"
+    keystone_password: "{{ cinder_keystone.admin_password }}"
+    keystone_project: "{{ cinder_keystone.monasca_tenant }}"
+    monasca_api_url: "{{ monasca_alarm_definition_api_url }}"
+    overwrite: false
+  register: cinder_default_notification_result
+  run_once: true
+
+- name: cinder-monitor | monasca_alarms | Backup/Volume running alarm definition
+  monasca_alarm_definition:
+    name: "Cinder {{ item.name }} running {{ host.my_dimensions.hostname }} check"
+    description: >
+      Alarms if the cinder {{ item.name }} service is not
+      appropriately set up.
+    severity: "HIGH"
+    expression: "{{ item.expression }}"
+    match_by: ["hostname"]
+    keystone_url: "{{ cinder_keystone.admin_url }}"
+    keystone_user: "{{ cinder_keystone.admin_user }}"
+    keystone_password: "{{ cinder_keystone.admin_password }}"
+    keystone_project: "{{ cinder_keystone.monasca_tenant }}"
+    monasca_api_url: "{{ monasca_alarm_definition_api_url }}"
+    state: "{{ cinder_volume_monitor_state }}"
+    ok_actions:
+      - "{{ cinder_default_notification_result.notification_method_id }}"
+    undetermined_actions:
+      - "{{ cinder_default_notification_result.notification_method_id }}"
+    alarm_actions:
+      - "{{ cinder_default_notification_result.notification_method_id }}"
+  with_items:
+    - expression: "{{ cinder_volume_running_check }}"
+      name: "volume"
+    - expression: "{{ cinder_backup_running_check }}"
+      name: "backup"
+
+# This alarm definition is redundant for HOS 3.0 and is being marked absent
+- name: cinder-monitor | monasca_alarms | Create monasca alarm definitions
+  run_once: true
+  monasca_alarm_definition:
+    name: "{{ item.name }}"
+    description: "{{ item.description }}"
+    severity: "{{ item.severity }}"
+    expression: "{{ item.expression }}"
+    match_by: "{{ item.match_by }}"
+    keystone_url: "{{ cinder_keystone.admin_url }}"
+    keystone_user: "{{ cinder_keystone.admin_user }}"
+    keystone_password: "{{ cinder_keystone.admin_password }}"
+    keystone_project: "{{ cinder_keystone.monasca_tenant }}"
+    monasca_api_url: "{{ monasca_alarm_definition_api_url }}"
+    state: "absent"
+  with_items:
+    - { name: "Cinderlm diagnostics monitor",
+        description: "Alarms if cinder monitoring cannot execute a task",
+        severity: "HIGH",
+        expression: "cinderlm.cinderlm_check > 0",
+        match_by: ["hostname"]}
+
+# Create an alarm for local disks' status
+# Needs to be done once for the entire system
+- name: cinder-monitor | monasca_alarms | HP local disks alarm definition
+  run_once: true
+  monasca_alarm_definition:
+    name: "Storage {{ item.name }} check"
+    description: "Alarms if the {{ item.name }} metric is not OK."
+    severity: "HIGH"
+    expression: "{{ item.expression }}"
+    match_by: ["hostname"]
+    keystone_url: "{{ cinder_keystone.admin_url }}"
+    keystone_user: "{{ cinder_keystone.admin_user }}"
+    keystone_password: "{{ cinder_keystone.admin_password }}"
+    keystone_project: "{{ cinder_keystone.monasca_tenant }}"
+    monasca_api_url: "{{ monasca_alarm_definition_api_url }}"
+    state: present
+    ok_actions:
+      - "{{ cinder_default_notification_result.notification_method_id }}"
+    undetermined_actions:
+      - "{{ cinder_default_notification_result.notification_method_id }}"
+    alarm_actions:
+      - "{{ cinder_default_notification_result.notification_method_id }}"
+  with_items:
+    # Note > 0 also picks up a warning
+    # - its legitimate to alarm for a drive warning
+    - expression: "cinderlm.hp_hardware.hpssacli.logical_drive\
+                    {component=logical_drive,service=block-storage\
+                    ,sub_component=lun_status} > 0"
+      name: "faulty lun"
+    - expression: "cinderlm.hp_hardware.hpssacli.physical_drive\
+                    {component=physical_drive,service=block-storage} > 0"
+      name: "faulty drive"

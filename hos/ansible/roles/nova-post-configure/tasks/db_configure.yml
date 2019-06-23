@@ -1,0 +1,58 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Nova Database
+---
+# This task always reports changed
+- name: nova-post-configure | db_configure | Run nova-manage db sync
+  become: yes
+  command: >
+    {{ nova_api_bin_dir }}/nova-manage
+    --config-file {{ nova_api_conf_dir }}/nova.conf
+    --config-file {{ nova_api_conf_dir }}/api.conf
+    db sync
+  run_once_per: verb_hosts.NOV_API
+
+# This task always reports changed
+- name: nova-post-configure | db_configure | Run nova-manage api db sync
+  become: yes
+  command: >
+    {{ nova_api_bin_dir }}/nova-manage
+    --config-file {{ nova_api_conf_dir }}/nova.conf
+    --config-file {{ nova_api_conf_dir }}/api.conf
+    api_db sync
+  run_once_per: verb_hosts.NOV_API
+
+# operation above sets the owner of file to root - needs to be nova
+- name: nova-post-configure | db_configure | set log file owner
+  become: yes
+  file:
+    path: "{{ item }}"
+    owner: "{{ nova_system_user }}"
+    group: "{{ nova_log_group }}"
+    mode: 0640
+    state: touch
+  with_items: nova_log_files
+
+# operation above sets the owner of file to root - needs to be nova
+- name: nova-post-configure | db_configure | set audit log file owner
+  become: yes
+  file:
+    path: "{{ nova_audit_log_location }}/nova-audit.log"
+    owner: "{{ nova_system_user }}"
+    group: "{{ nova_log_group }}"
+    mode: 0640
+    state: touch
+  when: nova_api_audit_enable

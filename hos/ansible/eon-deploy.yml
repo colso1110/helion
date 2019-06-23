@@ -1,0 +1,44 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: _eon-install.yml
+- include: eon-stop.yml
+
+- hosts: EON-API
+  roles:
+    - eon-pre-configure
+  tasks:
+    - include: roles/eon-pre-configure/tasks/keystone_config.yml
+      ansible_python_interpreter:
+          "{{ KEY_CLI.vars.keystone_client_python_interpreter }}"
+
+- include: _eon-configure.yml
+
+- hosts: EON-CND--first-member
+  roles:
+    - eon-post-configure
+  tasks:
+    - include: roles/eon-post-configure/tasks/db_config.yml
+    - include: roles/eon-post-configure/tasks/cp_hlm_ssh_key.yml
+
+- include: eon-start.yml
+
+- hosts: EON-API:&MON-AGN
+  roles:
+    - eon-monitoring
+  tasks:
+    - include: roles/eon-monitoring/tasks/eon_monitoring.yml

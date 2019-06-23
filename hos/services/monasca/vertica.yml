@@ -1,0 +1,73 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+    version: 2
+
+service-components:
+-   name: vertica
+    mnemonic: FND-VDB
+    service: foundation
+
+    advertise-member-list: true
+
+    config-set:
+    -   name: admintools.conf
+        ansible-vars:
+        -   name: vertica_ssh_key
+            value: '%random-sshkey%'
+            properties:
+                length: 2048
+                comment: "Generated Key for Vertica User"
+            immutable: 'true'
+        -   name: monitor_user_name
+            value: monitor
+        -   name: monitor_user_password
+            value: '%random-password%'
+        -   name: dbadmin_user_password
+            value: '%random-password%'
+
+    endpoints:
+    -   port: 5433
+        has-vip: true
+        vip-port: 15433
+        vip-options:
+        - ''
+        roles:
+        - internal
+
+    -   port: 5433
+        roles:
+        - internal-cluster
+        protocol: udp
+
+    -   port: 4803:4804
+        protocol: udp
+        roles:
+        - spread-daemon-udp
+
+    -   port: 4803
+        roles:
+        - spread-daemon
+
+    -   port: 5434
+        roles:
+        - spread-monitor
+
+    -   port: 22
+        roles:
+        - ssh
+

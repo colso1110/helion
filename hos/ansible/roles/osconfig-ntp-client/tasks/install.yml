@@ -1,0 +1,56 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Playbook for installing ntp client software
+---
+
+- name: osconfig-ntp-client | install | Determine iface ips for ntp servers
+  shell: |
+    ip route get "{{ item.ip_address }}" |
+    awk '$(NF-1) == "src" {print $NF}'
+  with_items: NTP_CLI.consumes_NTP_SVR.members.private
+  register: ntp_svr_ip_route_get_results
+
+- name: osconfig-ntp-client | install | Extract unique list of iface ips
+  set_fact:
+    ntp_client_listen_ifaces: "{{ ntp_svr_ip_route_get_results.results |
+                                  map(attribute='stdout') | list | unique }}"
+
+- name: osconfig-ntp-client | install | Create ntp configuration file
+  sudo: yes
+  template: src=ntp.conf.j2  dest=/etc/ntp.conf
+  register: hlm_notify_osconfig_ntp_restart_required
+
+- name: osconfig-ntp-client | install | Install required packages
+  sudo: yes
+  apt:
+    name: "{{ item }}"
+    state: latest
+  with_items:
+    - lockfile-progs
+    - ntpdate
+    - ntp
+    - util-linux
+  when: ansible_os_family == 'Debian'
+
+- name: osconfig-ntp-client | install | Install required packages in Redhat derivatives
+  sudo: yes
+  yum:
+    name: "{{ item }}"
+    state: latest
+  with_items:
+    - ntpdate
+    - ntp
+  when: ansible_os_family == 'RedHat'

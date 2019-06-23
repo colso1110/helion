@@ -1,0 +1,56 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: CEP-RGW | start | Notify systemd of changes
+  become: yes
+  command: systemctl daemon-reload
+
+- name: CEP-RGW | start | Enable rgw apache site
+  become: yes
+  command: a2ensite rgw.conf
+  register: ceph_rgw_enable_result
+  changed_when: ( ceph_rgw_enable_result | success ) and
+                ( 'already enabled' not in ceph_rgw_enable_result.stdout )
+
+- include: "{{ playbook_dir }}/roles/FND-AP2/tasks/start_reload.yml"
+  vars:
+    apache_restart_requested: "{{ hlm_notify_ceph_apache2_restart_required is
+        defined and hlm_notify_ceph_apache2_restart_required.changed }}"
+    apache_reload_requested: "{{ (hlm_notify_ceph_apache2_reload_required is
+        defined and hlm_notify_ceph_apache2_reload_required.changed) or
+        ceph_rgw_enable_result.changed }}"
+
+- name: CEP-RGW | start | Enable radosgw daemon to run on boot
+  become: yes
+  service: name=radosgw enabled=yes
+
+- name: CEP-RGW | start | Start radosgw daemon
+  become: yes
+  service: name=radosgw state=started
+  register: ceph_radosgw_start_result
+
+- name: CEP-RGW | start | Restart radosgw
+  become: yes
+  service: name=radosgw state=restarted
+  when: ((not (hlm_notify_ceph_restart_required is not defined) and
+        hlm_notify_ceph_restart_required.changed and
+        ceph_radosgw_restart_result is not defined) or
+        (hlm_notify_ceph_rgw_restart_required is defined and
+        hlm_notify_ceph_rgw_restart_required.changed and
+        ceph_radosgw_restart_result is not defined)) and
+        ceph_radosgw_start_result.changed == False
+  register: ceph_radosgw_restart_result

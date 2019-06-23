@@ -1,0 +1,51 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: ironic-common | _add_cert_ramdisk | Create tmp ramdisk directory
+  file:
+    path: "{{ ironic_initrd_build_path }}"
+    state: directory
+    mode: 0755
+
+- name: ironic-common | _add_cert_ramdisk | Extract archive file
+  shell: zcat {{ ramdisk_path }} | cpio --extract --make-directories
+  args:
+    chdir: "{{ ironic_initrd_build_path }}"
+
+- name: ironic-common | _add_cert_ramdisk | Find cert file location
+  shell: >
+    {{ ironic_initrd_build_path }}/usr/bin/python2.7 -c
+    "import requests; print requests.certs.where()"
+  register: chroot_cert_file_path_result
+
+- name: ironic-common | _add_cert_ramdisk | Append cert file
+  shell: >
+    cat "{{ ironic_ca_file }}" >>
+    "{{ chroot_cert_file_path_result.stdout }}"
+
+- name: ironic-common | _add_cert_ramdisk | Package new ramdisk file
+  shell: >
+    find . | cpio --create --format='newc' |
+    gzip -c -9 > {{ ramdisk_path }}
+  args:
+    chdir: "{{ ironic_initrd_build_path }}"
+
+- name: ironic-common | _add_cert_ramdisk | Clean tmp ramdisk directory
+  file:
+    path: "{{ ironic_initrd_build_path }}"
+    state: absent
+    mode: 0755

@@ -1,0 +1,218 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: KEY-API | _configure_federation_sp | Create the IdP meta data files
+  copy:
+    dest: "{{ keystone_conf_dir }}/{{ keystone_sp_conf.identity_provider.id
+              }}_metadata.xml"
+    src: "{{ keystone_sp_conf.idp_metadata_file }}"
+    owner: "{{ keystone_user }}"
+    group: "{{ keystone_group }}"
+    mode: 0644
+  become: yes
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp  | Check shibd mapping file has been configured
+  shell: grep 'SHIBD TEMPLATE' "{{ keystone_shibd_conf_dir }}/attribute-map.xml"
+  register: shib_mapping_configured_result
+  ignore_errors: True
+
+- name: KEY-API | _configure_federation_sp  | Configure the shibd mapping file
+  template:
+    src: "attribute-map.xml.j2"
+    dest: "{{ keystone_shibd_conf_dir }}/attribute-map.xml"
+    owner: "{{ keystone_user }}"
+    group: "{{ keystone_group }}"
+    mode: 0644
+  when: not shib_mapping_configured_result.stdout
+  become: yes
+  notify: keystone_change
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp  | Add shibd custom attributes in the mapping file
+  lineinfile:
+    backup: no
+    state: present
+    dest: "{{ keystone_shibd_conf_dir }}/attribute-map.xml"
+    line: '    <Attribute name="{{ item.name }}" id="{{ item.id }}"/>'
+    insertafter: '<!-- Custom attributes -->'
+  with_items: keystone_sp_conf.attribute_map
+  become: yes
+  notify: keystone_change
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp  | Configure shibd log rotation
+  template:
+    src: "shibd.logger.j2"
+    dest: "{{ keystone_shibd_conf_dir }}/shibd.logger"
+    owner: "{{ keystone_user }}"
+    group: "{{ keystone_group }}"
+    mode: 0644
+  become: yes
+  notify: keystone_change
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp  | Check shibd configuration file has been configured
+  shell: grep 'SHIBD TEMPLATE' "{{ keystone_shibd_conf_dir }}/shibboleth2.xml"
+  register: shib_configured_result
+  ignore_errors: True
+
+- name: KEY-API | _configure_federation_sp  | Configure the shibd configuration file
+  template:
+    src: "shibboleth2.xml.j2"
+    dest: "{{ keystone_shibd_conf_dir }}/shibboleth2.xml"
+    owner: "{{ keystone_user }}"
+    group: "{{ keystone_group }}"
+    mode: 0644
+  when: not shib_configured_result.stdout
+  become: yes
+  notify: keystone_change
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp  | Add IdP metadata reference in the shibd configuration file
+  lineinfile:
+    backup: yes
+    state: present
+    dest: "{{ keystone_shibd_conf_dir }}/shibboleth2.xml"
+    line: '            <MetadataProvider type="XML" file="{{
+            keystone_conf_dir }}/{{
+            keystone_sp_conf.identity_provider.id }}_metadata.xml"/>'
+    insertafter: '<MetadataProvider type="Chaining">'
+  become: yes
+  notify: keystone_change
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp  | Update entity Ids in the shibd configuration file
+  lineinfile:
+    state: present
+    dest: "{{ keystone_shibd_conf_dir }}/shibboleth2.xml"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  with_items:
+    - { regexp: '<ApplicationDefaults entityID=*',
+        line: '    <ApplicationDefaults entityID="{{
+        keystone_sp_conf.shib_sso_application_entity_id }}">' }
+    - { regexp: '<SSO entityID=*', line: '            <SSO entityID="{{
+        keystone_sp_conf.shib_sso_idp_entity_id }}">' }
+  when: keystone_trusted_idp is defined and keystone_trusted_idp == "adfs"
+  become: yes
+  notify: keystone_change
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp | Get a domain scoped token
+  keystone_v3:
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    login_username: "{{ keystone_admin_user }}"
+    login_password: "{{ keystone_admin_user_pwd }}"
+    login_user_domain_name: "{{ keystone_default_domain }}"
+    login_domain_name: "{{ keystone_default_domain }}"
+    action: "token_get"
+  run_once: true
+  register: domain_scoped_token_result
+
+- name: KEY-API | _configure_federation_sp | Create a domain
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    action: "create_domain"
+    description: "{{ keystone_sp_conf.target_domain.description }}"
+    domain_name:  "{{ keystone_sp_conf.target_domain.name }} "
+  run_once: true
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp | Create a project
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    action: "create_project"
+    description: "{{ keystone_sp_conf.target_project.description }}"
+    project_name:  "{{ keystone_sp_conf.target_project.name }} "
+    project_domain_name:  "{{ keystone_sp_conf.target_domain.name }} "
+  run_once: true
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp | Create a group
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    action: "create_group"
+    description: "{{ keystone_sp_conf.target_group.description }}"
+    group_name: "{{ keystone_sp_conf.target_group.name }}"
+    domain_name:  "{{ keystone_sp_conf.target_domain.name }} "
+  register: federation_group_id_result
+  run_once: true
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp | Grant role to a group on a project
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    action: "grant_project_role_on_group"
+    group_name: "{{ keystone_sp_conf.target_group.name }}"
+    group_domain_name: "{{ keystone_sp_conf.target_domain.name }}"
+    role_name: "{{ keystone_sp_conf.role.name }}"
+    project_name: "{{ keystone_sp_conf.target_project.name }}"
+    project_domain_name: "{{ keystone_sp_conf.target_domain.name }}"
+  run_once: true
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp | Create IdP in the DB
+  keystone_federation:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    action: "create_identity_provider"
+    identity_provider_id: "{{ keystone_sp_conf.identity_provider.id }}"
+    description: "{{ keystone_sp_conf.identity_provider.description }}"
+    remote_id: "{{ keystone_sp_conf.shib_sso_idp_entity_id }}"
+  run_once: true
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp | Create Mapping in the DB
+  keystone_federation:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    action: "create_mapping"
+    mapping_id: "{{ keystone_sp_conf.mapping.id }}"
+    rules: "{{ lookup('file', keystone_sp_conf.mapping.rules_file) |
+            regex_replace('GROUP_ID', federation_group_id_result.result.id) }}"
+  run_once: true
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_federation_sp | Create Protocol in the DB
+  keystone_federation:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    action: "create_protocol"
+    protocol_id: "{{ keystone_sp_conf.protocol.id }}"
+    identity_provider_id: "{{ keystone_sp_conf.identity_provider.id }}"
+    mapping_id: "{{ keystone_sp_conf.mapping.id }}"
+  run_once: true
+  tags:
+    - keystone

@@ -1,0 +1,87 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: KEYMGR-WKR | install | Update venv cache
+  become: yes
+  install_package:
+    cache: update
+
+- name: KEYMGR-WKR | install | Install Barbican worker from barbican venv
+  become: yes
+  install_package:
+    name: barbican
+    service: "{{ barbican_worker_service_name }}"
+    state: present
+    activate: act_off
+  register: barbican_worker_install_result
+  notify: barbican_worker_config_change
+  tags:
+    - barbican
+
+- name: KEYMGR-WKR | install | Install Barbican package result echo
+  debug:
+    msg: "barbican_worker_install_result =
+      {{ barbican_worker_install_result }}"
+
+
+- include: ../../barbican-common/tasks/_set_directories.yml
+  vars:
+    install_package_result: "{{ barbican_worker_install_result }}"
+
+- name: KEYMGR-WKR | install | Create barbican worker config directory
+  become: yes
+  file:
+    path: "{{ item.name }}"
+    owner: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+    mode: "{{ item.mode }}"
+    state: "directory"
+    recurse: "yes"
+  with_items:
+    - { name: "{{ barbican_conf_dir }}", mode: "u+rwx,g+rx,o+rx" }
+
+  tags:
+    - barbican
+
+- name: KEYMGR-WKR | install | Register barbican-worker as a service
+  become: yes
+  setup_systemd:
+    service: "{{ barbican_worker_service_name }}"
+    user: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+    cmd: barbican_worker
+    args: >
+      --config-file "{{ barbican_conf_dir }}/barbican-worker.conf"
+  tags:
+    - barbican
+
+- name: KEYMGR-WKR | install | print venv
+  debug:
+    msg: "Barbican worker venv dir = {{ barbican_venv_dir }},
+    bin dir = {{ barbican_bin_dir }}, conf dir = {{ barbican_conf_dir }},
+    share dir = {{ barbican_share_dir }}"
+
+- name: KEYMGR-WKR | install | Create logging directory
+  become: yes
+  file:
+    path: /var/log/barbican
+    owner: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+    mode: 0775
+    state: directory
+  tags:
+    - barbican

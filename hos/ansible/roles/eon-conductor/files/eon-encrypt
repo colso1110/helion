@@ -1,0 +1,123 @@
+#!/usr/bin/python
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
+
+"""A utility to encrypt passwords using openssl and RSA algorithm"""
+
+from subprocess import PIPE, Popen
+import sys
+import os
+
+
+class rsautl:
+    prefix = '@hos_rsautl@'
+
+    def __init__(self, key):
+        pass
+
+    def encrypt(self, raw):
+        return ""
+
+    def decrypt(self, cooked):
+        return ""
+
+
+class openssl:
+    prefix = '@hos@'
+
+    def __init__(self, key=None):
+        pass
+
+    def generate_pem(self):
+        pem_path = os.path.expanduser('~') + "/.ssh/eon_encrypt.pem"
+        pub_path = os.path.expanduser('~') + "/.ssh/id_rsa.pub"
+        if(os.path.exists(pem_path)):
+           return pem_path
+        else:
+           file_ = open(pem_path, "w")
+           argv = ('/usr/bin/ssh-keygen', '-f', pub_path, '-e', '-m', 'PKCS8')
+           p = Popen(argv, close_fds=True, stdin=PIPE, stdout=file_, stderr=PIPE)
+           file_.close()
+           return pem_path
+
+    def encrypt(self, value, pem_path):
+        argv = ('/usr/bin/openssl', 'rsautl', '-pubin', '-inkey', pem_path, '-encrypt', '-pkcs')
+        encrypt_data = Popen(argv, close_fds=True, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        result = encrypt_data.communicate(input=value)
+        if encrypt_data.returncode != 0:
+            errmsg = result[1].strip()
+            if errmsg.startswith('error reading input file') or errmsg.startswith('bad magic number'):
+                errmsg = 'bad input data'
+            raise OSError('openssl: %s' % errmsg)
+        argv = ('/usr/bin/openssl', 'enc', '-A', '-base64')
+        encode_data = Popen(argv, close_fds=True, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        enc = encode_data.communicate(input=result[0])
+        return enc[0].strip()
+
+    def decrypt(self, value):
+        # openssl expects a newline at the end of the string.
+        rsa_path = os.path.expanduser('~') + "/.ssh/id_rsa"
+        if value[-1] != '\n':
+            value += '\n'
+        argv = ('/usr/bin/openssl', 'enc', '-d', '-A', '-base64')
+        decode_data = Popen(argv, close_fds=True, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        decode = decode_data.communicate(input=value)
+        argv = ('/usr/bin/openssl', 'rsautl', '-inkey', rsa_path, '-decrypt')
+        decrypt_data = Popen(argv, close_fds=True, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        result = decrypt_data.communicate(input=decode[0])
+        if decrypt_data.returncode != 0:
+            errmsg = result[1].strip()
+            if errmsg.startswith('bad decrypt'):
+                errmsg = 'incorrect encryption key'
+            elif errmsg.startswith('error reading input file') or errmsg.startswith('bad magic number'):
+                errmsg = 'bad input data'
+            raise OSError('openssl: %s' % errmsg)
+        return result[0].strip()
+
+
+def main():
+    import getpass
+    import sys
+
+    obj = openssl()
+    if len(sys.argv) > 1 and sys.argv[1] == '-d':
+        if len(sys.argv) > 2:
+            value = sys.argv[2]
+        else:
+            value = getpass.getpass('encrypted value? ')
+
+        if value.startswith(obj.prefix):
+            value = value[len(obj.prefix):]
+        x = obj.decrypt(value)
+        print x
+    else:
+            if len(sys.argv) > 1 and sys.argv[1] != '-d':
+                value = sys.argv[1]
+                if len(sys.argv) > 3 and sys.argv[2] == '-k':
+                        pem_path = sys.argv[3]
+                        if not (os.path.exists(pem_path)):
+                                raise Exception('Invalid path "%s"' % pem_path)
+                else:
+                        raise Exception('Usage: eon-encrypt <password> -k <pem file path>')
+            else:
+                # Passing password through getpass will consider running from deployer and use defult path.
+                value = getpass.getpass('unencrypted value? ')
+                pem_path = obj.generate_pem()
+
+            x = obj.encrypt(value, pem_path)
+            print obj.prefix + x
+
+if __name__ == '__main__':
+    main()

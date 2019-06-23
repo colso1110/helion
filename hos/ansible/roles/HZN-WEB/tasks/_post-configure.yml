@@ -1,0 +1,139 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Collect static files and place them in vhost root
+# The command should typically translate to:
+# /opt/stack/service/horizon/venv/bin/python /opt/stack/service/horizon/manage.py collectstatic --clear --noinput
+- name: horizon_post_configure | post-configure | Collect static files
+  command: "{{ horizon_bin_dir }}/django-admin.py collectstatic --clear --noinput --ignore '*.spec.js'"
+  become: yes
+  become_user: "{{ horizon_venv_user }}"
+  environment:
+    HORIZON_LOG_TO_CONSOLE: 1
+    DJANGO_SETTINGS_MODULE: openstack_dashboard.settings
+
+# Compress the static files
+# The command should typically translate to:
+# /opt/stack/service/horizon/venv/bin/python /opt/stack/service/horizon/manage.py compress
+- name: horizon_post_configure | post-configure | Compress static files
+  command: "{{ horizon_bin_dir }}/django-admin.py compress"
+  become: yes
+  become_user: "{{ horizon_venv_user }}"
+  environment:
+    HORIZON_LOG_TO_CONSOLE: 1
+    DJANGO_SETTINGS_MODULE: openstack_dashboard.settings
+
+- name: horizon_post_configure | post-configure | Compile translations
+  command: "{{ horizon_bin_dir }}/django-admin.py compilemessages"
+  become: yes
+  become_user: "{{ horizon_venv_user }}"
+  args:
+    chdir: "{{ horizon_site_packages_dir }}/{{ item }}"
+  environment:
+    HORIZON_LOG_TO_CONSOLE: 1
+    DJANGO_SETTINGS_MODULE: openstack_dashboard.settings
+  with_items:
+    - openstack_dashboard
+    - horizon
+    - openstack_auth
+
+- name: horizon_post_configure | post-configure | DB migration and sync
+  become: yes
+  become_user: "{{ horizon_venv_user }}"
+  run_once: yes
+  command: "{{ horizon_bin_dir }}/django-admin.py migrate --noinput"
+  environment:
+    HORIZON_LOG_TO_CONSOLE: 1
+    DJANGO_SETTINGS_MODULE: openstack_dashboard.settings
+
+# Database session backing requires clearing out the session table once in a while
+- name: horizon_post_configure | post-configure | Set up cronjob to clear expired sessions
+  cron:
+    name: "horizon session purge"
+    user: "{{ horizon_user }}"
+    # Make this configurable based on timezone somehow?
+    hour: "{{ 23 }}"
+    minute: "{{ 59 | random }}"
+    job: "DJANGO_SETTINGS_MODULE=openstack_dashboard.settings {{ horizon_bin_dir }}/django-admin.py clearsessions"
+
+
+# Sync policy files
+- name: "HZN-WEB | copy_policy_files | Check for keystone policy file"
+  stat: path="{{ 'keystone' | config_dir() }}/policy.json"
+  register: keystone_policy_file_info
+
+- name: "HZN-WEB | copy_policy_files | Copy keystone policy file"
+  command: "cp {{ 'keystone' | config_dir() }}/policy.json {{ horizon_site_packages_dir }}/openstack_dashboard/conf/keystone_policy.json"
+  when: keystone_policy_file_info.stat.exists
+
+
+- name: "HZN-WEB | copy_policy_files | Check for nova policy file"
+  stat: path="{{ 'nova-api' | config_dir() }}/nova/policy.json"
+  register: nova_policy_file_info
+
+- name: "HZN-WEB | copy_policy_files | Copy nova policy file"
+  command: "cp {{ 'nova-api' | config_dir() }}/nova/policy.json {{ horizon_site_packages_dir }}/openstack_dashboard/conf/nova_policy.json"
+  when: nova_policy_file_info.stat.exists
+
+
+- name: "HZN-WEB | copy_policy_files | Check for cinder policy file"
+  stat: path="{{ cinder_dir }}/policy.json"
+  register: cinder_policy_file_info
+
+- name: "HZN-WEB | copy_policy_files | Copy cinder policy file"
+  command: "cp {{ cinder_dir }}/policy.json {{ horizon_site_packages_dir }}/openstack_dashboard/conf/cinder_policy.json"
+  when: cinder_policy_file_info.stat.exists
+
+
+- name: "HZN-WEB | copy_policy_files | Check for neutron policy file"
+  stat: path="{{ 'neutron' | config_dir() }}/policy.json"
+  register: neutron_policy_file_info
+
+- name: "HZN-WEB | copy_policy_files | Copy neutron policy file"
+  command: "cp {{ 'neutron' | config_dir() }}/policy.json {{ horizon_site_packages_dir }}/openstack_dashboard/conf/neutron_policy.json"
+  when: neutron_policy_file_info.stat.exists
+
+- name: "HZN-WEB | copy_policy_files | Modify neutron policy file"
+  replace: dest={{ horizon_site_packages_dir }}/openstack_dashboard/conf/neutron_policy.json regexp='tenant_id' replace='project_id'
+  when: neutron_policy_file_info.stat.exists
+
+
+- name: "HZN-WEB | copy_policy_files | Check for glance policy file"
+  stat: path="{{ 'glance-api' | config_dir() }}/policy.json"
+  register: glance_policy_file_info
+
+- name: "HZN-WEB | copy_policy_files | Copy glance policy file"
+  command: "cp {{ 'glance-api' | config_dir() }}/policy.json {{ horizon_site_packages_dir }}/openstack_dashboard/conf/glance_policy.json"
+  when: glance_policy_file_info.stat.exists
+
+
+- name: "HZN-WEB | copy_policy_files | Check for heat policy file"
+  stat: path="{{ 'heat-api' | config_dir() }}/heat/policy.json"
+  register: heat_policy_file_info
+
+- name: "HZN-WEB | copy_policy_files | Copy heat policy file"
+  command: "cp {{ 'heat-api' | config_dir() }}/heat/policy.json {{ horizon_site_packages_dir}}/openstack_dashboard/conf/heat_policy.json"
+  when: heat_policy_file_info.stat.exists
+
+
+- name: "HZN-WEB | copy_policy_files | Check for ceilometer policy file"
+  stat: path="{{ 'ceilometer-api' | config_dir() }}/policy.json"
+  register: ceilometer_policy_file_info
+
+- name: "HZN-WEB | copy_policy_files | Copy ceilometer policy file"
+  command: "cp {{ 'ceilometer-api' | config_dir() }}/policy.json {{ horizon_site_packages_dir }}/openstack_dashboard/conf/ceilometer_policy.json"
+  when: ceilometer_policy_file_info.stat.exists

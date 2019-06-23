@@ -1,0 +1,31 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: dcn-server-cms | _verify_inputs |
+    Check the existence of "{{ dcn_upgrade_archive }}"
+  stat:
+    path: "{{ dcn_upgrade_archive }}"
+  register: check_archive
+
+- name: dcn-server-cms | _verify_inputs |
+    Fail if {{ dcn_upgrade_archive }} is missing or is not a regular file
+  fail:
+    msg: "{{ dcn_upgrade_archive }} is missing or is not a regular file. The \
+          file {{ dcn_upgrade_archive | basename }} has to be in the \
+          ~/third-party/{{ dcn_upgrade_archive | dirname }}/ directory as a \
+          regular file."
+  when: "check_archive.stat.exists == False or check_archive.stat.isreg == False"

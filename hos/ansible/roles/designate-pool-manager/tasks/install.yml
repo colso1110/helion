@@ -1,0 +1,70 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Install designate-pool-manager service
+---
+
+- name: designate-pool-manager | install | Update installed packager cache
+  become: yes
+  install_package:
+    cache: update
+
+- name: designate-pool-manager | install | Install the designate-pool-manager service from the designate venv
+  become: yes
+  install_package:
+    name: designate
+    service: designate-pool-manager
+    state: present
+    activate: act_off
+  register: hlm_notify_designate_pool_manager_venv_changed
+
+- name: "designate-pool-manager | install | Notify for restart on venv change"
+  shell: echo "notify venv change"
+  register: hlm_notify_designate_pool_manager_restart_required
+  when: hlm_notify_designate_pool_manager_venv_changed.changed
+
+- include: ../../designate-common/tasks/_set_directories.yml
+  vars:
+    install_package_result: "{{ hlm_notify_designate_pool_manager_venv_changed }}"
+
+- name: designate-pool-manager | install | set service directories
+  set_fact:
+    designate_pool_manager_etc_dir:
+      "{{ designate_component | config_dir(hlm_notify_designate_pool_manager_venv_changed.version) }}"
+    designate_pool_manager_conf_dir:
+      "{{ designate_component | config_dir(hlm_notify_designate_pool_manager_venv_changed.version) }}/designate"
+    designate_pool_manager_bin_dir:
+      "{{ designate_component | bin_dir(hlm_notify_designate_pool_manager_venv_changed.version) }}"
+
+- name: designate-pool-manager | install | Setup designate-pool-manager service
+  become: yes
+  setup_systemd:
+    service: designate-pool-manager
+    user: "{{ designate_system_user }}"
+    group: "{{ designate_system_group }}"
+    cmd: designate-pool-manager
+    args: >
+      --config-file={{ designate_service_conf_dir }}/designate.conf
+      --config-file={{ designate_service_conf_dir }}/pool-manager.conf
+
+- name: designate-pool-manager | install | Set designate-pool-manager service to not start on boot
+  become: yes
+  service:
+    name: designate-pool-manager
+    enabled: no
+
+# This must happen after the install_package, or a path which is meant to be a
+# symlink will be mkdir'd
+- include: ../../designate-common/tasks/install.yml

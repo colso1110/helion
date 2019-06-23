@@ -1,0 +1,29 @@
+# Environment variables for Barbican client API.
+#export OS_URL={{ keystone.admin_url }}/v3
+
+unset OS_DOMAIN_NAME
+unset OS_PROJECT_NAME
+unset OS_PROJECT_DOMAIN_NAME
+
+export OS_PROJECT_NAME={{ keystone.admin_tenant_name }}
+
+# Either Project ID or Project Name is required
+#export OS_PROJECT_DOMAIN_ID=
+export OS_PROJECT_DOMAIN_NAME={{barbican_admin_domain_name}}
+
+# Either Domain User ID or Domain User Name is required
+#export OS_USER_DOMAIN_ID=
+export OS_USER_DOMAIN_NAME={{barbican_admin_domain_name}}
+
+# Either User ID or Username can be used
+#export OS_USER_ID =
+export OS_USERNAME={{ barbican_admin_user }}
+export OS_PASSWORD={{ barbican_admin_user_password }}
+
+export OS_ENDPOINT_TYPE=internalURL
+# OS_AUTH_URL should be your location of Keystone
+# Barbican Client defaults to Keystone V3
+export OS_AUTH_URL="{{ keystone.auth_url }}/v3"
+export BARBICAN_INTERFACE=internal
+export OS_IDENTITY_API_VERSION=3
+export OS_CACERT=/etc/ssl/certs/ca-certificates.crt

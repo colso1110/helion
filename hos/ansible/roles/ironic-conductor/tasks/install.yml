@@ -1,0 +1,55 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: ironic-conductor | install | update venv cache
+  become: yes
+  install_package:
+    cache: update
+
+- name: ironic-conductor | install | install ironic-conductor service
+  become: yes
+  install_package:
+    name: ironic
+    service: ironic-conductor
+    state: present
+    activate: act_off
+  register: hlm_notify_ironic_conductor_install_result
+
+- name: ironic-conductor | install | Register persistent fact of install
+  command: /bin/true
+  register: hlm_notify_ironic_conductor_restart_required
+  when: hlm_notify_ironic_conductor_install_result.changed
+
+- include: ../../ironic-common/tasks/_set_directories.yml
+  vars:
+    ironic_pkg_result: "{{ hlm_notify_ironic_conductor_install_result }}"
+
+- name: ironic-conductor | install | Install dependencies
+  become: yes
+  apt: name={{ item }} install_recommends=no state=latest force=yes
+  with_items:
+    - ipxe
+    - syslinux-common
+    - pxelinux
+    - ipmitool
+    - tftpd-hpa
+    - qemu-utils
+    - dosfstools
+    - open-iscsi
+    - rpm2cpio
+
+- include: ../../ironic-common/tasks/install.yml
+  become: yes

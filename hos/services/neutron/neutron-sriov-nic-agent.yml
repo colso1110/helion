@@ -1,0 +1,52 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+    version: 2
+
+service-components:
+-   name: neutron-sriov-nic-agent
+    mnemonic: NEU-SRIOV
+    service: neutron
+
+    consumes-services:
+    -   service-name: FND-RMQ
+
+    provides-data:
+      - to:
+          - name: neutron-ml2-plugin
+        data:
+          - option: mechanism_drivers
+            values:
+              - sriovnicswitch
+      - to:
+          - name: neutron-server
+        data:
+          - option: neutron_server_config_file_args
+            values:
+              - ml2_conf_sriov.ini
+
+    network-tags:
+    # The neutron.networks.vlan and neutron.networks.flat tags are used
+    # to build the physical_device_mappings in ml2_conf_sriov_agent.ini
+
+    -   name: neutron.networks.vlan
+        needs-value: true
+        needs-bridge: false
+
+    -   name: neutron.networks.flat
+        needs-value: true
+        needs-bridge: false

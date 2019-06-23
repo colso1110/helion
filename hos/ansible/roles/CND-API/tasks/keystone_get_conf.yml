@@ -1,0 +1,66 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: CND-API | keystone_get_conf | Get a domain scoped token
+  keystone_v3:
+    endpoint: "{{ cinder_keystone.admin_url }}"
+    login_username: "{{ cinder_keystone.admin_user }}"
+    login_password: "{{ cinder_keystone.admin_password }}"
+    login_user_domain_name: "{{ cinder_keystone.default_domain_name }}"
+    login_domain_name: "{{ cinder_keystone.default_domain_name }}"
+    action: "token_get"
+  run_once: true
+  register: cinder_domain_scoped_token_result
+
+- name: CND-API | keystone_get_conf | Find cinder internal project id
+  keystone_v3:
+    action: "find_project"
+    login_token: "{{ cinder_domain_scoped_token_result.result }}"
+    endpoint: "{{ cinder_keystone.admin_url }}"
+    project_domain_name: "Default"
+    project_name: "{{ cinderinternal_project_name }}"
+  run_once: true
+  register: cinderinternal_find_project_result
+
+- name: CND-API | keystone_get_conf | Set cinder internal project id fact
+  set_fact:
+    cinderinternal_project_id: >-
+      {{ cinderinternal_find_project_result.result.id }}
+  run_once: true
+
+- name: CND-API | keystone_get_conf | Find cinder internal user id
+  keystone_v3:
+    action: "find_user"
+    login_token: "{{ cinder_domain_scoped_token_result.result }}"
+    endpoint: "{{ cinder_keystone.admin_url }}"
+    user_domain_name: "Default"
+    user_name: "{{ cinderinternal_user }}"
+  run_once: true
+  register: cinderinternal_find_user_result
+
+- name: CND-API | keystone_get_conf | Set cinder internal user id fact
+  set_fact:
+    cinderinternal_user_id: >-
+      {{ cinderinternal_find_user_result.result.id }}
+  run_once: true
+
+- name: CND-API | keystone_get_conf | Display cinder internal project id and user id
+  debug:
+    msg: >
+      Cinder Internal Project id is {{ cinderinternal_project_id }}
+      and User id is {{ cinderinternal_user_id }}
+  run_once: true

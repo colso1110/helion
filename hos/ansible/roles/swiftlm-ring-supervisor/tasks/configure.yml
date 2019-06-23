@@ -1,0 +1,139 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: swiftlm-ring-supervisor | configure | Create swift ring supervisor dirs
+  file:
+    path: "{{ swiftlm_etc }}/{{ item }}"
+    state: directory
+    owner: "{{ swift_user }}"
+    group: "{{ swift_group }}"
+    mode: 0755
+  with_items:
+  - "{{ this_swift_instance }}"
+  - "{{ this_swift_instance }}/config"
+  - "{{ this_swift_instance }}/builder_dir"
+  - "{{ this_swift_instance }}/builder_dir/backups"
+  - "{{ this_swift_instance }}/deploy_dir"
+  - "{{ this_swift_instance }}/deploy_dir//backups"
+
+- name: swiftlm-ring-supervisor | configure | Create input model file
+  template:
+    src: input-model.j2
+    dest: "{{ swiftlm_etc }}/{{ this_swift_instance }}/config/input-model.yml"
+    owner: "{{ swift_user }}"
+    group: "{{ swift_group }}"
+    mode: "0400"
+
+- name: swiftlm-ring-supervisor | configure | Create control plane servers file
+  template:
+    src: control_plane_servers.j2
+    dest: "{{ swiftlm_etc }}/{{ this_swift_instance }}/config/control_plane_servers.yml"
+    owner: "{{ swift_user }}"
+    group: "{{ swift_group }}"
+    mode: "0400"
+
+- name: swiftlm-ring-supervisor | configure | Create consumes file
+  template:
+    src: swift_ring_builder_consumes.j2
+    dest: "{{ swiftlm_etc }}/{{ this_swift_instance }}/config/swift_ring_builder_consumes.yml"
+    owner: "{{ swift_user }}"
+    group: "{{ swift_group }}"
+    mode: "0400"
+
+- name: swiftlm-ring-supervisor | configure | Create configuration_data.yml
+  template:
+    src: configuration_data.j2
+    dest: "{{ swiftlm_etc }}/{{ this_swift_instance }}/config/configuration_data.yml"
+    owner: "{{ swift_user }}"
+    group: "{{ swift_group }}"
+    mode: "0400"
+
+- name: swiftlm-ring-supervisor | configure | Create drive_configurations dirs
+  file:
+    path: "{{ swiftlm_etc }}/{{ this_swift_instance }}/config/drive_configurations/{{ item }}"
+    state: directory
+    owner: "{{ swift_user }}"
+    group: "{{ swift_group }}"
+    mode: "0755"
+  with_items: "{{ swift_storage_servers }}"
+
+- name: swiftlm-ring-supervisor | configure | Create drive configurations file
+  template:
+    src: drive_configuration.j2
+    dest: "{{ swiftlm_etc }}/{{ this_swift_instance }}/config/drive_configurations/{{ item }}/drive_configuration.yml"
+    owner: "{{ swift_user }}"
+    group: "{{ swift_group }}"
+    mode: "0400"
+  when: "hostvars['{{ item }}']['hlm_drive_configuration'] is defined"
+  with_items: "{{ swift_storage_servers }}"
+
+  # Handle Upgrade Issues
+  #
+  # In HOS 3.0, builder files were in /etc/swiftlm/builder_dir/region-<region-name>
+  # In HOS 4.0, they are in /etc/swiftlm/<cloud>/<control-plane>/builder_dir
+  # Copy the files from the old to new location -- and from now on, ring changes
+  # are based on the new location.
+  # We don't delete the builder files in the old location (just in case something
+  # goes wrong).
+
+  # The "removes" here is effective after the rename task.
+  # The rename below is an optimisation, since rsync --update means that
+  # an old builder_dir will not overwrite the latest builder_dir files.
+  # DO NOT refactor to use rsync module. It cannot be used for this action
+- name: swiftlm-ring-supervisor | configure | Move legacy builder files
+  command: rsync --archive --update
+           {{ swiftlm_etc }}/builder_dir/region-{{ region_name }}/
+           {{ swiftlm_etc }}/{{ this_swift_instance }}/builder_dir
+  args:
+    removes: "{{ swiftlm_etc }}/builder_dir/region-{{ region_name }}/account.builder"
+  become: yes
+
+- name: swiftlm-ring-supervisor | configure | Rename legacy builder file directory
+  command: mv {{ swiftlm_etc }}/builder_dir {{ swiftlm_etc }}/legacy_builder_dir
+  args:
+    removes: "{{ swiftlm_etc }}/builder_dir/region-{{ region_name }}/account.builder"
+  become: yes
+
+  # Handle old releases -- remove legacy files and directories
+  #
+  # In HOS 2.0, rings were distributed using a tarball
+  # In HOS 3.0, builder_dir and deploy_dir uses a "region" structure
+
+- name: swiftlm-ring-supervisor | configure | Remove legacy files
+  file:
+      path: "{{ item }}"
+      state: absent
+  with_items:
+    - "{{ swiftlm_etc }}/swift-rings-tarball.tar"
+    - "{{ swiftlm_etc }}/deploy_dir/swift-rings-tarball.tar"
+    - "{{ swiftlm_etc }}/deploy_dir/swift-rings-tarball.checksum"
+    - "{{ swiftlm_etc }}/deploy_dir/swift-rings.checksum"
+    - "{{ swiftlm_etc }}/swift_ring_builder_consumes.yml"
+    - "{{ swiftlm_etc }}/input-model.yml"
+    - "{{ swiftlm_etc }}/hosts.hf"
+
+  # DO NOT refactor to use file: state:absent. It cannot be used for this action
+
+- name: swiftlm-ring-supervisor | configure | Remove legacy drive_configurations
+  command: rm -R "{{ swiftlm_etc }}/drive_configurations"
+  args:
+    removes: "{{ swiftlm_etc }}/drive_configurations"
+
+- name: swiftlm-ring-supervisor | configure | Remove legacy deploy_dir
+  command: rm -R "{{ swiftlm_etc }}/deploy_dir"
+  args:
+    removes: "{{ swiftlm_etc }}/deploy_dir"

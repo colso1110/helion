@@ -1,0 +1,233 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+
+- name: ironic-common | deploy-image-upload | check for iso
+  shell: >
+    openstack
+    --os-username {{ ironic_glance.admin_user }}
+    --os-password {{ ironic_glance.admin_password }}
+    --os-tenant-name {{ ironic_keystone_admin.tenant_name }}
+    --os-auth-url {{ ironic_cnd_admin.auth_uri }}
+    --os-region-name {{ ironic_region }}
+    --os-user-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-project-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-interface internal
+    image list | grep -w
+    "ir-deploy-iso-{{ ironic_deploy_image.version }}"
+    | awk '{print $2}'
+  register: iso_image_exists_result
+
+- name: ironic-common | deploy-image-upload |
+        skip uploading deploy iso again
+  debug:
+    msg: "Deploy iso already uploaded"
+  when: iso_image_exists_result.stdout != ""
+
+- name: ironic-common | deploy-image-upload | check for ramdisk
+        image
+  shell: >
+    openstack
+    --os-username {{ ironic_glance.admin_user }}
+    --os-password {{ ironic_glance.admin_password }}
+    --os-tenant-name {{ ironic_keystone_admin.tenant_name }}
+    --os-auth-url {{ ironic_cnd_admin.auth_uri }}
+    --os-region-name {{ ironic_region }}
+    --os-user-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-project-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-interface internal
+    image list | grep -w
+    "ir-deploy-ramdisk-{{ ironic_deploy_image.version }}"
+    | awk '{print $2}'
+  register: ramdisk_image_exists_result
+
+- name: ironic-common | deploy-image-upload | skip uploading
+        deploy ramdisk again
+  debug:
+    msg: "Deploy ramdisk already uploaded"
+  when: ramdisk_image_exists_result.stdout != ""
+
+- name: ironic-common | deploy-image-upload | check for kernel image
+  shell: >
+    openstack
+    --os-username {{ ironic_glance.admin_user }}
+    --os-password {{ ironic_glance.admin_password }}
+    --os-tenant-name {{ ironic_keystone_admin.tenant_name }}
+    --os-auth-url {{ ironic_cnd_admin.auth_uri }}
+    --os-region-name {{ ironic_region }}
+    --os-user-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-project-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-interface internal
+    image list | grep -w
+    "ir-deploy-kernel-{{ ironic_deploy_image.version }}"
+    | awk '{print $2}'
+  register: kernel_image_exists_result
+
+- name: ironic-common | deploy-image-upload | skip uploading
+        deploy kernel again
+  debug:
+    msg: "Deploy kernel already uploaded"
+  when: kernel_image_exists_result.stdout != ""
+
+- name: ironic-common | deploy-image-upload | update deploy Artifact venv cache
+  become: yes
+  install_package:
+    cache: update
+
+- name: ironic-common | deploy-image-upload | setup deploy Artifact Project
+  become: yes
+  install_package:
+    name: ironic_deploy_images
+    service: ironic-deploy-images
+    state: present
+  when: ramdisk_image_exists_result.stdout == "" or
+        kernel_image_exists_result.stdout == ""  or
+        iso_image_exists_result.stdout == ""
+
+- name: ironic-common | deploy-image-upload | Find archive name
+  shell: ls {{ 'ironic-deploy-images' | jar_dir }}
+  register: archive_list_result
+  when: ramdisk_image_exists_result.stdout == "" or
+        kernel_image_exists_result.stdout == ""  or
+        iso_image_exists_result.stdout == ""
+
+- name: ironic-common | deploy-image-upload | Unarchive image tar
+        file
+  become: yes
+  unarchive:
+    dest: "{{ ironic_deploy_image_tmp_dir }}"
+    src: "{{ 'ironic-deploy-images' | jar_dir }}/{{ item }}"
+    copy: no
+  with_items: (archive_list_result.stdout).splitlines()
+  when: ramdisk_image_exists_result.stdout == "" or
+        kernel_image_exists_result.stdout == ""  or
+        iso_image_exists_result.stdout == ""
+
+- name: ironic-common | deploy-image-upload | check for cert file
+  stat:
+    path: "{{ ironic_ca_file }}"
+  register: cert_file_result
+
+- name: ironic-common | deploy-image-upload | Add cert into ramdisk
+  include: _add_cert_ramdisk.yml
+  vars:
+    ramdisk_path: "{{ ironic_deploy_image.ramdisk }}"
+  become: yes
+  when: ramdisk_image_exists_result.stdout == "" and
+        cert_file_result.stat.exists == True
+
+- name: ironic-common | deploy-image-upload | Add cert into iso
+  include: _add_cert_iso.yml
+  become: yes
+  when: iso_image_exists_result.stdout == "" and
+        cert_file_result.stat.exists == True
+
+- name: ironic-common | deploy-image-upload | Upload deploy ramdisk
+  run_once: True
+  shell: >
+    openstack
+    --os-username {{ ironic_glance.admin_user }}
+    --os-password {{ ironic_glance.admin_password }}
+    --os-tenant-name {{ ironic_keystone_admin.tenant_name }}
+    --os-auth-url {{ ironic_cnd_admin.auth_uri }}
+    --os-region-name {{ ironic_region }}
+    --os-user-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-project-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-interface internal
+    image create
+    --container-format ari
+    --disk-format ari
+    --public
+    --file {{ ironic_deploy_image.ramdisk }}
+    ir-deploy-ramdisk-{{ ironic_deploy_image.version  }}
+  when: ramdisk_image_exists_result.stdout == ""
+  register: openstackclient_result
+  until: openstackclient_result|success
+  retries: 5
+  delay: 10
+
+- name: ironic-common | deploy-image-upload | Upload deploy kernel
+  run_once: True
+  shell: >
+    openstack
+    --os-username {{ ironic_glance.admin_user }}
+    --os-password {{ ironic_glance.admin_password }}
+    --os-tenant-name {{ ironic_keystone_admin.tenant_name }}
+    --os-auth-url {{ ironic_cnd_admin.auth_uri }}
+    --os-region-name {{ ironic_region }}
+    --os-user-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-project-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-interface internal
+    image create
+    --container-format aki
+    --disk-format aki
+    --public
+    --file {{ ironic_deploy_image.kernel }}
+    ir-deploy-kernel-{{ ironic_deploy_image.version }}
+  when: kernel_image_exists_result.stdout == ""
+  register: openstackclient_result
+  until: openstackclient_result|success
+  retries: 5
+  delay: 10
+
+- name: ironic-common | deploy-image-upload | Upload iso
+  run_once: True
+  shell: >
+    openstack
+    --os-username {{ ironic_glance.admin_user }}
+    --os-password {{ ironic_glance.admin_password }}
+    --os-tenant-name {{ ironic_keystone_admin.tenant_name }}
+    --os-auth-url {{ ironic_cnd_admin.auth_uri }}
+    --os-region-name {{ ironic_region }}
+    --os-user-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-project-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-interface internal
+    image create
+    --container-format bare
+    --disk-format iso
+    --public
+    --file {{ ironic_deploy_image.iso }}
+    ir-deploy-iso-{{ ironic_deploy_image.version }}
+  when: iso_image_exists_result.stdout == ""
+  register: openstackclient_result
+  until: openstackclient_result|success
+  retries: 5
+  delay: 10
+
+- name: ironic-common | deploy-image-upload | delete images from tmp
+  run_once: True
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - "{{ ironic_deploy_image.kernel }}"
+    - "{{ ironic_deploy_image.ramdisk }}"
+    - "{{ ironic_deploy_image.iso }}"
+  become: yes
+  when: ramdisk_image_exists_result.stdout == "" or
+        kernel_image_exists_result.stdout == "" or
+        iso_image_exists_result.stdout == ""
+
+- name: ironic-common | deploy-image-upload | Remove Transient deploy Artifact
+  become: yes
+  install_package:
+    name: ironic_deploy_images
+    service: ironic-deploy-images
+    state: absent
+  when: ramdisk_image_exists_result.stdout == "" or
+        kernel_image_exists_result.stdout == ""  or
+        iso_image_exists_result.stdout == ""

@@ -1,0 +1,41 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: eon-post-configure | cp_hlm_ssh_key | copy hlm user public key
+  become: yes
+  authorized_key:
+    user: "{{ eon_user }}"
+    key: "{{ item }}"
+    path: "{{ eon_ssh_key_path }}"
+  with_file:
+    - "{{ hlmuser_home }}/.ssh/id_rsa.pub"
+
+- name: eon-post-configure | cp_hlm_ssh_key | Delete old eon_encrypt.pem
+  become: yes
+  file:
+    path: "{{ eon_service_conf_dir }}/eon_encrypt.pem"
+    state: absent
+
+- name: eon-post-configure | cp_hlm_ssh_key | create eon_encrypt.pem
+  become: yes
+  lineinfile:
+    dest: "{{ eon_service_conf_dir }}/eon_encrypt.pem"
+    line: "{{ lookup('pipe', 'ssh-keygen -f ~/.ssh/id_rsa.pub -e -m PKCS8') }}"
+    create: yes
+    owner: "{{ eon_user }}"
+    group: "{{ eon_group }}"
+    mode: 0644

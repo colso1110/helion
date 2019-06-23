@@ -1,0 +1,157 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# This .yml sets all facts related to Octavia_conf_dir and Octavia_bin_dir
+- include: _set_service_directories.yml
+
+- name: octavia-common | configure | copy sudoers
+  copy: src=sudoers dest=/etc/sudoers.d/octavia owner=root group=root mode=0440
+
+- name: octavia-common | configure | configure sudoers
+  lineinfile: dest=/etc/sudoers.d/octavia line='Defaults:octavia secure_path="{{ octavia_bin_dir }}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"'
+
+- name: octavia-common | configure | Check for presence of group '{{ octavia_group }}'
+  command: "grep -q {{ octavia_group }} /etc/group"
+  register: group_chk_result
+  ignore_errors: True
+
+- name: octavia-common | configure | Add group '{{ octavia_group }}'
+  group: name={{ octavia_group }} system=yes
+  when: group_chk_result|failed
+
+- name: octavia-common | configure | Check for presence of user '{{ octavia_user }}'
+  command: "id {{ octavia_user }}"
+  register: user_chk_result
+  ignore_errors: True
+
+- name: octavia-common | configure | Add user '{{ octavia_user }}'
+  user: name={{ octavia_user }} group={{ octavia_group }} system=yes createhome=no home=/var/lib/octavia shell=/bin/false
+  when: user_chk_result|failed
+
+- name: octavia-common | configure | Set permissions of {{ installation_directory }}/octavia hierarchy
+  file: path={{ installation_directory }}/octavia owner={{ octavia_user }} group={{ octavia_group }} state=directory recurse=yes
+
+- name: octavia-common | configure | Set permissions of {{ installation_directory }}/octavia templates
+  file: path={{ installation_directory }}/octavia owner={{ octavia_user }} group={{ octavia_group }} mode=0755 state=directory
+
+- name: octavia-common | configure | Create logging directory
+  file: path=/var/log/octavia owner={{ octavia_user }} group={{ octavia_group }} mode=0775 state=directory
+
+- name: octavia-common | configure | Create /var/lib/octavia directory
+  file: path=/var/lib/octavia owner={{ octavia_user }} group={{ octavia_group }} mode=0775 state=directory
+
+# Note this also sets the ownership and mode if the directory already exists.
+- name: octavia-common | configure | Create systemd service directory if not exists
+  file:
+    path: "{{ systemd_service_dir }}"
+    state: directory
+    mode: 0755
+    owner: "root"
+    group: "root"
+
+- name: octavia-common | configure | Create common run directory service file
+  template:
+    dest: "{{ systemd_service_dir }}{{ octavia_common_rundir_service }}"
+    owner: "root"
+    group: "root"
+    mode: 0644
+    src: "{{ octavia_common_rundir_service }}.j2"
+
+## Get management service network,sec group, flavor and image IDs for *.conf files
+- include: _get_mgmt_network.yml
+- include: _create_mgmt_sec_group.yml
+- include: _create_nova_flavor.yml
+- include: _get_glance_image.yml
+
+- include: _write_conf.yml
+  src: "../templates/octavia-api.conf.j2"
+  dest: "octavia-api.conf"
+
+- name: octavia-common | configure | octavia-api.conf change
+  command: /bin/true
+  register:  hlm_notify_octavia_api_restart_required
+  when: write_conf_result.changed==true
+
+- include: _write_conf.yml
+  src: "../templates/octavia-api-logging.conf.j2"
+  dest: "octavia-api-logging.conf"
+
+- name: octavia-common | configure | octavia-api-logging.conf change
+  command: /bin/true
+  register:  hlm_notify_octavia_api_restart_required
+  when: write_conf_result.changed==true
+
+- include: _write_conf.yml
+  src: "../templates/octavia-worker.conf.j2"
+  dest: "octavia-worker.conf"
+
+- name: octavia-common | configure | octavia-worker.conf change
+  command: /bin/true
+  register:  hlm_notify_octavia_worker_restart_required
+  when: write_conf_result.changed==true
+
+- include: _write_conf.yml
+  src: "../templates/octavia-worker-logging.conf.j2"
+  dest: "octavia-worker-logging.conf"
+
+- name: octavia-common | configure | octavia-worker-logging.conf change
+  command: /bin/true
+  register:  hlm_notify_octavia_worker_restart_required
+  when: write_conf_result.changed==true
+
+- include: _write_conf.yml
+  src: "../templates/octavia-health-manager.conf.j2"
+  dest: "octavia-health-manager.conf"
+
+- name: octavia-common | configure | octavia-health-manager.conf change
+  command: /bin/true
+  register:  hlm_notify_octavia_health_manager_restart_required
+  when: write_conf_result.changed==true
+
+- include: _write_conf.yml
+  src: "../templates/octavia-hm-logging.conf.j2"
+  dest: "octavia-hm-logging.conf"
+
+- name: octavia-common | configure | octavia-hm-logging.conf change
+  command: /bin/true
+  register:  hlm_notify_octavia_health_manager_restart_required
+  when: write_conf_result.changed==true
+
+- include: _write_conf.yml
+  src: "../templates/octavia-housekeeping.conf.j2"
+  dest: "octavia-housekeeping.conf"
+
+- name: octavia-common | configure | octavia-housekeeping.conf change
+  command: /bin/true
+  register:  hlm_notify_octavia_housekeeping_restart_required
+  when: write_conf_result.changed==true
+
+- include: _write_conf.yml
+  src: "../templates/octavia-hk-logging.conf.j2"
+  dest: "octavia-hk-logging.conf"
+
+- name: octavia-common | configure | octavia-hk-logging.conf change
+  command: /bin/true
+  register:  hlm_notify_octavia_housekeeping_restart_required
+  when: write_conf_result.changed==true
+
+- name: octavia-common | configure | Copy alembic.ini
+  template:
+    src: "../templates/alembic.ini.j2"
+    dest: "{{ octavia_lib_dir }}/python2.7/site-packages/octavia/db/migration/alembic.ini"
+    owner: "root"
+    group: "root"
+    mode: 0664

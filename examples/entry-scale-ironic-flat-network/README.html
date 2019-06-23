@@ -1,0 +1,30 @@
+<dl class="dl-horizontal">
+  <dt>Compute Hypervisor</dt><dd>Ironic Compute proxy</dd>
+  <dt>Object Storage</dt><dd>minimal Swift on Control Plane servers</dd>
+</dl>
+<p><b>Node roles</b></p>
+<ul>
+  <li>Control Plane, includes Deployer node (3 nodes)</li>
+  <li>Ironic Compute (just 1 node)</li>
+</ul>
+
+<p>This cloud model requires the following networks:</p>
+<p>IMPI/iLO network, connected to the deployer and the IPMI/iLO ports of all physical servers.</p>
+<p>A pair of bonded NICs which are used by the following networks:</p>
+<ul>
+  <li>External API - This is the network that users will use to make requests to the cloud</li>
+  <li>Guest - This is the network that will carry traffic between Baremetal instances on private networks within the cloud</li>
+  <li>Cloud Management - This is the network that will be used for all internal traffic between the cloud services</li>
+</ul>
+<footer>
+  <small>(c) Copyright 2015 Hewlett Packard Enterprise Development LP
+  <small>Licensed under the Apache License, Version 2.0 (the "License"); you may </small>
+  <small>not use this file except in compliance with the License. You may obtain </small>
+  <small>a copy of the License at<br><br></small>
+  <small>http://www.apache.org/licenses/LICENSE-2.0<br><br></small>
+  <small>Unless required by applicable law or agreed to in writing, software </small>
+  <small>distributed under the License is distributed on an "AS IS" BASIS, WITHOUT </small>
+  <small>WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the </small>
+  <small>License for the specific language governing permissions and limitations </small>
+  <small>under the License.<br></small>
+</footer>

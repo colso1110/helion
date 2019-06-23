@@ -1,0 +1,19 @@
+#!/usr/bin/env python
+
+from paste import deploy
+from paste import httpserver
+
+def run():
+
+    #prop_dir = "{{ barbican_conf_dir }}"
+    prop_dir = "/etc/barbican"
+    application = deploy.loadapp(
+        'config:{prop_dir}/barbican-api-paste.ini'.format(prop_dir=prop_dir),
+            name='main')
+
+    httpserver.serve(application, host="{{ barbican_api_network_address }}",
+                     port='{{ barbican_api_port }}', daemon_threads=True)
+
+
+if __name__ == '__main__':
+    run()

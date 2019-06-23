@@ -1,0 +1,43 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+dcn_component: 'dcn-metadata-agent'
+dcn_metadata_port: '9697'
+
+# Config Processor defined variables
+
+nova:
+  metadata_ip:
+    "{{ DCN_MDA | item('consumes_NOV_MTD.vips.private.0.ip_address') }}"
+  metadata_port:
+    "{{ DCN_MDA |
+        item('consumes_NOV_MTD.vips.private.0.port', default='8775') }}"
+  metadata_protocol:
+    "{{ DCN_MDA |
+        item('consumes_NOV_MTD.vips.private.0.protocol', default='http') }}"
+  metadata_proxy_shared_secret:
+    "{{ NOV_MTD | item('vars.metadata_proxy_shared_secret') }}"
+  region:
+    "{{ DCN_MDA | item('consumes_NOV_MTD.regions.0', default='region1') }}"
+
+keystone:
+  admin_user: "{{ KEY_API.vars.keystone_admin_user }}"
+  admin_password: "{{ KEY_API.vars.keystone_admin_pwd | quote }}"
+  admin_tenant_name: "{{ KEY_API.vars.keystone_service_tenant }}"
+  auth_uri: "{{ DCN_MDA.consumes_KEY_API.vips.private[0].url }}"
+
+dcn_mda_auth_url: "{{ keystone.auth_uri }}/v2.0"

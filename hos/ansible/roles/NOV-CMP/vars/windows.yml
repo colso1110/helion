@@ -1,0 +1,28 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
+# Contains packages required for nova-compute service in Windows System
+---
+# Logging variables
+log_config_append: "{{ nova_service_conf_dir }}\\compute-logging.conf"
+
+nova_compute_log_handlers: file
+nova_compute_log_formatters: context
+
+nova_compute_log_handler_file_class: handlers.RotatingFileHandler
+nova_compute_log_handler_file_args: "'{{ win_log_file_location
+    }}\\\\nova-compute.log', 'a', 15728640, 10"
+nova_compute_log_handler_logstash_args: "'{{ win_log_file_location
+    }}\\\\nova-compute-json.log', 'a', 15728640, 10"

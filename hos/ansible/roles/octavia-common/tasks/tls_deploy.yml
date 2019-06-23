@@ -1,0 +1,88 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: octavia-common | tls_deploy | create cert dir
+  file:
+    path: "{{ octavia_conf_dir}}/certs"
+    state: directory
+    owner: "{{ octavia_user }}"
+    group: "{{ octavia_group }}"
+    mode: 0750
+
+- name: octavia-common | tls_deploy | create cert private dir
+  file:
+    path: "{{ octavia_conf_dir}}/certs/private"
+    state: directory
+    owner: "{{ octavia_user }}"
+    group: "{{ octavia_group }}"
+    mode: 0700
+
+- name: octavia-common | tls_deploy | deploy client cert to server
+  copy:
+      src: "{{ tls_cert_file }}"
+      dest: "{{ octavia_client_cert }}"
+      owner: "{{ octavia_user }}"
+      group: "{{ octavia_group }}"
+      mode: 0440
+  register: tls_deploy_result
+
+- name: octavia-common  | tls_deploy | deploy client cert to server result
+  command: /bin/true
+  register: hlm_notify_octavia_restart_required
+  when: tls_deploy_result.changed==true
+
+- name: octavia-common | tls_deploy | deploy client ca to server
+  copy:
+      src: "{{ tls_ca_cert_file }}"
+      dest: "{{ octavia_client_ca }}"
+      owner: "{{ octavia_user }}"
+      group: "{{ octavia_group }}"
+      mode: 0440
+  register: tls_deploy_result
+
+- name: octavia-common  | tls_deploy | deploy client ca to server result
+  command: /bin/true
+  register: hlm_notify_octavia_restart_required
+  when: tls_deploy_result.changed==true
+
+- name: octavia-common | tls_deploy | deploy server ca to server
+  copy:
+      src: "{{ tls_server_ca_file }}"
+      dest: "{{ octavia_ca_certificate }}"
+      owner: "{{ octavia_user }}"
+      group: "{{ octavia_group }}"
+      mode: 0440
+  register: tls_deploy_result
+
+- name: octavia-common  | tls_deploy | deploy server ca to server result
+  command: /bin/true
+  register: hlm_notify_octavia_restart_required
+  when: tls_deploy_result.changed==true
+
+- name: octavia-common | tls_deploy | deploy server ca key to server
+  copy:
+      src: "{{ tls_server_ca_key_file }}"
+      dest: "{{ octavia_ca_private_key }}"
+      owner: "{{ octavia_user }}"
+      group: "{{ octavia_group }}"
+      mode: 0440
+  register: tls_deploy_result
+
+- name: octavia-common  | tls_deploy | deploy server ca key to server result
+  command: /bin/true
+  register: hlm_notify_octavia_restart_required
+  when: tls_deploy_result.changed==true

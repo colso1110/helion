@@ -1,0 +1,11 @@
+<pool type='dir'>
+  <name>%POOL_NAME%</name>
+  <target>
+     <path>%POOL_PATH%</path>
+     <permissions>
+        <mode>0755</mode>
+        <owner>-1</owner>
+        <group>-1</group>
+     </permissions>
+  </target>
+</pool>

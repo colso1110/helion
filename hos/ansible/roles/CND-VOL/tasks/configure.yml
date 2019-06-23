@@ -1,0 +1,147 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: CND-VOL | configure | obtain cinder volume version from package install
+  set_fact:
+    cinder_volume_version: >-
+      {{ hlm_notify_cinder_volume_venv_install.version }}
+  when: not (hlm_notify_cinder_volume_venv_install is not defined)
+
+- name: CND-VOL | configure | obtain cinder volume version from {{ cinder_venv_root }}/
+  shell: >
+    readlink -f {{ cinder_venv_root }}/cinder-volume |
+    sed 's#{{ cinder_venv_root }}/cinder-volume-##g'
+  register: cinder_volume_link_result
+  when: hlm_notify_cinder_volume_venv_install is not defined
+
+- name: CND-VOL | configure | set volume version fact from link
+  set_fact:
+    cinder_volume_version: "{{ cinder_volume_link_result.stdout }}"
+  when: hlm_notify_cinder_volume_venv_install is not defined
+
+- name: CND-VOL | configure | set versioned cinder_volume_conf_dir fact
+  set_fact:
+    cinder_volume_conf_dir: >-
+      {{ 'cinder-volume' | config_dir(cinder_volume_version) }}
+    cinder_volume_venv_share_dir: >-
+      {{ 'cinder-volume' | share_dir(cinder_volume_version) }}/cinder
+
+# Trying to render conf_dir in the include line results in infinite recursion.
+# Since cinder_conf_dir may have already been set via CND-BCK role, which
+# includes this task, we don't want to override with cinder_volume_conf_dir.
+- name: CND-VOL | configure | Generate conf_dir path for common include
+  set_fact:
+    conf_dir: "{{ cinder_conf_dir | default(cinder_volume_conf_dir) }}"
+- include: ../../_CND-CMN/tasks/configure.yml
+  vars:
+    cinder_conf_dir: "{{ conf_dir }}"
+
+- name: CND-VOL | configure | Generate {{ cinder_volume_conf_dir }}/volume.conf
+  template:
+    src: volume.conf.j2
+    dest: "{{ cinder_volume_conf_dir }}/volume.conf"
+    owner: "{{ cinder_user }}"
+    group: "{{ cinder_group }}"
+    mode: 0400
+  register: hlm_notify_cinder_volume_restart_required
+
+- name: CND-VOL | configure | Create '{{ cinder_volume_conf_dir }}'/volume-logging.conf
+  template:
+    src: volume-logging.conf.j2
+    dest: "{{ cinder_volume_conf_dir }}/volume-logging.conf"
+    owner: "{{ cinder_user }}"
+    group: "{{ cinder_group }}"
+    mode: 0400
+  register: hlm_notify_cinder_volume_restart_required
+
+- name: CND-VOL | configure | Create several rootwrap volume.filters
+  shell: >
+    rsync -ciog --chmod=0400 --chown=root:root
+    {{ cinder_volume_venv_share_dir }}/etc/cinder/{{ item }}
+    {{ cinder_dir }}/{{ item }}
+  register: rsync_result
+  changed_when: 'rsync_result.stdout != ""'
+  with_items:
+    - rootwrap.d/volume.filters
+
+# Since this file is included by CND-BCK role, cnd_configure_tgt may
+# have been set to False; if not default to True.
+- name: CND-VOL | configure | Determine cinder_configure_tgt setting
+  set_fact:
+    cinder_configure_tgt: "{{ cnd_configure_tgt | default(True) }}"
+
+- name: CND-VOL | configure | Set up tgtd
+  file:
+    path: /etc/tgt/conf.d
+    owner: root
+    group: root
+    mode: 0755
+    state: directory
+  when: cinder_configure_tgt | bool
+
+- name: CND-VOL | configure | Create the Cinder tgt configs directory
+  file:
+    path: "{{ cinder_state_path }}/volumes/"
+    owner: cinder
+    group: cinder
+    mode: 0750
+    state: directory
+  when: cinder_configure_tgt | bool
+
+- name: CND-VOL | configure | Set up Cinder volumes within tgtd
+  template:
+    src: etc/tgt/conf.d/cinder.conf.j2
+    dest: /etc/tgt/conf.d/cinder.conf
+    owner: root
+    group: root
+    mode: 0644
+  when: cinder_configure_tgt | bool
+
+- name: CND-VOL | configure | ensure cinder_tgt.conf (from package install) is deleted
+  file:
+    path: /etc/tgt/conf.d/cinder_tgt.conf
+    state: absent
+  when: cinder_configure_tgt | bool
+
+- name: CND-VOL | configure | Setup volume group for LVM if needed
+  lvg:
+    vg: cinder-volumes
+    pvs: "{{ cinder_lvm_device_group.devices[0].name }}"
+  when: cinder_lvm_device_group
+
+# When upgrading from HOS 2.x to 3.0 remove the now redundant
+# cindervolume.fact file. This task can be removed at a future date
+- name: CND-VOL | configure | Delete cindervolume.fact file if present
+  file:
+    path: /etc/ansible/facts.d/cindervolume.fact
+    state: absent
+
+- name: CND-VOL | configure | Modify cinder-volume.log file attributes
+  file:
+    path: "{{ cinder_logs_dir }}/cinder-volume.log"
+    state: touch
+    owner: cinder
+    group: adm
+    mode: 0640
+
+- name: CND-VOL | configure | Modify cinder-volume-json.log file attributes
+  file:
+    path: "{{ cinder_logs_dir }}/cinder-volume-json.log"
+    state: touch
+    owner: cinder
+    group: adm
+    mode: 0640

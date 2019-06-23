@@ -1,0 +1,53 @@
+#
+# (c) Copyright 2015 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Play to test write speed of partition holding database
+---
+
+- name: diskconfig | write_test | Include FND-MDB defaults
+  include_vars: "{{ playbook_dir }}/roles/FND-MDB/defaults/main.yml"
+
+- name: diskconfig | write_test | Check for mysql partition
+  stat:
+    path: "{{ mysql_datadir }}"
+  register: mysql_partition_result
+  become: yes
+
+- name: diskconfig | write_test | Set the mysql partition location if not found
+  set_fact:
+    mysql_part_loc: "/"
+  when: mysql_partition_result.stat.exists == False
+
+- name: diskconfig | write_test | Write file to db partition
+  shell: |
+    dd if=/dev/zero of={{ mysql_part_loc }}/{{ write_test_file }} \
+      bs=4k count=10000 oflag=direct 2>&1 | awk '/copied/ {print $8}'
+  register: diskconfig_write_result
+  become: yes
+
+- name: diskconfig | write_test | Print db partition write speed
+  debug:
+    msg: "Database partition write speed is = {{ diskconfig_write_result.stdout }} MB/s"
+
+- name: diskconfig | write_test | Warn of slow write speed
+  debug:
+    msg: "WARNING Write speed of database partition is slow {{ diskconfig_write_result.stdout }} MB/s"
+  when: ({{ diskconfig_write_result.stdout | int }}  <= {{ db_threshold_mb }})
+
+- name: diskconfig | write_test | Remove write test file
+  file:
+    path:  "{{ mysql_part_loc }}/{{ write_test_file }}"
+    state: absent
+  become: yes

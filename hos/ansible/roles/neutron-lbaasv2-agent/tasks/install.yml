@@ -1,0 +1,33 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# common_install installs dependencies based on ansible_os_family vars
+- include: ../../neutron-common/tasks/common_install.yml
+
+- name: neutron-lbaasv2-agent | install | Get haproxy version
+  command:  /usr/sbin/haproxy -v |
+              awk 'NR==1{split($3,ver,"."); print ver[1]""ver[2]+0}'
+  register: haproxy_version_result
+
+- name: neutron-lbaasv2-agent | install | Validate haproxy version
+  fail:
+    msg: "Haproxy version should be atleast 1.5.0"
+  when: haproxy_version_result < 15
+
+- name: neutron-lbaasv2-agent | install | Notify restart on package update
+  command: /bin/true
+  register: hlm_notify_neutron_lbaasv2_agent_restart_required
+  when: check_updated_packages_result.changed

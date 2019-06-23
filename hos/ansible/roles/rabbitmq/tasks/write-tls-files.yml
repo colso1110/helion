@@ -1,0 +1,117 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# If we are told to regenerate all certs remove existing reqs.
+# User is forcing a change so lets force a major change.
+- name: rabbitmq | write-tls-files | Remove RabbitMQ cert requests
+  become: yes
+  file:
+    path: "{{ rabbitmq_tls.req_file }}"
+    state: absent
+  register: _rabbitmq_remove_cert_result
+  when: (rabbitmq_tls_certs_force_regeneration | bool)
+
+# We only need a major upgrade set if replication is using TLS.
+- name: rabbitmq | write-tls-files | Set major upgrade as we removed cert
+  debug:
+    msg: "Remove RabbitMQ cert requested forceing major upgrade"
+  changed_when: true
+  when: _rabbitmq_remove_cert_result.changed and
+        (rabbitmq_tls_replication | bool)
+  register: hlm_notify_rabbitmq_major_change
+
+# Are any certificates on disk?
+- name: rabbitmq | write-tls-files | Check cert file exists
+  become: yes
+  stat:
+    path: "{{ rabbitmq_tls.pem_file }}"
+  register: _rabbitmq_tls_pem_file_result
+
+# Are there any invalid certs? If yes, we need new certs.
+- name: rabbitmq | write-tls-files | Check cert validity
+  become: yes
+  command: openssl verify {{ rabbitmq_tls.pem_file }}
+  when: _rabbitmq_tls_pem_file_result.stat.exists
+  register: _rabbitmq_cert_validity_checks_result
+  failed_when: "'error' in _rabbitmq_cert_validity_checks_result.stderr"
+  changed_when: false
+
+# Delete the cert requests whose certs are invalid.
+- name: rabbitmq | write-tls-files | Remove invalid cert requests
+  become: yes
+  file:
+    path: "{{ rabbitmq_tls.req_file }}"
+    state: absent
+  register: _rabbitmq_invalid_cert_result
+  when: _rabbitmq_tls_pem_file_result.stat.exists and
+        (_rabbitmq_cert_validity_checks_result | failed)
+
+# We only need a major upgrade set if replication is using TLS.
+- name: rabbitmq | write-tls-files | Set major upgrade as we removed cert
+  debug:
+    msg: "Invalid RabbitMQ cert forceing major upgrade"
+  changed_when: true
+  when: _rabbitmq_invalid_cert_result.changed and
+        (rabbitmq_tls_replication | bool)
+  register: hlm_notify_rabbitmq_major_change
+
+# Are there any certs about to expire? The openssl -checkend option
+# will return 1 if cert is about to expire. So we use it as a filter
+# in the next step to replace the expiring certs.
+- name: rabbitmq | write-tls-files | Check cert expiry
+  become: yes
+  command: >
+    openssl x509 -in {{ rabbitmq_tls.pem_file }} -checkend
+    {{ rabbitmq_tls_expiry_check }}
+  register: _rabbitmq_cert_expiry_checks_result
+  when: _rabbitmq_tls_pem_file_result.stat.exists
+  failed_when: false
+  changed_when: false
+
+# Delete the cert requests whose certs are about to expire. And then
+# run a minor change
+- name: rabbitmq | write-tls-files | Remove expiring cert requests
+  become: yes
+  file:
+    path: "{{ rabbitmq_tls.req_file }}"
+    state: absent
+  when: _rabbitmq_tls_pem_file_result.stat.exists and
+        (_rabbitmq_cert_expiry_checks_result | failed)
+  register: hlm_notify_rabbitmq_reset_required
+
+# Copy cert requests. A successful copy indicates that the
+# corresponding cert needs to be copied too.
+- name: rabbitmq | write-tls-files | Copy RabbitMQ cert requests
+  become: yes
+  copy:
+    src: "{{ rabbitmq_tls_certs_local_dir }}/{{ rabbitmq_cp.tls_filename }}.req"
+    dest: "{{ rabbitmq_tls.req_file }}"
+    owner: rabbitmq
+    group: rabbitmq
+    mode: 0400
+  register: _rabbitmq_cert_request_update_result
+
+# If we are updating the pem file then we can run minor change.
+- name: rabbitmq | write-tls-files | Copy RabbitMQ certs
+  become: yes
+  copy:
+    src: "{{ rabbitmq_tls_certs_local_dir }}/{{ rabbitmq_cp.tls_filename }}"
+    dest: "{{ rabbitmq_tls.pem_file }}"
+    owner: rabbitmq
+    group: rabbitmq
+    mode: 0400
+  when: _rabbitmq_cert_request_update_result.changed
+  register: hlm_notify_rabbitmq_reset_required

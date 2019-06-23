@@ -1,0 +1,119 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+CEILOMETER_EXTRA_INSTALL_OPTS:
+ceilometer_log_dir: /var/log/ceilometer
+ceilometer_global_conf_dir: /etc/ceilometer
+ceilometer_log_group: adm
+ceilometer_user: ceilometer
+ceilometer_group: ceilometer
+local_ip: 127.0.0.1
+keyston_ver: v2.0
+service_config_keystone_ver: v3
+signing_dir: /mnt/state/var/lib/ceilometer/keystone-signing
+ceilometer_common_conf_dir: "{{ 'ceilometer-common' | config_dir() }}"
+ceilometer_common_bin_dir: "{{ 'ceilometer-common' | bin_dir() }}"
+
+# Possible log levels are INFO/DEBUG/WARN/ERROR
+ceilometer_loglevel:  INFO
+ceilometer_logstash_loglevel:  INFO
+
+# audit logging
+
+# Optional flag to enable ceilometer api auditing support
+ceilometer_enable_auditing: "{{ CEI.audit.enabled }}"
+
+# Base location where service audit logs are expected to be present
+ceilometer_audit_log_base_location: "{{ CEI.audit.dir }}"
+
+# Monasca variables
+monasca_connection:
+ "monasca://\
+ {{ CEI_CMN.consumes_MON_API.vips.private[0].url }}"
+
+
+# Message queue variables
+ceilometer_rabbit_hosts_port_pair:
+  "{% for x in CEI_CMN.consumes_FND_RMQ.members.private -%}
+   {{ x.host }}:{{ x.port }}
+   {%- if not loop.last -%},{% endif %}
+   {%- endfor %}"
+ceilometer_rabbit_user: "{{ CEI.consumes_FND_RMQ.vars.accounts.ceilometer.username }}"
+ceilometer_rabbit_password: "{{ CEI.consumes_FND_RMQ.vars.accounts.ceilometer.password }}"
+ceilometer_rabbit_use_ssl: "{{ CEI.consumes_FND_RMQ.members.private[0].use_tls }}"
+
+# Identity variables
+id_admin_protocol: "{{ CEI_CMN.consumes_KEY_API.vips.private[0].protocol }}"
+id_admin_host: "{{ CEI_CMN.consumes_KEY_API.vips.private[0].host }}"
+id_admin_port: "{{ CEI_CMN.consumes_KEY_API.vips.private[0].port }}"
+id_admin_role: "{{ KEY_API.vars.keystone_admin_role }}"
+id_admin_uri:  "{{ CEI_CMN.consumes_KEY_API.vips.private[0].url }}"
+id_auth_url: "{{ id_priv_uri }}/"
+id_password: "{{ CEI_CMN.consumes_KEY_API.vars.keystone_ceilometer_password | quote }}"
+id_priv_host: "{{ CEI_CMN.consumes_KEY_API.vips.private[0].host }}"
+id_priv_port: "{{ CEI_CMN.consumes_KEY_API.vips.private[0].port }}"
+id_priv_protocol: "{{ CEI_CMN.consumes_KEY_API.vips.private[0].protocol }}"
+id_priv_uri: "{{ CEI_CMN.consumes_KEY_API.vips.private[0].url }}"
+id_service_auth_url:  "{{ id_priv_uri }}/{{ keyston_ver }}"
+id_service_tenant: "{{ KEY_API.vars.keystone_service_tenant }}"
+
+# Ceilometer variables
+cm_priv_host: "{{ CEI_API.advertises.vips.private[0].host }}"
+cm_priv_port: "{{ CEI_API.advertises.vips.private[0].port }}"
+cm_pub_ip_addr: "{{ CEI_API.advertises.vips.public[0].ip_address }}"
+cm_pub_port: "{{ CEI_API.advertises.vips.public[0].port }}"
+
+cm_backend_connection: "{{ monasca_connection }}/v2.0"
+_zoo_hosts_list: "{{ CEI_CMN.consumes_FND_ZOO.members.private }}"
+zoo_hosts_port_list:
+  "{% for h in _zoo_hosts_list -%}
+   {{ h.host }}:{{ h.port }}
+   {%- if not loop.last -%},{% endif %}
+   {%- endfor %}"
+cm_agent_ha_backend:
+  "kazoo://{{ zoo_hosts_port_list }}"
+
+# flag set in configure playbooks to trigger
+# ceilometer services handlers to restart
+ceilometer_restart_required: false
+
+#host and port bind variables
+ceilometer_api_bind_host: "{{ host.bind.CEI_API.internal.ip_address }}"
+ceilometer_api_bind_port: "{{ host.bind.CEI_API.internal.port }}"
+ceilometer_api_vip_admin_url: "{{ CEI_API.advertises.vips.admin[0].url }}"
+ceilometer_api_vip_private_url: "{{ CEI_API.advertises.vips.private[0].url }}"
+
+keystone:
+  admin_user: "{{ KEY_API.vars.keystone_admin_user }}"
+  admin_password: "{{ KEY_API.vars.keystone_admin_pwd | quote }}"
+  default_domain_name: "{{ KEY_API.vars.keystone_default_domain }}"
+  admin_tenant: "{{ KEY_API.vars.keystone_admin_tenant }}"
+  project_observer_role: "{{ KEY_API.vars.keystone_project_observer_role }}"
+control_plane: "{{ host.my_dimensions.control_plane }}"
+cluster: "{{ host.my_dimensions.cluster }}"
+cloud_name: "{{ host.my_dimensions.cloud_name }}"
+
+deployed_services: "{% for service,details in CEI_POL.items() -%}
+               {% if 'consumes' in service -%}
+               {{ details['name'].split('-')[0]  }}{%- if not loop.last %},{%- endif %}
+               {%- endif %}{%- endfor %}"
+
+region_name: "{%- set region = [] -%}
+         {% for service,details in CEI_POL.items() if 'consumes' in service -%}
+             {% if region.append(details['regions'][0]) -%}
+                   {%- endif %}
+         {%- endfor %}
+         {{- region|last|default('') -}}"

@@ -1,0 +1,90 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+---
+
+- name: octavia-common | _create_mgmt_sec_group | Retrieve management subnet for single-cp
+  shell: >
+    neutron net-show {{ octavia_mgmt_net_id.stdout }} | tr -d ' ' | grep "subnets" | cut -f 3 -d '|'
+  environment: &OS_ENV
+    OS_AUTH_URL: "{{ octavia_auth_endpoint }}"
+    OS_USERNAME: "{{ octavia_admin_user }}"
+    OS_PASSWORD: "{{ octavia_admin_password }}"
+    OS_PROJECT_NAME: "{{ octavia_project_name }}"
+    OS_USER_DOMAIN_NAME: "{{ octavia_user_domain_name }}"
+    OS_PROJECT_DOMAIN_NAME: "{{ octavia_project_domain_name }}"
+    OS_ENDPOINT_TYPE: "{{ octavia_endpoint_type }}"
+    OS_REGION_NAME: "{{ octavia_region_name }}"
+  register: octavia_mgmt_subnet
+  run_once: true
+
+- name: octavia-common | _create_mgmt_sec_group | Retrieve management subnet for multi-cp
+  shell: >
+    neutron net-show {{ octavia_mgmt_net_id.stdout }} | tr -d ' ' | grep "subnets" | cut -f 3 -d '|'
+  environment:
+    OS_AUTH_URL: "{{ octavia_auth_endpoint }}"
+    OS_USERNAME: "{{ octavia_admin_user }}"
+    OS_PASSWORD: "{{ octavia_admin_password }}"
+    OS_PROJECT_NAME: "{{ octavia_project_name }}"
+    OS_USER_DOMAIN_NAME: "{{ octavia_user_domain_name }}"
+    OS_PROJECT_DOMAIN_NAME: "{{ octavia_project_domain_name }}"
+    OS_ENDPOINT_TYPE: "{{ octavia_endpoint_type }}"
+    OS_REGION_NAME: "{{ octavia_region_name }}"
+  register: octavia_mgmt_subnet
+  run_once_per: verb_hosts.OCT_API
+
+- name: octavia-common | _create_mgmt_sec_group | Verify if management subnet was found
+  fail:
+    msg: "Management subnet was not found"
+  when: octavia_mgmt_subnet.stdout == ""
+  run_once_per: verb_hosts.OCT_API
+
+- name: octavia-common | _create_mgmt_sec_group | Check if management security group exists
+  shell: >
+    neutron security-group-show {{ octavia_mgmt_sec_group }}
+  environment: *OS_ENV
+  register: octavia_mgmt_sec_group_check
+  ignore_errors: True
+  run_once_per: verb_hosts.OCT_API
+
+- name: octavia-common | _create_mgmt_sec_group | Create management security group
+  shell: >
+    neutron security-group-create {{ octavia_mgmt_sec_group }} --description "Octavia Management Security Group"
+  environment: *OS_ENV
+  when: octavia_mgmt_sec_group_check|failed
+  run_once_per: verb_hosts.OCT_API
+
+- name: octavia-common | _create_mgmt_sec_group | Get management security group id
+  shell: >
+    neutron security-group-list| grep {{ octavia_mgmt_sec_group }} | tr -d ' ' | cut -f 2 -d '|'
+  environment: *OS_ENV
+  register: octavia_mgmt_sec_group_id
+  run_once: true
+
+- name: octavia-common | _create_mgmt_sec_group | Get management security group id
+  shell: >
+    neutron security-group-list| grep {{ octavia_mgmt_sec_group }} | tr -d ' ' | cut -f 2 -d '|'
+  environment: *OS_ENV
+  register: octavia_mgmt_sec_group_id
+  run_once_per: verb_hosts.OCT_API
+
+- name: octavia-common | _create_mgmt_sec_group | rule, TCP 9443
+  shell: >
+    neutron security-group-rule-create --protocol tcp --port-range-min 9443 --port-range-max 9443 {{ octavia_mgmt_sec_group }}
+  environment: *OS_ENV
+  ignore_errors: True
+  run_once_per: verb_hosts.OCT_API
+

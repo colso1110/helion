@@ -1,0 +1,73 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: FND-MDB | percona-change-pwd | sst change
+  become: yes
+  command: >
+    mysql --execute="SET PASSWORD FOR
+    '"{{ mysql_sst_user }}"'@'localhost' =
+    PASSWORD('"{{ mysql_sst_pwd }}"');"
+  no_log: true
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | percona-change-pwd | clustercheck change
+  become: yes
+  no_log: true
+  command: >
+    mysql --execute="SET PASSWORD FOR
+    '"{{ mysql_clustercheck_user }}"'@'localhost' =
+    PASSWORD('"{{ mysql_clustercheck_pwd }}"');"
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | percona-change-pwd | service change
+  become: yes
+  no_log: true
+  command: >
+    mysql --execute="SET PASSWORD FOR
+    '"{{ item.0.username }}"'@'"{{ item.1.host | default('%') }}"' =
+    PASSWORD('"{{ item.0.password }}"');"
+  run_once_per: verb_hosts.FND_MDB
+  with_together:
+    - mysql_accounts
+    - mysql_grants
+
+- name: FND-MDB | percona-change-pwd | get root hosts
+  become: yes
+  no_log: true
+  command: mysql -N --execute="Select host from mysql.user WHERE User='root';"
+  run_once_per: verb_hosts.FND_MDB
+  ignore_errors: true
+  register: success_result
+
+- name: FND-MDB | percona-change-pwd | root change
+  become: yes
+  no_log: true
+  command: >
+    mysql --execute="SET PASSWORD FOR
+    '"{{ mysql_root_user }}"'@'"{{ item }}"' =
+    PASSWORD('"{{ mysql_root_pwd }}"');"
+  when: item != "localhost"
+  run_once_per: verb_hosts.FND_MDB
+  with_items: success_result.stdout_lines
+
+- name: FND-MDB | percona-change-pwd | root localhost change
+  become: yes
+  no_log: true
+  command: >
+    mysql --execute="SET PASSWORD FOR
+    '"{{ mysql_root_user }}"'@'localhost' =
+    PASSWORD('"{{ mysql_root_pwd }}"');flush privileges;"
+  run_once_per: verb_hosts.FND_MDB

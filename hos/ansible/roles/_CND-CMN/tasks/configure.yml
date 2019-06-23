@@ -1,0 +1,177 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- include: ./_read_backend_assignment.yml
+
+# Remove any vestiges of a potential package deploy
+
+- name: _CND-CMN | configure | ensure Cinder sqlite (from package install) is deleted
+  become: yes
+  file:
+    path: /var/lib/cinder/cinder.sqlite
+    state: absent
+
+- name: _CND-CMN | configure | ensure logging.conf (from package install) is deleted
+  become: yes
+  file:
+    path: "{{ cinder_dir }}/logging.conf"
+    state: absent
+
+- name: _CND-CMN | configure | ensure logrotate.d/cinder-common (from package install) is deleted
+  become: yes
+  file:
+    path: /etc/logrotate.d/cinder-common
+    state: absent
+
+# TODO: remove after 4.0
+- name: _CND-CMN | configure | delete unused {{ installation_directory }}/cinder
+  become: yes
+  file:
+    path: "{{ installation_directory }}/cinder"
+    state: absent
+
+- name: _CND-CMN | configure | Create '{{ cinder_conf_dir }}' directory
+  become: yes
+  file:
+    path: "{{ cinder_conf_dir }}"
+    owner: "{{ cinder_user }}"
+    group: "{{ cinder_group }}"
+    mode: 0700
+    state: directory
+
+- name: _CND-CMN | configure | Create logging directory
+  become: yes
+  file:
+    path: "{{ cinder_logs_dir }}"
+    owner: "{{ cinder_user }}"
+    group: "{{ cinder_group }}"
+    mode: 0775
+    state: directory
+
+- name: _CND-CMN | configure | Create rootwrap.d directory
+  become: yes
+  file:
+    path: "{{ cinder_rootwrap_dir }}"
+    owner: "{{ cinder_user }}"
+    group: "{{ cinder_group }}"
+    mode: 0770
+    state: directory
+
+- name: _CND-CMN | configure | Set ownership of /var/lib/cinder
+  become: yes
+  file:
+    path: "{{ cinder_state_path }}"
+    owner: "{{ cinder_user }}"
+    group: "{{ cinder_group }}"
+    mode: 0750
+    state: directory
+
+- name: _CND-CMN | configure | Create /etc/ansible/facts.d/ on localhost
+  become: yes
+  delegate_to: localhost
+  run_once: true
+  file:
+    path: "{{ cinder_facts_dir }}"
+    state: directory
+    mode: 0755
+
+- name: _CND-CMN | configure | Check for presence of group '{{ mon_agent_group }}'
+  command: "grep -q {{ mon_agent_group }} /etc/group"
+  ignore_errors: True
+  register: cinder_mon_group_chk_result
+
+- name: _CND-CMN | configure | Define '{{ mon_agent_group }}' as {{ cinder_group }}
+  set_fact:
+    mon_agent_group={{ cinder_group }}
+  when: cinder_mon_group_chk_result|failed
+
+- name: _CND-CMN | configure | Create cinderlm config directory
+  become: yes
+  file:
+    path: "{{ cinderlm_conf_dir }}"
+    owner: "{{ cinder_user }}"
+    group: "{{ mon_agent_group }}"
+    mode: 0750
+    state: directory
+
+- name: _CND-CMN | configure | Set cinder_user_backend_assignment
+  set_fact:
+    cinder_user_backend_assignment: >-
+      {{ cinder_backend_assignment|default('{}') }}
+
+- name: _CND_CMN | configure | Generate the list of enabled backends.
+  get_enabled_backends:
+    host_data: "{{ host }}"
+    cinder_config_data: "{{ config_data.CND }}"
+    groups: "{{ groups }}"
+    vol_group_name: "{{ cinder_service_group_name }}"
+    cinder_data: "{{ cinder_service_data }}"
+    decryption_key: "{{ lookup('env','HOS_USER_PASSWORD_ENCRYPT_KEY') }}"
+    user_assignment_data: "{{ cinder_user_backend_assignment }}"
+  when: (config_data is defined and config_data.CND is defined)
+  register: my_enabled_backends
+
+- name: _CND-CMN | configure | Generate '{{ cinder_conf_dir }}'/cinder.conf
+  become: yes
+  template:
+    src: "{{ cinder_conf_template | default('cinder.conf.j2') }}"
+    dest: "{{ cinder_conf_dir }}/cinder.conf"
+    owner: "{{ cinder_user }}"
+    group: "{{ cinder_group }}"
+    mode: 0400
+  register: hlm_notify_cinder_restart_required
+
+- name: _CND-CMN | configure | Create Cinder rootwrap config file
+  become: yes
+  shell: >
+    rsync -ciog --chmod=0440 --chown=root:root
+    {{ cinder_common_venv_share_dir }}/etc/cinder/{{ item }}
+    {{ cinder_dir }}/{{ item }}
+  register: rsync_result
+  changed_when: 'rsync_result.stdout != ""'
+  with_items:
+    - rootwrap.conf
+
+- name: _CND-CMN | configure | Copy /etc/cinder/cinderlm.conf
+  become: yes
+  template:
+    src: cinderlm.conf.j2
+    dest: "{{ cinderlm_conf_dir }}/cinderlm.conf"
+    owner: "{{ cinder_user }}"
+    group: "{{ mon_agent_group }}"
+    mode: 0440
+
+- name: _CND-CMN | configure | Create symlinks to Cinder binaries
+  become: yes
+  file:
+    src: "{{ cinder_common_bin_dir }}/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    owner: root
+    group: root
+    state: link
+  with_items:
+    - cinder-rootwrap
+    - cinder-manage
+
+- name: _CND-CMN | configure | Setup cinder user to allow sudo to run cinder-rootwrap without password
+  become: yes
+  copy:
+    src: etc/sudoers.d/cinder-rootwrap
+    dest: /etc/sudoers.d/cinder-rootwrap
+    owner: root
+    group: root
+    mode: 0440
+    validate: 'visudo -cf %s'

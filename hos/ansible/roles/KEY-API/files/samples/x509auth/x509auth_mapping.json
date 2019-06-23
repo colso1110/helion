@@ -1,0 +1,30 @@
+[
+                 {
+                     "local": [
+                         {
+                            "user": {
+                                "name": "{0}",
+                                "domain": {
+                                    "name": "{1}"
+                                },
+                                "type": "local"
+                            }
+                         }
+                    ],
+                    "remote": [
+                        {
+                            "type": "SSL_CLIENT_S_DN_CN"
+                        },
+                        {
+                            "type": "SSL_CLIENT_S_DN_O"
+                        },
+                        {
+                            "type": "SSL_CLIENT_I_DN",
+                            "any_one_of": [
+                                "emailAddress=intermediateca@hpe.com,CN=intermediateca,OU=Engineering,O=HPE,ST=California,C=US",
+                                "/C=US/ST=California/O=HPE/OU=Engineering/CN=intermediateca/emailAddress=intermediateca@hpe.com"
+                            ]
+                        }
+                    ]
+                }
+]

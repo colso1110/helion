@@ -1,0 +1,143 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: CEP-RGW | _configure_simple_rgw | Create ceph directory /etc/ceph
+  become: yes
+  file:
+    path: /etc/ceph
+    state: directory
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0755
+
+- name: CEP-RGW | _configure_simple_rgw |
+    Copy /etc/ceph/{{ ceph_cluster }}.client.admin.keyring to /etc/ceph
+  become: yes
+  copy:
+    src: /etc/ceph/{{ ceph_cluster }}.client.admin.keyring
+    dest: /etc/ceph/{{ ceph_cluster }}.client.admin.keyring
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0644
+
+- name: CEP-RGW | _configure_simple_rgw |
+    Generate /etc/ceph/{{ ceph_cluster }}.conf
+  become: yes
+  template:
+    src: ../../_CEP-CMN/templates/ceph.conf.j2
+    dest: "/etc/ceph/{{ ceph_cluster }}.conf"
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0644
+  register: hlm_notify_ceph_rgw_restart_required
+
+# Centralized logging to take care of logging related configurations
+- name: CEP-RGW | _configure_simple_rgw | Removing the default logrotate conf
+  become: yes
+  file:
+    path: /etc/logrotate.d/radosgw
+    state: absent
+
+# radosgw default pools will be created automatically by
+# providing write capability to mon
+
+- name: CEP-RGW | _configure_simple_rgw | Create {{ radosgw_user }}
+  command: >
+    ceph --cluster {{ ceph_cluster }} auth get-or-create
+    client.radosgw.{{ radosgw_user }} osd 'allow rwx' mon 'allow rw'
+
+- name: CEP-RGW | _configure_simple_rgw |
+    Create /etc/ceph/{{ ceph_cluster }}.client.{{ radosgw_user }}.keyring
+  become: yes
+  command: >
+    ceph --cluster {{ ceph_cluster }} auth get
+    client.radosgw.{{ radosgw_user }} -o
+    /etc/ceph/{{ ceph_cluster }}.client.{{ radosgw_user }}.keyring
+
+- name: CEP-RGW | _configure_simple_rgw | Add {{ radosgw_user }}
+    as entry in /etc/ceph/{{ ceph_cluster }}.client.admin.keyring
+  become: yes
+  command: >
+    ceph --cluster {{ ceph_cluster }} auth add
+    client.radosgw.{{ radosgw_user }} -i
+    /etc/ceph/{{ ceph_cluster }}.client.{{ radosgw_user }}.keyring
+
+- name: CEP-RGW | _configure_simple_rgw |
+    Create {{ radosgw_data_dir }} directory
+  become: yes
+  file:
+    path: "/var/lib/ceph/radosgw/ceph-radosgw.{{ radosgw_user }}"
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    state: directory
+    mode: 0644
+
+- name: CEP-RGW | _configure_simple_rgw |
+    Copy the radosgw service definition file for systemd in /etc/systemd/system/
+  become: yes
+  template:
+    src: radosgw.service.j2
+    dest: /etc/systemd/system/radosgw.service
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0644
+  when: ceph_release == "firefly" or ceph_release == "hammer"
+
+- name: CEP-RGW | _configure_simple_rgw | Get list of rc files
+  become: yes
+  shell: ls /etc/rc*.d/S*radosgw /etc/rc*.d/K*radosgw
+  register: radosgw_rc_files_result
+  ignore_errors: yes
+
+- name: CEP-RGW | _configure_simple_rgw | Delete rc files
+  become: yes
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items: "{{ radosgw_rc_files_result.stdout_lines }}"
+  when: radosgw_rc_files_result.changed
+
+- name: CEP-RGW | _configure_simple_rgw | Hook the ceph services in systemd
+  become: yes
+  copy:
+    src: ../../_CEP-CMN/files/ceph.target
+    dest: /etc/systemd/system/ceph.target
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0644
+  when: ceph_release == "firefly" or ceph_release == "hammer"
+
+- name: CEP-RGW | _configure_simple_rgw |
+    Create a separate systemd target for radosgw
+  become: yes
+  copy:
+    src: radosgw.target
+    dest: /etc/systemd/system/radosgw.target
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0644
+  when: ceph_release == "firefly" or ceph_release == "hammer"
+
+- name: CEP-RGW | _configure_simple_rgw |
+    Enable ceph target to run on system start up
+  become: yes
+  command: systemctl enable ceph.target
+
+- name: CEP-RGW | _configure_simple_rgw |
+    Enable radosgw target to be executed on calling ceph.target
+  become: yes
+  command: systemctl enable radosgw.target

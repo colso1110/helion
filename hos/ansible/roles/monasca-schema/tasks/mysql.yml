@@ -1,0 +1,51 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Install python mysql client library on all nodes
+- name: monasca-schema | mysql | Install Python Mysql lib
+  apt:
+    name: python-mysqldb
+    state: present
+
+# Copy temporary python script and scheme to host
+- name: monasca-schema | mysql | Copy python script to host
+  template:
+    dest: "{{ monasca_script_file }}"
+    owner: root
+    group: root
+    mode: 0640
+    src: mysql_setup.py.j2
+
+- name: monasca-schema | mysql | Copy sql script to host
+  template:
+    dest: "{{ monasca_schema_file }}"
+    owner: root
+    group: root
+    mode: 0640
+    src: mon.sql.j2
+
+# Run python script to create schema
+- name: monasca-schema | mysql | Apply mysql schema to db
+  shell: /usr/bin/python {{ monasca_script_file }}
+
+# Remove temporary files
+- name: monasca-schema | mysql | remove temporary files
+  file:
+    dest: "{{ item }}"
+    state: absent
+  with_items:
+    - "{{ monasca_script_file }}"
+    - "{{ monasca_schema_file }}"

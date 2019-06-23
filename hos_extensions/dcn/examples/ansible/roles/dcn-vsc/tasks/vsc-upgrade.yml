@@ -1,0 +1,50 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: _check-vm-status.yml
+
+- include: _copy_image.yml
+
+- name: dcn-vsc | vsc-upgrade | compare md5sums
+  become: yes
+  command: "diff {{ vsc_image_dir }}/{{vsc_image_name }}.md5 \
+    /tmp/{{ vsc_image_name }}.md5"
+  register: diff_result
+  ignore_errors: true
+
+- name: dcn-vsc | vsc-upgrade | qcow2 file identical
+  set_fact:
+    vsc_qcow2_different: false
+  when: diff_result.rc == 0
+
+- name: dcn-vsc | vsc-upgrade | print no upgrade done
+  debug:
+    msg: "No upgrade done: the qcow2 image of the current running VSC is \
+      identical to the new image."
+  when: not (vsc_qcow2_different or vm_status|failed)
+
+- include: stop.yml
+  when: vsc_qcow2_different or vm_status|failed
+
+- include: vsc-destroy.yml
+  when: vsc_qcow2_different or vm_status|failed
+
+- include: vsc-deploy.yml
+  when: vsc_qcow2_different or vm_status|failed
+
+- include: status.yml
+  when: vsc_qcow2_different or vm_status|failed

@@ -1,0 +1,37 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: _get_public_hostname.yml
+
+- include: ../../_CEP-CMN/tasks/_check_upgraded_packages.yml
+  when: ceph_restart_packages is defined
+
+- include: configure.yml
+
+- name: CEP-MON | upgrade | Restart monitor service on upgrade of ceph packages
+  include: start.yml
+
+- name: CEP-MON | upgrade | Wait for monitor service to come up post upgrade
+  shell:  ceph --cluster {{ ceph_cluster }} -f json quorum_status |
+          xargs -0 python -c "import sys, json;
+          print json.loads(sys.argv[1])['quorum_names']" |
+          grep {{ ceph_public_hostname }}
+  register: ceph_quorum_status_result
+  until:  ceph_quorum_status_result.stdout.find("{{
+          ceph_public_hostname }}") != -1
+  retries: "{{ mon_upgrade_settle_retry_count }}"
+  delay: "{{ mon_upgrade_settle_time }}"

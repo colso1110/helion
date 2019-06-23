@@ -1,0 +1,158 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Install wsgi Apache module
+- name:  HZN-WEB | install | Install modwsgi dependencies
+  apt:
+    state: latest
+    name: "{{ item }}"
+  with_items:
+    - libapache2-mod-wsgi
+
+- name: HZN-WEB | install | Install gettext
+  apt: name=gettext state=latest force=yes
+
+# Create group to own horizon's site-packages
+- name: HZN-WEB | install | Add group '{{ horizon_venv_group }}'
+  group:
+    name: "{{ horizon_venv_group }}"
+    state: present
+
+# Create horizon-venv user and add to horizon_group
+- name: HZN-WEB | install | Add user '{{ horizon_venv_user }}'
+  user:
+    name: "{{ horizon_venv_user }}"
+    group: "{{ horizon_venv_group }}"
+    createhome: no
+    home: "{{ horizon_venv_user_homedir }}"
+    shell: /usr/sbin/nologin
+    state: present
+
+- name: HZN-WEB | install | Update venv cache
+  install_package:
+    cache: update
+
+# Install pre-packaged Horizon venv from tarball
+- name: HZN-WEB | install | Install Horizon
+  install_package:
+    name: horizon
+    group: "{{ horizon_venv_group }}"
+    extra_mode_bits: "020"
+    service: horizon
+    state: present
+    activate: act_off
+  register: hlm_notify_horizon_venv_activate_required
+
+# Set service dirs using package filters and reference version-specific path.
+# For the new venv, instead of symlink, as the venv has not yet been activated
+# The defaults in defaults/main.yml are there in case the reconfigure playbook
+# is being run, which would mean that the configuration actions need to happen
+# in the already installed venv.  However, in cases where the configure actions
+# are being run as part of an upgrade or install, we need to reference the
+# version-specific non-symlinked path in these variable names, since the new
+# venv won't yet have been activated.
+- name: HZN-WEB | install | Set service directories
+  set_fact:
+    horizon_conf_dir: "{{ service | config_dir(hlm_notify_horizon_venv_activate_required.version) }}"
+    horizon_enabled_dashboard_dir: "{{ service | jar_dir(hlm_notify_horizon_venv_activate_required.version) }}/python2.7/site-packages/openstack_dashboard/local/enabled"
+    horizon_site_packages_dir: "{{ service | jar_dir(hlm_notify_horizon_venv_activate_required.version) }}/python2.7/site-packages"
+    horizon_bin_dir: "{{ service | bin_dir(hlm_notify_horizon_venv_activate_required.version) }}"
+    horizon_static_dir: "{{ service | venv_dir(hlm_notify_horizon_venv_activate_required.version) }}/static"
+
+- name: HZN-WEB | install | chown Horizon site-packages and bin to '{{ horizon_venv_user }}'
+  file:
+    path: "{{ item }}"
+    recurse: yes
+    owner: "{{ horizon_venv_user }}"
+    group: "{{ horizon_venv_group }}"
+    state: directory
+  with_items:
+    - "{{ horizon_site_packages_dir }}"
+    - "{{ horizon_bin_dir }}"
+
+# Create 'horizon' group
+- name: HZN-WEB | install | Add group '{{ horizon_group }}'
+  group:
+    name: "{{ horizon_group }}"
+    state: present
+
+# Create 'horizon' user and add to horizon_group
+# The home directory needs to exist or mod_wsgi will raise errors
+- name: HZN-WEB | install | Add user '{{ horizon_user }}'
+  user:
+    name: "{{ horizon_user }}"
+    group: "{{ horizon_group }}"
+    createhome: yes
+    shell: /usr/sbin/nologin
+    state: present
+  ignore_errors: yes
+
+- name: HZN-WEB | install | Create directory '{{ horizon_conf_dir }}'.
+  file:
+    path: "{{ horizon_conf_dir }}"
+    owner: "{{ horizon_user }}"
+    group: "{{ horizon_group }}"
+    mode: 0755
+    state: directory
+
+- name: HZN-WEB | install | Create static content directory '{{ horizon_static_dir }}'
+  file:
+    path: "{{ horizon_static_dir }}"
+    owner: "{{ horizon_venv_user }}"
+    group: "{{ horizon_venv_group }}"
+    mode: 0755
+    state: directory
+
+# Create directory for logging
+- name: HZN-WEB | install | Create logging directory
+  file:
+    path: /var/log/horizon
+    owner: "{{ horizon_user }}"
+    group: "{{ horizon_group }}"
+    mode: 0755
+    state: directory
+
+# Create directory for logging horizon management commands
+- name: HZN-WEB | install | Create management log directory
+  file: >
+    path=/var/log/horizon/management
+    owner={{ horizon_venv_user }}
+    group={{ horizon_venv_group }}
+    mode=0755
+    state=directory
+
+# Touch the management file logs as {{ horizon_venv_user }}
+- name: HZN-WEB | install | Create management log files
+  file: >
+    path=/var/log/horizon/management/{{ item }}
+    owner={{ horizon_venv_user }}
+    group={{ horizon_venv_group }}
+    mode=0644
+    state=touch
+  with_items:
+    - management.log
+    - management-json.log
+
+- name:  HZN-WEB | install | Enable Apache modules
+  become: yes
+  command: a2enmod {{ item }}
+  with_items:
+    - wsgi
+    - headers
+  register: hlm_notify_horizon_mod_enable_result
+  changed_when: ( hlm_notify_horizon_mod_enable_result | success ) and
+                ( "already enabled" not in hlm_notify_horizon_mod_enable_result.stdout )

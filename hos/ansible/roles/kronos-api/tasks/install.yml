@@ -1,0 +1,68 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Install Kronos API
+#------------------------------------------------------------------------------
+- name: kronos-api | install | Update venv package cache
+  become: yes
+  install_package:
+    cache: update
+
+- name: kronos-api | install | Install Kronos venv
+  become: yes
+  install_package:
+    name: kronos
+    service: kronos
+    state: present
+    activate: act_off
+  register: hlm_notify_kronos_api_install
+
+- name: kronos-api | install | Set service directories
+  become: yes
+  set_fact:
+    kronos_api_bin_dir: >-
+      {{ 'kronos' | bin_dir(hlm_notify_kronos_api_install.version) }}
+
+- name: kronos-api | install | Create Kronos API user
+  become: yes
+  user:
+    name: "{{ kronos_user }}"
+    group: "{{ kronos_group }}"
+    shell: /sbin/nologin
+    createhome: no
+    home: /tmp
+  register: hlm_notify_kronos_api_restart
+
+- name: kronos-api | install | Create Kronos API log directory
+  become: yes
+  file:
+    path: "{{ kronos_log_dir }}"
+    state: directory
+    owner: "{{ kronos_user }}"
+    group: "{{ kronos_group }}"
+    mode: 0755
+  register: hlm_notify_kronos_api_restart
+
+- name: kronos-api | install | Create a directory to host the log-api WSGI file
+  become: yes
+  file:
+    path: "{{ kronos_wsgi_dir }}"
+    state: directory
+    owner: "{{ kronos_user }}"
+    group: "{{ kronos_group }}"
+    mode: 0755
+    recurse: yes

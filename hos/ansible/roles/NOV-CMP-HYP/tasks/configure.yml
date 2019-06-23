@@ -1,0 +1,91 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- include: ../../win-install-package/tasks/_setvars.yml
+  when: win_service_config_result is not defined
+
+- include: ../../win-install-package/tasks/check_version.yml
+
+- name: NOV-CMP-HYP | configure | set os-specific variables
+  include_vars: ../../nova-common/vars/{{ ansible_os_family | lower }}.yml
+
+- name: NOV-CMP-HYP | configure | set os-specific variables for logging
+  include_vars: ../../NOV-CMP/vars/{{ ansible_os_family | lower }}.yml
+
+- name: NOV-CMP-HYP | configure | Get instance VHD path
+  raw: powershell (Get-VMHost -ComputerName localhost).VirtualHardDiskPath
+  register: win_instance_path_result
+
+- name: NOV-CMP-HYP | configure | set instance path fact
+  set_fact:
+    win_instance_path: "{{ win_instance_path_result.stdout_lines[0].rstrip('
+        \\\\') }}"
+
+- name: NOV-CMP-HYP | configure | check if the host is a part of a cluster
+  raw : powershell (Get-WindowsFeature "Failover-Clustering").Installed
+  register: win_cluster_result
+
+- name: NOV-CMP-HYP | configure | set fact whether the host is in a cluster
+  set_fact:
+    win_cluster: "{{ win_cluster_result.stdout_lines[0] }}"
+
+- name: NOV-CMP-HYP | configure | Create the conf directory
+  win_file:
+    path: "{{ win_conf_dir }}"
+    state: directory
+
+- include: _write_templates.yml
+  src: roles/nova-common/templates/nova.conf.j2
+  dest: roles/NOV-CMP-HYP/templates/nova.conf.j2
+
+- include: _write_templates.yml
+  src: roles/nova-common/templates/policy.json.j2
+  dest: roles/NOV-CMP-HYP/templates/policy.json.j2
+
+- include: _write_templates.yml
+  src: roles/NOV-CMP/templates/compute.conf.j2
+  dest: roles/NOV-CMP-HYP/templates/compute.conf.j2
+
+- include: _write_templates.yml
+  src: roles/NOV-CMP/templates/compute-logging.conf.j2
+  dest: roles/NOV-CMP-HYP/templates/compute-logging.conf.j2
+
+- include: _write_conf.yml
+  src: hypervisor.conf.j2
+  dest: "{{ win_hypervisor_conf_path }}"
+
+- include: _write_conf.yml
+  src: nova.conf.j2
+  dest: "{{ win_nova_conf_path }}"
+
+- include: _write_conf.yml
+  src: compute.conf.j2
+  dest: "{{ win_compute_conf_path }}"
+
+- include: _write_conf.yml
+  src: compute-logging.conf.j2
+  dest: "{{ win_compute_logging_conf_path }}"
+
+- include: _write_conf.yml
+  src: policy.json.j2
+  dest:  '{{ win_policy_file_path }}'
+
+- name: NOV-CMP-HYP | configure | Copy service conf
+  win_template:
+    src: novaservice.conf.j2
+    dest: '{{ win_service_conf_path }}'
+
+- include: ../../win-install-package/tasks/configure.yml

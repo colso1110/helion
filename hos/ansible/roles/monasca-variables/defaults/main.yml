@@ -1,0 +1,92 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Select default tunings based on system RAM
+# RAM < 32GB, use demo
+# RAM < 64GB, use small
+# RAM < 128GB, use medium
+# RAM >= 128GB, use large
+monasca_ram_tuning_selector: "{% if ansible_memtotal_mb < 31000 %}demo{% elif ansible_memtotal_mb < 63000 %}small{% elif ansible_memtotal_mb < 127000 %}medium{% else %}large{%endif %}"
+
+# tuning_selector has precedence in order to be compatible with versions of HOS before 4.0
+tuning_selector:
+monasca_tuning_selector: "{% if tuning_selector %}{{ tuning_selector }}{% elif monasca_tuning_selector_override %}{{ monasca_tuning_selector_override }}{% else %}{{ monasca_ram_tuning_selector }}{% endif %}"
+
+monasca_tunings: "{{ monasca_possible_tunings[monasca_tuning_selector] }}"
+
+storm_nimbus_extra_config:
+    nimbus.childopts: "{% if storm_nimbus_childopts_override %}{{ storm_nimbus_childopts_override }}{% else %}{{ monasca_tunings.storm_nimbus_childopts }}{% endif %}"
+storm_supervisor_extra_config:
+    supervisor.childopts: "{% if storm_supervisor_childopts_override %}{{ storm_supervisor_childopts_override }}{% else %}{{ monasca_tunings.storm_supervisor_childopts }}{% endif %}"
+storm_ui_extra_config:
+    ui.childopts: "{% if storm_ui_childopts_override %}{{ storm_ui_childopts_override }}{% else %}{{ monasca_tunings.storm_ui_childopts }}{% endif %}"
+storm_worker_extra_config:
+    worker.childopts: "{% if storm_worker_childopts_override %}{{ storm_worker_childopts_override }}{% else %}{{ monasca_tunings.storm_worker_childopts_heap }}{% endif %} -XX:+UseConcMarkSweepGC -Dcom.sun.management.jmxremote"
+storm_worker_ports: "{% if storm_worker_ports_override %}{{ storm_worker_ports_override }}{% else %}{{ monasca_tunings.storm_worker_ports }}{% endif %}"
+monasca_jars_virtualenv_dir: /opt/stack/service/monasca/venv
+monasca_notification_virtualenv_dir: /opt/stack/service/monasca-notification/venv
+
+# Agent Defaults
+monasca_agent_virtualenv_dir: /opt/stack/service/monasca-agent/venv
+monasca_agent_check_frequency: 30
+monasca_agent_system_only: true
+monasca_agent_detection_args: send_rollup_stats=True
+
+# Kafka Defaults
+kafka_heap_opts: "{% if kafka_heap_opts_override %}{{ kafka_heap_opts_override }}{% else %}{{ monasca_tunings.kafka_heap_opts }}{% endif %}"
+kafka_log_retention_hours: "{% if kafka_log_retention_hours_override %}{{ kafka_log_retention_hours_override }}{% else %}{{ monasca_tunings.kafka_log_retention_hours }}{% endif %}"
+kafka_consumer_path: /etc/monasca/agent/conf.d/kafka_consumer.yaml
+
+# API Defaults
+monasca_api_java_opts: "{% if monasca_api_java_opts_override %}{{ monasca_api_java_opts_override }}{% else %}{{ monasca_tunings.monasca_api_java_opts }}{% endif %}"
+monasca_api_conn_timeout: "{% if monasca_api_conn_timeout_override %}{{ monasca_api_conn_timeout_override }}{% else %}{{ monasca_tunings.monasca_api_conn_timeout }}{% endif %}"
+
+# Persister Defaults
+monasca_persister_java_opts: "{% if monasca_persister_java_opts_override %}{{ monasca_persister_java_opts_override }}{% else %}{{ monasca_tunings.monasca_persister_java_opts }}{% endif %}"
+monasca_persister_alarm_threads: "{% if monasca_persister_alarm_threads_override %}{{ monasca_persister_alarm_threads_override }}{% else %}{{ monasca_tunings.monasca_persister_alarm_threads }}{% endif %}"
+monasca_persister_alarm_batch_size: "{% if monasca_persister_alarm_batch_size_override %}{{ monasca_persister_alarm_batch_size_override }}{% else %}{{ monasca_tunings.monasca_persister_alarm_batch_size }}{% endif %}"
+monasca_persister_metric_threads: "{% if monasca_persister_metric_threads_override %}{{ monasca_persister_metric_threads_override }}{% else %}{{ monasca_tunings.monasca_persister_metric_threads }}{% endif %}"
+monasca_persister_metric_batch_size: "{% if monasca_persister_metric_batch_size_override %}{{ monasca_persister_metric_batch_size_override }}{% else %}{{ monasca_tunings.monasca_persister_metric_batch_size }}{% endif %}"
+
+# Vertica Defaults
+vertica_users:
+  - username: "{{ FND_VDB.vars.monitor_user_name }}"
+    password: "{{ FND_VDB.vars.monitor_user_password }}"
+    role: monitor
+  - username: "{{ MON_API.consumes_FND_VDB.vars.vertica_monasca_api_user }}"
+    password: "{{ MON_API.consumes_FND_VDB.vars.vertica_monasca_api_password }}"
+    role: monasca_api
+  - username: "{{ MON_PST.consumes_FND_VDB.vars.vertica_monasca_persister_user }}"
+    password: "{{ MON_PST.consumes_FND_VDB.vars.vertica_monasca_persister_password }}"
+    role: monasca_persister
+vertica_api_user: "{{ MON_API.consumes_FND_VDB.vars.vertica_monasca_api_user }}"
+vertica_api_password: "{{ MON_API.consumes_FND_VDB.vars.vertica_monasca_api_password }}"
+vertica_persister_user: "{{ MON_PST.consumes_FND_VDB.vars.vertica_monasca_persister_user }}"
+vertica_persister_password: "{{ MON_PST.consumes_FND_VDB.vars.vertica_monasca_persister_password }}"
+vertica_resource_pools_limits: "{% if vertica_resource_pools_limits_override %}{{ vertica_resource_pools_limits_override }}{% else %}{{ monasca_tunings.vertica_resource_pools_limits }}{% endif %}"
+vertica_version: 7.2.1-0
+vertica_jdbc_version: 7.2.1-0
+vertica_jdbc_jar: "vertica-jdbc-{{ vertica_jdbc_version }}.jar"
+vertica_jdbc_location: "/opt/vertica/java/lib/{{ vertica_jdbc_jar }}"
+vertica_use_apt: True
+
+# Threshold Engine defaults
+thresh_metric_spout_tasks: "{% if thresh_metric_spout_tasks_override %}{{ thresh_metric_spout_tasks_override }}{% else %}{{ monasca_tunings.thresh_metric_spouts }}{% endif %}"
+thresh_metric_spout_threads: "{% if thresh_metric_spout_threads_override %}{{ thresh_metric_spout_threads_override }}{% else %}{{ monasca_tunings.thresh_metric_threads }}{% endif %}"
+
+# Notification defaults
+monasca_notification_alarm_processors: "{% if monasca_notification_alarm_processors_override %}{{ monasca_notification_alarm_processors_override }}{% else %}{{ monasca_tunings.monasca_notification_alarm_processors }}{% endif %}"
+monasca_notification_notification_processors: "{% if monasca_notification_notification_processors_override %}{{ monasca_notification_notification_processors_override }}{% else %}{{ monasca_tunings.monasca_notification_notification_processors }}{% endif %}"

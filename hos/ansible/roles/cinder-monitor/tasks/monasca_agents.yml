@@ -1,0 +1,71 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# NOTE: Use Cinder API V2 specific URL to avoid HOS 2.1 upgrade issues
+- name: cinder-monitor | monasca_agents | Determine appropriate service_api_url value
+  set_fact:
+    _cinder_api_url: >-
+      http://{{ host.bind.CND_API.
+                internal.ip_address }}:{{ host.bind.CND_API.
+                                          internal.port }}/
+  when: cinder_agent is defined and cinder_agent == "True"
+
+# The name value here is the name of Plugin class in the
+# detect modules, not the name of the module.
+# TODO: address cinder-volume and cinder-back singularity in
+#       the built-in process checks
+- name: cinder-monitor | monasca_agents | Run Monasca agent cinder detection plugin
+  monasca_agent_plugin:
+    name: "cinder"
+    args: >-
+      service_api_url={{ _cinder_api_url }}
+      search_pattern=.*versions.*CURRENT.*
+  when: cinder_agent is defined and cinder_agent == "True"
+
+- name: cinder-monitor | monasca_agents | Set up output directory for cron job
+  file:
+    name: "{{ cinder_monitor_json_dir }}"
+    mode: 02750
+    owner: root
+    group: mon-agent
+    state: directory
+
+# Cinder related monitoring should only performed on cinder nodes,
+# not on VSA or Ceph nodes.
+- name: cinder-monitor | monasca_agents | Set up cinder specific monasca cron jobs
+  template:
+    src: cinder-monitor-cron.j2
+    dest: /etc/cron.d/cinder-monitor-cron
+    owner: root
+    group: root
+    mode: 0644
+  when: cinder_agent is defined and cinder_agent == "True"
+
+# hpssacli diag needs root privileges
+- name: cinder-monitor | monasca_agents | set up block dev monitor cron job
+  template:
+    src: block-monitor-periodic-cron.j2
+    dest: /etc/cron.d/block-monitor-periodic-cron
+    owner: root
+    group: root
+    mode: 0644
+
+- name: cinder-monitor | monasca_agents | Run cinderlm custom detection plugin
+  monasca_agent_plugin:
+    name: "CinderLMDetect"
+    # args should be a space separated list, if specified
+  ignore_errors: yes

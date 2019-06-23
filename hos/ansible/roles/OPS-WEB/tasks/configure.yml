@@ -1,0 +1,61 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Configuration
+
+- name: OPS-WEB | configure | Create Configuration Directory
+  file:
+    path: "{{ ops_console_config_dir }}"
+    owner: root
+    group: root
+    mode: 0775
+    state: directory
+
+- name: OPS-WEB | configure | Establish Configuration File
+  template:
+   dest: "{{ ops_console_config }}"
+   src: ops-console.conf.j2
+   owner: "{{ ops_console_os_user }}"
+   group: "{{ ops_console_os_group }}"
+   mode: 0400
+  register: hlm_notify_opsweb_reload_required_handler
+
+- name: OPS-WEB | configure | configure Ops Console Virtual Host
+  template:
+   dest: "/etc/apache2/sites-available/{{ ops_console_site_name }}.conf"
+   src: ops-console-apache.conf
+   owner: root
+   group: root
+   mode: 0664
+  register: hlm_notify_opsweb_apache_config_changed
+
+- name: OPS-WEB | configure | Establish JS config
+  template:
+   dest: "{{ ops_console_web_root }}/cloud_system.json"
+   src: config.json
+   owner: root
+   group: root
+   mode: 0664
+  register: hlm_notify_opsweb_reload_required
+
+- name: OPS-WEB | configure | Establish WSGI config
+  template:
+   dest: "{{ ops_console_wsgi }}"
+   src: app.wsgi
+   owner: root
+   group: root
+   mode: 0775
+  register: hlm_notify_opsweb_reload_required

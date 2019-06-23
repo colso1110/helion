@@ -1,0 +1,164 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Start mysql on these nodes. Note if the whole cluster is down
+# this will not start as a boostrap will need to run on one node
+#
+---
+- name: FND-MDB | start | Check if service is active (exited)
+  become: yes
+  shell: "systemctl status {{ mysql_service }}"
+  register: mysql_service_result
+  failed_when: false
+  changed_when: '"active (exited)" in mysql_service_result.stdout'
+
+- name: FND-MDB | start | Check if daemon is down
+  become: yes
+  shell: "killall -0 mysqld"
+  register: mysql_running_result
+  failed_when: false
+  changed_when: '"no process found" in mysql_running_result.stderr'
+
+- name: FND-MDB | start | Stop if we are inactive (exited) and daemon is down
+  become: yes
+  service:
+    name: "{{ item }}"
+    state: stopped
+  with_items:
+    - mysql
+  when: mysql_service_result.changed and mysql_running_result.changed
+
+- name: FND-MDB | start | Start MySQL
+  become: yes
+  service:
+    name: "{{ item }}"
+    state: started
+  with_items:
+    - mysql
+
+- name: FND-MDB | start | Wait for the port to settle
+  become: yes
+  wait_for:
+    host: "{{ mysql_bind_address }}"
+    port : "{{ mysql_server_port }}"
+    timeout: 30
+
+# For now try to keep going if we are not fully synced.
+# Curl is used here instead of wait_for due to
+# https://github.com/ansible/ansible/issues/12305
+- name: FND-MDB | start | Wait for percona to  sync
+  shell: >
+    curl --head --silent
+    "http://{{ mysql_bind_address ~ ':' ~ mysql_clustercheck_port }}/"
+  register: mysql_sync_result
+  until: mysql_sync_result.stdout.find("200 OK") != -1
+  retries: "{{ mysql_sync_retries }}"
+  delay: 4
+  ignore_errors: yes
+  tags:
+  - skip_ansible_lint
+
+- name: FND-MDB | start | Check if singlenode setup
+  become: yes
+  command: >
+    grep -qE '^wsrep_cluster_address = gcomm://{{ ansible_fqdn }}$'
+    /etc/mysql/my.cnf
+  ignore_errors: True
+  register: is_singleton_result
+
+# In the normal multinode bootstrap case configure is called before start
+# so we could have just run a bootstrap through that sequence in which
+# case mysql_bootstrapping should be set
+- name: FND-MDB | start | Restart MDB Master
+  become: yes
+  service:
+    name: "{{ item }}"
+    state: restarted
+  with_items:
+    - mysql
+  run_once_per: verb_hosts.FND_MDB
+  when: hlm_notify_mysql_restart_required is defined and
+        hlm_notify_mysql_restart_required.changed and
+        mysql_restarted_result is not defined and
+        is_singleton_result | failed and not mysql_bootstrapping
+  register: mysql_restarted_result
+
+- include: initialise.yml
+  when: hlm_notify_mysql_restart_required is defined and
+        hlm_notify_mysql_restart_required.changed and
+        is_singleton_result | success and
+        not mysql_bootstrapping
+
+- name: FND-MDB | start | set bootstrapped
+  set_fact:
+    mysql_bootstrapped: false
+  when: hlm_notify_mysql_restart_required is defined and
+        hlm_notify_mysql_restart_required.changed and
+        is_singleton_result | success and
+        not mysql_bootstrapping
+
+- include: bootstrap.yml
+  when: hlm_notify_mysql_restart_required is defined and
+        hlm_notify_mysql_restart_required.changed and
+        is_singleton_result | success and
+        not mysql_bootstrapping
+
+- name: FND-MDB | start | Notify I am bootstrapping
+  set_fact:
+    mysql_bootstrapping: true
+  when: hlm_notify_mysql_restart_required is defined and
+        hlm_notify_mysql_restart_required.changed and
+        is_singleton_result | success and
+        not mysql_bootstrapping
+
+- name: FND-MDB | start | Wait for MDB master
+  become: yes
+  wait_for:
+    host: "{{ mysql_bind_address }}"
+    port: "{{ mysql_server_port }}"
+    timeout: 30
+  run_once_per: verb_hosts.FND_MDB
+  when: hlm_notify_mysql_restart_required is defined and
+        hlm_notify_mysql_restart_required.changed and
+        mysql_restarted_result is not defined and
+        not mysql_bootstrapping
+  register: mysql_restarted_result
+
+# For now try to keep going if we are not fully synced.
+# Curl is used here instead of wait_for due to
+# https://github.com/ansible/ansible/issues/12305
+- name: FND-MDB | start | Wait for percona to  sync
+  shell: >
+    curl --head --silent
+    "http://{{ mysql_bind_address ~ ':' ~ mysql_clustercheck_port }}/"
+  register: mysql_restart_sync_result
+  until: mysql_restart_sync_result.stdout.find("200 OK") != -1
+  retries: "{{ mysql_sync_retries }}"
+  delay: 4
+  ignore_errors: yes
+  tags:
+  - skip_ansible_lint
+
+- name: FND-MDB | start | Restart MySQL on non-primary nodes
+  become: yes
+  service:
+    name: mysql
+    state: restarted
+  when: hlm_notify_mysql_restart_required is defined and
+        hlm_notify_mysql_restart_required.changed and
+        mysql_restarted_result is not defined and
+        groups [verb_hosts.FND_MDB].index(inventory_hostname) != 0 and
+        not mysql_bootstrapping
+  register: mysql_restarted_result

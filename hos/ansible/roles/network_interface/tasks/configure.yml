@@ -1,0 +1,647 @@
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+---
+# network_interface configure playbook
+
+- name: network_interface | configure | Fact for Debian OvS install
+  set_fact:
+    ovs_debian_check: true
+  when:
+    ('FND-OVS' in group.services or ovs_bridge_interfaces != []) and
+    ansible_os_family == 'Debian'
+
+- name: network_interface | configure | Ensure ovs_debian_check exists
+  set_fact:
+    ovs_debian_check: false
+  when:
+    ovs_debian_check is not defined
+
+- name: network_interface | configure | Fact for RedHat OvS install
+  set_fact:
+    ovs_redhat_check: true
+  when:
+    ('FND-OVS' in group.services or ovs_bridge_interfaces != []) and
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | Ensure ovs_redhat_check exists
+  set_fact:
+    ovs_redhat_check: false
+  when:
+    ovs_redhat_check is not defined
+
+- name: network_interface | configure | Fact for running on Compute Node w/ DPDK
+  set_fact:
+    compute_with_dpdk_check: true
+  when:
+    ('NOV-KVM' in group.services) and
+    ansible_processor[0] == 'GenuineIntel' and
+    ('True' in dpdk_enabled)
+
+- name: network_interface | configure | Ensure compute_with_dpdk_check exists
+  set_fact:
+    compute_with_dpdk_check: false
+  when:
+    compute_with_dpdk_check is not defined
+
+- name: network_interface | configure | Debian- Install openvswitch packages
+  become: yes
+  apt:
+    name: "{{ item }}"
+    install_recommends: no
+    state: latest
+    force: yes
+  with_items: openvswitch_packages
+  when:
+    ovs_debian_check and
+    not compute_with_dpdk_check
+
+- name: network_interface | configure | Debian- Install alternatives for openvswitch
+  become: yes
+  alternatives:
+    name: ovs-vswitchd
+    path: /usr/lib/openvswitch-switch/ovs-vswitchd
+  when:
+    ovs_debian_check and
+    not compute_with_dpdk_check
+
+- name: network_interface | configure | Debian- Install dpdk openvswitch packages
+  become: yes
+  apt:
+    name: "{{ item }}"
+    install_recommends: no
+    state: latest
+    force: yes
+  with_items: openvswitch_packages_dpdk
+  when:
+    ovs_debian_check and
+    compute_with_dpdk_check
+
+- name: network_interface | configure | Debian- Install alternatives for openvswitch dpdk
+  become: yes
+  alternatives:
+    name=ovs-vswitchd
+    path=/usr/lib/openvswitch-switch-dpdk/ovs-vswitchd-dpdk
+  when:
+    ovs_debian_check and
+    compute_with_dpdk_check
+
+- name: network_interface | configure | Debian- Install extra dpdk packages
+  become: yes
+  apt:
+    name: "{{ item }}"
+    install_recommends: no
+    state: latest
+    force: yes
+  with_items: dpdk_extra.packages
+  when:
+    ovs_debian_check and
+    compute_with_dpdk_check and
+    dpdk_extra.packages | length > 0
+
+- name: network_interface | configure | Debian- Get libvirt_qemu_user from Nova
+  include_vars: ../../NOV-CMP-KVM/vars/debian.yml
+  when:
+    ovs_debian_check and
+    compute_with_dpdk_check
+
+- name: network_interface | configure | Debian- Create openvswitch default options
+  become: yes
+  template:
+    src: openvswitch_switch.j2
+    dest: /etc/default/openvswitch-switch
+    owner: root
+    group: root
+    mode: 0644
+  when:
+    ovs_debian_check and
+    compute_with_dpdk_check
+
+- name: network_interface | configure | Debian- Create dpdk default nic bindings
+  become: yes
+  template:
+    src: dpdk_bindings.j2
+    dest: /etc/dpdk/interfaces
+    owner: root
+    group: root
+    mode: 0644
+  when:
+    ovs_debian_check and
+    compute_with_dpdk_check
+
+- name: network_interface | configure | Debian- Manage dpdk openvswitch rxqs
+  become: yes
+  command: "ovs-vsctl set Open_vSwitch . other_config:n-dpdk-rxqs={{ dpdk_rx_queues }}"
+  when:
+    ovs_debian_check and
+    compute_with_dpdk_check
+
+- name: network_interface | configure | Debian- Manage dpdk openvswitch pmd mask
+  become: yes
+  command: "ovs-vsctl set Open_vSwitch . other_config:pmd-cpu-mask={{ dpdk_pmd_mask }}"
+  when:
+    ovs_debian_check and
+    compute_with_dpdk_check
+
+- name: network_interface | configure | Debian- Load the dpdk drivers
+  become: yes
+  command: modprobe {{ item }}
+  with_items: dpdk_drivers
+  when:
+    ovs_debian_check and
+    compute_with_dpdk_check and
+    dpdk_drivers != ' '
+
+- name: network_interface | configure | Debian- Persist the extra dpdk drivers
+  become: yes
+  template:
+    src: dpdk_modules_load.conf.j2
+    dest: "{{ dpdk_kernel_module_file }}"
+    owner: root
+    group: root
+    mode: '0640'
+  with_items: dpdk_extra.modules
+  when:
+    ovs_debian_check and
+    compute_with_dpdk_check and
+    dpdk_extra.modules | length > 0
+
+- name: network_interface | configure | RedHat- Install openvswitch packages
+  become: yes
+  yum:
+    name: "{{ item }}"
+    state: latest
+  with_items: openvswitch_packages
+  when: ovs_redhat_check
+
+- name: network_interface | configure | RedHat- check for ovs-vswitchd
+  stat:
+    path: "{{ switchd.file_path }}"
+    get_checksum: True
+    follow: True
+  register: ovsd_orig_stat_result
+  when:
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | RedHat- ovs-vswitchd check patched
+  command: /bin/true
+  register: ovsd_needs_cve_result
+  when:
+    ansible_os_family == 'RedHat' and
+    ovsd_orig_stat_result.stat.exists and
+    ovsd_orig_stat_result.stat.checksum == "{{ switchd.orig_checksum }}"
+
+- name: network_interface | configure | RedHat- copy patched ovs-vswitchd
+  become: yes
+  copy:
+    src: "../files/{{ switchd.cve_name }}"
+    dest: "{{ switchd.cve_path }}"
+    owner: root
+    group: root
+    mode: 0755
+  when:
+    ovsd_needs_cve_result.changed
+
+- name: network_interface | configure | RedHat- create ovs-vswitchd symlink
+  become: yes
+  file:
+    src: "{{ switchd.cve_path }}"
+    dest: "{{ switchd.file_path }}"
+    state: link
+    force: yes
+  when:
+    ovsd_needs_cve_result.changed
+
+- name: network_interface | configure | RedHat- Start openvswitch
+  become: yes
+  service:
+    name: openvswitch
+    state: started
+    enabled: yes
+  when: ovs_redhat_check
+
+- name: network_interface | configure | Debian- Install linux-bridge packages
+  become: yes
+  apt:
+    name: "{{ item }}"
+    install_recommends: no
+    state: latest
+    force: yes
+  with_items: linuxbridge_packages
+  environment: env
+  when:
+    network_bridge_interfaces != [] and
+    ansible_os_family == 'Debian'
+
+- name: network_interface | configure | RedHat- Install linux-bridge packages
+  become: yes
+  yum: name={{ item }}  state=latest
+  with_items: linuxbridge_packages
+  environment: env
+  when:
+    network_bridge_interfaces != [] and
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | RedHat- Provide system ifup-local support
+  become: yes
+  copy:
+    src: ../files/ifup-local
+    dest: /sbin/ifup-local
+    owner: root
+    group: root
+    mode: 755
+  when:
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | RedHat- Provide system ifdown-pre-local support
+  become: yes
+  copy:
+    src: ../files/ifdown-pre-local
+    dest: /sbin/ifdown-pre-local
+    owner: root
+    group: root
+    mode: 755
+  when:
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | Configure the PCI->NIC mappings
+  become: yes
+  template:
+    src: nic_mapping.j2
+    dest: /etc/udev/rules.d/{{ udev_prefix_nic_mapping }}-helion-nic-mapping.rules
+    owner: root
+    group: root
+    mode: 0644
+  when:
+    nic_mappings != []
+  register: udev_config_result
+
+- name: network_interface | configure | Debian- Ensure the include line is in interfaces file
+  become: yes
+  lineinfile: >
+     regexp="^source-directory\ \/etc\/network\/interfaces.d"
+     line="source-directory /etc/network/interfaces.d"
+     dest=/etc/network/interfaces
+     state=present
+     insertafter=EOF
+  when: ansible_os_family == "Debian"
+
+- name: network_interface | configure | Debian- Ensure other include forms are not in interfaces file
+  become: yes
+  lineinfile: >
+     regexp="^source\ \/etc\/network\/interfaces.d\/\*"
+     dest=/etc/network/interfaces
+     state=absent
+  when: ansible_os_family == "Debian"
+
+- name: network_interface | configure | Create interface configuration directory
+  become: yes
+  file:
+    path: "{{ net_path }}"
+    state: directory
+
+- name: network_interface | configure | Remove previous .shadow configuration directory
+  become: yes
+  file:
+    path: "{{ shadow_dir }}"
+    state: absent
+
+- name: network_interface | configure | Create .shadow configuration directory
+  become: yes
+  file:
+    path: "{{ shadow_dir }}"
+    state: directory
+
+- name: Get list of routing tables
+  set_fact:
+    routing_tables: "{{ [network_ether_interfaces, network_bond_interfaces, network_vlan_interfaces, ovs_bridge_interfaces, network_bridge_interfaces] | routing_tables | list }}"
+
+- name: network_interface | configure | Debian- Create OVS-VLAN configuration files
+  become: yes
+  template:
+    src: ovs_vlan_{{ ansible_os_family|lower }}.j2
+    dest: "{{ shadow_dir }}/{{ order_prefix_vlan }}-{{ item.device }}"
+  with_items:
+    network_vlan_interfaces
+  when:
+    ansible_os_family|lower == 'debian' and
+    (item.provider|default('') == 'openvswitch' or
+     item.provider|default('') == 'ovs')
+
+- name: network_interface | configure | Debian- Create OVS-bridge configuration files
+  become: yes
+  template: src=ovs_bridge_{{ ansible_os_family }}.j2 dest={{ shadow_dir }}/{{ order_prefix_bridge }}-{{ item.device }}
+  with_items: ovs_bridge_interfaces
+  when: ansible_os_family == 'Debian'
+  register: ovs_bridge_result
+
+- name: network_interface | configure | RedHat- Create OVS-bridge 'up' configuration files
+  become: yes
+  template:
+    src: ovs_bridge_up_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/ifup-local-{{ item.port }}"
+    owner: root
+    group: root
+    mode: 0744
+  with_items: ovs_bridge_interfaces
+  when: ansible_os_family == 'RedHat'
+  register: ovs_bridge_result
+
+- name: network_interface | configure | RedHat- Create OVS-bridge 'down' configuration files
+  become: yes
+  template:
+    src: ovs_bridge_down_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/ifdown-pre-local-{{ item.port }}"
+    owner: root
+    group: root
+    mode: 0744
+  with_items: ovs_bridge_interfaces
+  when:
+    ovs_bridge_result is defined and
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | Debian- Create ethernet configuration files
+  become: yes
+  template: src=ethernet_{{ ansible_os_family }}.j2 dest={{ shadow_dir }}/{{ order_prefix_ether }}-{{ item.device }}
+  with_items: network_ether_interfaces
+  when: ansible_os_family == 'Debian'
+  register: ether_result
+
+- name: network_interface | configure | RedHat- Create ethernet configuration files
+  become: yes
+  template:
+    src: ethernet_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/{{ rhel_prefix }}-{{ item.device }}"
+  with_items: network_ether_interfaces
+  when: ansible_os_family == 'RedHat'
+  register: ether_result
+
+- name: network_interface | configure | RedHat- Create ethernet route configuration files
+  become: yes
+  template:
+    src: route_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/route-{{ item.device }}"
+  with_items: network_ether_interfaces
+  when:
+    ether_result is defined and
+    (item.route is defined or item.routing_table is defined) and
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | RedHat- Create ethernet routing-rule configuration files
+  become: yes
+  template:
+    src: rule_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/rule-{{ item.device }}"
+  with_items: network_ether_interfaces
+  when:
+    ether_result is defined and
+    (item.route is defined or item.routing_table is defined) and
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | Debian- Create Linux-bridge configuration files
+  become: yes
+  template: src=bridge_{{ ansible_os_family }}.j2 dest={{ shadow_dir }}/{{ order_prefix_bridge }}-{{ item.device }}
+  with_items: network_bridge_interfaces
+  when: ansible_os_family == 'Debian'
+  register: bridge_result
+
+- name: network_interface | configure | RedHat- Create Linux-bridge configuration files
+  become: yes
+  template:
+    src: bridge_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/{{ rhel_prefix }}-{{ item.device }}"
+  with_items:
+    network_bridge_interfaces
+  when: ansible_os_family == 'RedHat'
+  register:
+    bridge_result
+
+- name: network_interface | configure | Debian- Create bond configuration files
+  become: yes
+  template: src=bond_{{ ansible_os_family }}.j2 dest={{ shadow_dir }}/{{ order_prefix_bond }}-{{ item.device }}
+  with_items: network_bond_interfaces
+  when: ansible_os_family == 'Debian'
+  register: bond_result
+
+- name: network_interface | configure | RedHat- Create bond configuration files
+  become: yes
+  template:
+    src: bond_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/{{ rhel_prefix }}-{{ item.device }}"
+  with_items:
+    network_bond_interfaces
+  when:
+    ansible_os_family == 'RedHat'
+  register:
+    bond_result
+
+- name:  network_interface | configure | Debian- Ensure the bonding module is loaded
+  become: yes
+  modprobe: name=bonding state=present
+  when:
+    bond_result|changed and
+    ansible_os_family == 'Debian'
+
+- name: network_interface | configure | RedHat- Configure bonding module
+  become: yes
+  lineinfile: >
+     dest=/etc/modprobe.d/bonding.conf
+     line="options bonding max_bonds=0"
+     state=present
+     create=yes
+     owner=root
+     group=root
+     mode=644
+     insertafter=EOF
+  when:
+    bond_result|changed and
+    ansible_os_family == 'RedHat'
+
+- name:  network_interface | configure | RedHat- Ensure the bonding module is loaded
+  become: yes
+  modprobe:
+    name: bonding
+    state: present
+  when:
+    bond_result|changed and
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | RedHat- Create bond route configuration files
+  become: yes
+  template:
+    src: route_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/route-{{ item.device }}"
+  with_items:
+    network_bond_interfaces
+  when:
+    bond_result is defined and
+    item.route is defined and
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | RedHat- Create bond routing-rule configuration files
+  become: yes
+  template:
+    src: rule_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/rule-{{ item.device }}"
+  with_items:
+    network_bond_interfaces
+  when:
+    bond_result is defined and
+    (item.route is defined or item.routing_table is defined) and
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | Debian- Create bond-slave configuration files
+  become: yes
+  template: src=bond_slave_{{ ansible_os_family }}.j2 dest={{ shadow_dir }}/{{ order_prefix_ether }}-{{ item.1 }}
+  with_subelements:
+   - network_bond_interfaces
+   - bond_slaves
+  when: ansible_os_family == 'Debian'
+  register: bond_port_result
+
+- name: network_interface | configure | RedHat- Create bond-slave configuration files
+  become: yes
+  template:
+    src: bond_slave_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/{{ rhel_prefix }}-{{ item.1 }}"
+  with_subelements:
+   - network_bond_interfaces
+   - bond_slaves
+  when:
+    bond_result is defined and
+    ansible_os_family == 'RedHat'
+  register:
+    bond_port_result
+
+- name: network_interface | configure | Debian- Create vlan configuration files
+  become: yes
+  template: src=vlan_{{ ansible_os_family }}.j2 dest={{ shadow_dir }}/{{ order_prefix_vlan }}-{{ item.device }}
+  with_items: network_vlan_interfaces
+  when:
+    ansible_os_family == 'Debian' and
+    item.provider|default('linux') == 'linux'
+
+- name: network_interface | configure | RedHat- Create vlan configuration files
+  become: yes
+  template:
+    src: vlan_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/{{ rhel_prefix }}-{{ item.device }}"
+  with_items: network_vlan_interfaces
+  when:
+    network_vlan_interfaces is defined and
+    ansible_os_family == 'RedHat'
+  register: vlan_result
+
+- name: network_interface | configure | RedHat- Create vlan 'up' configuration files
+  become: yes
+  template:
+    src: vlan_up_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/ifup-local-{{ item.device }}"
+    owner: root
+    group: root
+    mode: 0744
+  with_items: network_vlan_interfaces
+  when:
+    vlan_result is defined and
+    item.ovs_bridge is not defined and
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | RedHat- Create vlan route configuration files
+  become: yes
+  template:
+    src: route_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/route-{{ item.device }}"
+  with_items: network_vlan_interfaces
+  when:
+    vlan_result is defined and
+    (item.route is defined or item.routing_table is defined) and
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | RedHat- Create vlan routing-rule configuration files
+  become: yes
+  template:
+    src: rule_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/rule-{{ item.device }}"
+  with_items: network_vlan_interfaces
+  when:
+    vlan_result is defined and
+    (item.route is defined or item.routing_table is defined) and
+    ansible_os_family == 'RedHat'
+
+- name: network_interface | configure | Debian- Specify DPDK PCI/driver data
+  become: yes
+  template:
+    src: dpdk_drivers_{{ ansible_os_family }}.j2
+    dest: "{{ shadow_dir }}/{{ dpdk_driver_file }}"
+  when:
+    ansible_os_family == 'Debian' and
+    dpdk_network_devices is defined and
+    dpdk_network_devices.FND_OVS is defined and
+    dpdk_network_devices.FND_OVS.devices is defined and
+    dpdk_drivers != ' '
+
+- name: network_interface | configure | Disable remote root login over ssh
+  become: yes
+  lineinfile: >
+     regexp="^#?PermitRootLogin "
+     line="PermitRootLogin no"
+     dest=/etc/ssh/sshd_config
+     state=present
+
+- name: network_interface | configure | Force libvirt vnet'x' port MTU
+  become: yes
+  template:
+    src: libvirt_mtu.j2
+    dest: /etc/udev/rules.d/{{ udev_prefix_nic_mapping }}-helion-libvirt-mtu.rules
+    owner: root
+    group: root
+    mode: 0644
+  when: passthrough_max_mtu != '0'
+
+- name: network_interface | configure | Remove libvirt vnet'x' port MTU if not required
+  become: yes
+  file:
+    path: /etc/udev/rules.d/{{ udev_prefix_nic_mapping }}-helion-libvirt-mtu.rules
+    state: absent
+  when: passthrough_max_mtu == '0'
+
+- name: network_interface | configure | Copy udev run script to run nic vendor scripts
+  become: yes
+  copy:
+    src: "../files/hlm_udev_run.sh"
+    dest: "/etc/udev/hlm_udev_run.sh"
+    owner: root
+    group: root
+    mode: 0755
+  register: hlm_udev_run_result
+  when:
+     sriov_interfaces != []
+
+- name: network_interface | configure | Restart networking
+  become: yes
+  restart_networking:
+    interfaces_path: "{{ net_path }}"
+    shadow_path: "{{ shadow_dir }}"
+    force_restart: "{{ udev_config_result.changed or hlm_udev_run_result.changed or network_pci_restart_required|default('false') }}"
+    restart_ovs: "{{ ovs_debian_check or ovs_redhat_check }}"
+    management_pattern: "{{ interface_file_marker }}"
+    routing_tables: "{{ routing_tables }}"
+    routing_table_file: "{{ routing_table_file }}"
+    routing_table_marker: "{{ routing_table_marker }}"
+    routing_table_id_start: "{{ routing_table_id_start }}"
+    os_family: "{{ ansible_os_family }}"
+  register: net_restart_result
+
+- name: network_interface | configure | Set network_restarted fact for later use
+  set_fact:
+    network_restarted: "{{ net_restart_result.changed }}"

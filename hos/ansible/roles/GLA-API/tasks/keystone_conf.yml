@@ -1,0 +1,126 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Glance's Keystone configuration
+---
+
+- name: GLA-API | keystone_conf | Get a domain scoped token
+  keystone_v3:
+    endpoint: "{{ keystone_admin_endpoint }}"
+    login_username: "{{ keystone_admin_user }}"
+    login_password: "{{ keystone_admin_password }}"
+    login_user_domain_name: "{{ keystone_user_domain_name }}"
+    login_domain_name: "{{ keystone_user_domain_name }}"
+    action: "token_get"
+  register: domain_scoped_token_result
+  run_once: True
+
+# The service user is used for Keystone middleware auth.
+- name: GLA-API | keystone_conf | Create service user
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}"
+    action: "create_user"
+    user_name: "{{ glance_admin_user }}"
+    user_domain_name: "{{ keystone_user_domain_name }}"
+    user_password: "{{ glance_admin_password }}"
+  run_once: True
+
+- name: GLA-API | keystone_conf | Grant admin role to service user
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}"
+    action: "grant_project_role"
+    user_name: "{{ glance_admin_user }}"
+    project_name: "{{ keystone_project_name }}"
+    user_domain_name: "{{ keystone_user_domain_name }}"
+    project_domain_name: "{{ keystone_project_domain_name }}"
+    role_name: "{{ keystone_admin_role_name }}"
+  run_once: True
+
+- name: GLA-API | keystone_conf | Create swift project
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}"
+    action: "create_project"
+    project_name: "{{ glance_swift_tenant_name }}"
+    description: "Tenant for storing Glance image data in Swift"
+    project_domain_name: "{{ keystone_project_domain_name }}"
+  run_once: True
+
+- name: GLA-API | keystone_conf | Create swift user
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}"
+    action: "create_user"
+    user_name: "{{ glance_swift_user }}"
+    user_domain_name: "{{ keystone_user_domain_name }}"
+    user_password: "{{ glance_swift_password }}"
+    role_name: "{{ keystone_member_role_name }}"
+  run_once: True
+
+- name: GLA-API | keystone_conf | Grant member role to swift project
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}"
+    action: "grant_project_role"
+    user_name: "{{ glance_swift_user }}"
+    project_name: "{{ glance_swift_tenant_name }}"
+    user_domain_name: "{{ keystone_user_domain_name }}"
+    project_domain_name: "{{ keystone_project_domain_name }}"
+    role_name: "{{ keystone_member_role_name }}"
+  run_once: True
+
+- name: GLA-API | keystone_conf | Create Glance Admin role
+  keystone_v3:
+    endpoint: "{{ keystone_admin_endpoint }}"
+    login_token: "{{ domain_scoped_token_result.result }}"
+    action: "create_role"
+    role_name: "glance_admin"
+    description: "Glance admin role"
+  run_once: True
+
+- name: GLA-API | keystone_conf | Create glance-check project
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}"
+    action: "create_project"
+    project_name: "{{ glance_check_tenant_name }}"
+    description: "glance-check project"
+    project_domain_name: "{{ keystone_project_domain_name }}"
+  run_once: True
+
+- name: GLA-API | keystone_conf | Create glance-check user
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}"
+    action: "create_user"
+    user_name: "{{ glance_check_user }}"
+    user_domain_name: "{{ keystone_user_domain_name }}"
+    user_password: "{{ glance_check_password }}"
+    role_name: "{{ keystone_member_role_name }}"
+  run_once: True
+
+- name: GLA-API | keystone_conf | Grant role for glance-check
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_admin_endpoint }}"
+    action: "grant_project_role"
+    user_name: "{{ glance_check_user }}"
+    project_name: "{{ glance_check_tenant_name }}"
+    user_domain_name: "{{ keystone_user_domain_name }}"
+    project_domain_name: "{{ keystone_project_domain_name }}"
+    role_name: "{{ keystone_member_role_name }}"
+  run_once: True

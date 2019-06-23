@@ -1,0 +1,130 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: FND-MDB | status | Print service being checked
+  debug:
+    msg: "Running service check for {{ mysql_service }}"
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | status | Check system service running
+  become: yes
+  shell: "systemctl status {{ mysql_service }} && killall -0 mysqld"
+  ignore_errors: yes
+  changed_when: false
+  register: systemctl_status_result
+
+- name: FND-MDB | status | Report status of "{{ mysql_service }}"
+  fail:
+    msg: |
+      {{ mysql_service }} is not running.
+      systemctl status {{ mysql_service }}
+      {{ systemctl_status_result.stdout }}
+      {{ systemctl_status_result.stderr }}
+  when: systemctl_status_result | failed
+
+# Check percona sync status,
+# for now do not actually fail if we are not synced/ignore errors
+- name: FND-MDB | status | Check percona sync status
+  shell: >
+    curl --head --silent
+    "http://{{ mysql_bind_address }}:{{ mysql_clustercheck_port }}/"
+  ignore_errors: yes
+  register: mysql_sync_result
+  tags:
+  - skip_ansible_lint
+
+- name: FND-MDB | status | Report status of "{{ mysql_service }}"
+  debug:
+    msg: |
+      {{ mysql_service }} is synced.
+  when: mysql_sync_result.stdout.find("200 OK") != -1
+
+- name: FND-MDB | status | Report status of "{{ mysql_service }}"
+  debug:
+    msg: |
+      {{ mysql_service }} is not synced.
+  when: mysql_sync_result.stdout.find("200 OK") == -1
+
+# Check if the cluster is valid.
+# First mysql may not yet be up on all hosts, and that is ok
+
+- name: FND-MDB | status | Find out if mysql down on any hosts
+  become: yes
+  delegate_to: "{{ item }}"
+  shell: mysql -e "select 1"
+  with_items: "{{ mysql_mdb_hosts }}"
+  ignore_errors: yes
+  changed_when: false
+  failed_when: false
+  register: mysql_full_cluster_result
+  run_once_per: verb_hosts.FND_MDB
+
+# This is a workaround for because ansible will not allow set fact to work with
+# with_items to increment mysql_nodes_down.So we do this in jinja2 instead.
+# This builds a string of xxxx.. for nodes down
+- name: FND-MDB | status | Find the nodes which are down
+  set_fact:
+    mysql_nodesdown: >
+      {% for i in mysql_full_cluster_result.results %}
+      {%- if i.stderr is not equalto "" -%}x{% endif -%}
+      {%endfor%}
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | status | Calculate the number of nodes down
+  set_fact:
+    mysql_no_nodesdown: "{{ mysql_nodesdown | length }}"
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | status | Check cluster size on every host
+  become: yes
+  shell: >
+    mysql -sNe "SHOW GLOBAL STATUS LIKE
+    'wsrep_cluster_size'"| awk '{ print $2}'
+  register: mysql_cluster_size_result
+
+- name: FND-MDB | status | Check cluster address on every host
+  become: yes
+  shell: >
+    mysql -sNe "SHOW GLOBAL VARIABLES LIKE
+    'wsrep_cluster_address'" | awk '{n=split($2,a,","); print n }'
+  register: mysql_no_nodes_result
+
+# Now the cluster is valid if the cluster_size = no of nodes normally in
+# cluster -  nodes down. This check has to be done on each host as
+# each has a different status
+
+- name: FND-MDB | status | Check realcluster size
+  set_fact:
+    mysql_actual_cluster_size: >
+      {{ mysql_no_nodes_result.stdout |
+      int - mysql_no_nodesdown | int }}
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | status | print cluster size
+  debug:
+    msg: "{{ mysql_cluster_size_result }}"
+
+- name: FND-MDB | status | Report if the cluster seems partitioned
+  fail:
+    msg: |
+      The cluster size is {{ mysql_cluster_size_result.stdout }}
+      The number of nodes in the cluster {{ mysql_no_nodes_result.stdout }}
+      The number of nodes with mysql down is  {{ mysql_no_nodesdown }}
+      Check the cluster is not partitioned!!
+  when: (mysql_cluster_size_result is defined and
+        mysql_actual_cluster_size is defined and
+        mysql_cluster_size_result.stdout !=  mysql_actual_cluster_size)
+  run_once_per: verb_hosts.FND_MDB

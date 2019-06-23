@@ -1,0 +1,435 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+DOCUMENTATION = '''
+---
+module: restart_networking
+short_description: A module for restarting Debian networking
+options:
+  interfaces_path:
+    description:
+      - path of the directory where the interfaces configuration
+      - is stored.
+    required: true
+  shadow_path:
+    description:
+      - path of the directory where the shadow configuration
+      - is stored.
+    required: true
+    default: /etc/network/.shadow
+  force_restart:
+    description:
+      - Force a restart, regardless of differences
+    required: false
+    default: false
+  restart_ovs:
+    description:
+      - Should OpenVSwitch be restarted
+    required: false
+    default: false
+  management_pattern:
+    description:
+      - Unique string to search for in interfaces files to
+      - indicate that they are HLM managed
+    required: false
+    default: None
+  routing_tables:
+    description:
+      - List of routing tables to create
+    required: true
+  routing_table_file:
+      - path of routing configuration file
+    required: true
+  routing_table_marker:
+      - marker string for managed routing tables
+    required: true
+  routing_table_id_start:
+      - starting number for managed routing tables
+    required: true
+  os_family:
+      - one of "Debian" or "Redhat"
+    required: true
+author:
+'''
+
+EXAMPLES = '''
+- restart_networking: shadow_path=/etc/network/.shadow
+   interfaces_path=/etc/network/interfaces.d
+   restart_ovs=true
+   management_pattern="# Unique Comment marker"
+   routing_tables=["MANAGEMENT", "EXTERNAL-VM"]
+   routing_table_file=/etc/iproute2/rt_table
+   routing_table_marker="unique_marker"
+   routing_table_id_start=101
+   os_family="Debian"
+'''
+
+import logging
+import logging.handlers
+import os
+import shutil
+import filecmp
+import time
+import re
+
+log = logging.getLogger(__name__)
+
+
+def init_logging():
+    syslog_handler = logging.handlers.SysLogHandler(address='/dev/log')
+    formatter = logging.Formatter('%(module)s: %(message)s')
+    syslog_handler.setFormatter(formatter)
+    log.addHandler(syslog_handler)
+    log.setLevel(logging.INFO)
+
+
+def main():
+    module = AnsibleModule(
+        argument_spec=dict(
+            interfaces_path=dict(required=True),
+            shadow_path=dict(required=True),
+            force_restart=dict(required=False,
+                               choices=BOOLEANS+['True', True, 'False', False],
+                               default=False),
+            restart_ovs=dict(required=False,
+                             choices=BOOLEANS+['True', True, 'False', False],
+                             default=False),
+            management_pattern=dict(required=False, default=None),
+            routing_tables=dict(type='list'),
+            routing_table_file=dict(required=True),
+            routing_table_marker=dict(required=True),
+            routing_table_id_start=dict(required=True, type='int'),
+            os_family=dict(required=True),
+        ),
+        supports_check_mode=False
+    )
+
+    interfaces_path = module.params['interfaces_path']
+    shadow_path = module.params['shadow_path']
+    force_restart = module.boolean(module.params['force_restart'])
+    restart_ovs = module.boolean(module.params['restart_ovs'])
+    management_pattern = module.params['management_pattern']
+    routing_tables = module.params['routing_tables']
+    routing_table_file = module.params['routing_table_file']
+    routing_table_marker = module.params['routing_table_marker']
+    routing_table_id_start = module.params['routing_table_id_start']
+    os_family = module.params['os_family']
+
+    init_logging()
+
+    try:
+
+        if not os.path.isdir(shadow_path):
+            raise Exception('Shadow directory not found: %s' % shadow_path)
+
+        # Get the list of shadow and interface files and arrange accordingly
+        shadow_files = set(dir_scan(shadow_path))
+        interface_files = set(get_interfaces_files(module,
+                                                   interfaces_path,
+                                                   management_pattern))
+        missing_files = shadow_files - interface_files
+        extra_files = interface_files - shadow_files
+        common_files = shadow_files & interface_files
+        missing_files.update(compare_files(shadow_path,
+                                           interfaces_path,
+                                           common_files))
+        # For Debian we use a different filenaming format than 'standard'
+        # Linux, look for 'standard' files we are replacing
+        if os_family == 'Debian':
+            extra_files.update(find_legacy_files(shadow_files,
+                                                 interfaces_path))
+
+        if len(missing_files) > 0 or len(extra_files) > 0:
+            # There are updates - we need to restart the network
+            force_restart = True
+
+        if not force_restart:
+            log.info("No network install or restart needed")
+            module.exit_json(**dict(changed=False, rc=0))
+
+        if os_family == 'Debian':
+            log.info("Update '%s' interfaces in "
+                     "/etc/network/interfaces and %s",
+                     management_pattern, interfaces_path)
+        else:
+            log.info("Update '%s' interfaces in %s",
+                     management_pattern, interfaces_path)
+
+        # Check for DPDK NIC binding tasks - make sure the DPDK package
+        # is installed beforehand.
+        dpdk_drivers = {}
+        if os.path.exists("/usr/sbin/dpdk_nic_bind") and \
+                len(missing_files) > 0:
+            file_list = [os.path.join(shadow_path, file)
+                         for file in missing_files]
+            rc, out, err = module.run_command("grep '^#DPDK=' %s" %
+                                              " ".join(file_list),
+                                              check_rc=False)
+            if rc == 0:
+                for line in out.split():
+                    driver, pciaddr = re.sub('.*#DPDK=', '', line).split(',')
+                    dpdk_drivers[pciaddr] = driver
+
+        flush_interfaces(module, os_family)
+
+        # 'networking start/stop' will ifdown/up all interfaces
+        # It will also cause the udev system to reload its config
+        network_stop(module, os_family)
+
+        if os_family == 'Debian':
+            clean_interfaces_file(shadow_files, module)
+
+        # Remove any additional (managed) files from the interfaces dir
+        for file in extra_files:
+            log.info('Removing interface definition file %s', file)
+            os.remove(os.path.join(interfaces_path, file))
+
+        # Install each of the files from the shadow path
+        for file in missing_files:
+            log.info('Installing interface definition file %s', file)
+            src_path = os.path.join(shadow_path, file)
+            dest_path = os.path.join(interfaces_path, file)
+            shutil.copy(src_path, dest_path)
+            shutil.copystat(src_path, dest_path)
+
+        # Do DPDK bindings where necessary
+        for addr in dpdk_drivers:
+            module.run_command("/usr/sbin/dpdk_nic_bind --bind=%s %s" %
+                               (dpdk_drivers[addr], addr),
+                               check_rc=True)
+
+        # Reload the udev device mappings
+        log.info('Trigger udev mapping of network devices')
+        module.run_command('udevadm control --reload', check_rc=True)
+        module.run_command('udevadm trigger --action=add --subsystem-match=net',
+                           check_rc=True)
+        module.run_command('udevadm settle --timeout 60', check_rc=True)
+
+        # Reset the routing-tables
+        persist_route_tables(module, routing_table_file, routing_tables,
+                             routing_table_marker, routing_table_id_start)
+
+        network_start(module, os_family)
+
+        if restart_ovs and os_family == 'Debian':
+            # bring up all ovs managed interfaces
+            log.info('Bring up openvswitch interfaces')
+            module.run_command('ifup --all --allow ovs --force --ignore-errors',
+                               check_rc=True)
+
+        # Wait for network to settle and reconfigure before continuing
+        # Ideally we'd test the network state, but that's not trivial.
+        log.info('Wait for the network to settle')
+        time.sleep(20)
+
+        log.info('Network install and restart completed successfully')
+
+    except Exception, e:
+        module.fail_json(msg='Exception: %s' % e)
+    else:
+        module.exit_json(**dict(changed=True, rc=0))
+
+
+def network_stop(module, os_family):
+    log.info('Stop networking services')
+    if os_family == 'Debian':
+        module.run_command('service networking stop', check_rc=True)
+    else:
+        module.run_command('systemctl stop network', check_rc=True)
+
+
+def network_start(module, os_family):
+    log.info('Start networking services')
+    if os_family == 'Debian':
+        module.run_command('service networking start', check_rc=True)
+    else:
+        # This can appear to fail if we have udev mapped devices
+        # but ifcfg-... files exist for the previous interface names
+        module.run_command('systemctl start network', check_rc=False)
+
+
+def compare_files(shadow_path, interfaces_path, files):
+    # Compare files in both locations and return a list of ones which
+    # are different
+    diffs = []
+    for file in files:
+        src_path = os.path.join(shadow_path, file)
+        dest_path = os.path.join(interfaces_path, file)
+        if not filecmp.cmp(src_path, dest_path):
+            diffs.append(file)
+    return diffs
+
+
+def flush_interfaces(module, os_family):
+    # Retrieve active interfaces
+    interfaces = get_interfaces(module, os_family)
+    for interface in interfaces:
+        if interface == 'lo':
+            continue
+
+        if os_family == 'Debian':
+            module.run_command('timeout -s KILL 60 ifdown --force --ignore-errors %s'
+                               % interface, check_rc=False)
+            # for now also do an 'ifconfig down' on the interface since
+            # just an ifdown isn't reliable
+            module.run_command('timeout -s KILL 60 ifconfig %s down' % interface,
+                               check_rc=False)
+        else:
+            module.run_command('timeout -s KILL 60 ifdown %s' % interface,
+                               check_rc=False)
+
+        module.run_command('ip addr flush dev %s' % interface, check_rc=False)
+
+
+def get_interfaces(module, os_family):
+    # Retrieve active interfaces
+    interfaces = []
+    if os_family == 'Debian':
+        rc, stdout, stderr = module.run_command('ifquery --state',
+                                                check_rc=False)
+        interfaces.extend(stdout.split())
+    else:
+        rc, stdout, stderr = module.run_command('ip link show',
+                                                check_rc=False)
+        lines = stdout.splitlines()
+        # look for 2nd word in lines that start like this
+        # "2: eth0: <NO-CARRIER..."
+        for line in lines:
+            word = line.split(':')
+            if word[0].isdigit():
+                interfaces.append(word[1])
+
+    return interfaces
+
+
+def find_legacy_files(shadow_files, interfaces_path):
+    # Delete any files for interfaces that are 'newly' managed by HLM
+    legacy_files = []
+    for interface_name in get_interface_names(shadow_files):
+        if os.path.exists(os.path.join(interfaces_path, interface_name)):
+            legacy_files.append(interface_name)
+    return legacy_files
+
+
+def clean_interfaces_file(shadow_files, module):
+    # Remove any configuration stanzas in the /etc/network/interfaces
+    # file which match interfaces to be managed and whose stanzas start
+    # with 'auto' or 'iface'.  This will remove the stanza to the first
+    # 'blank' line.
+    for hlm_interface_name in get_interface_names(shadow_files):
+        module.run_command("sed -e '/auto %s/,/^$/d' -i /etc/network/interfaces"
+                           % hlm_interface_name, check_rc=True)
+        module.run_command("sed -e '/iface %s/,/^$/d' -i /etc/network/interfaces"
+                           % hlm_interface_name, check_rc=True)
+
+
+def get_interface_names(shadow_files):
+    interface_names = []
+    for config_file in shadow_files:
+        # Strip the first 3 characters off the file name
+        name = config_file.partition('-')[2]
+        interface_names.append(name)
+    return interface_names
+
+
+def get_interfaces_files(module, interfaces_path, management_pattern=None):
+    # Get the list of managed files in the interfaces directory
+    files = dir_scan(interfaces_path)
+    if not management_pattern:
+        return files
+
+    def matches_pattern(file):
+        rc, out, err = module.run_command("grep -s '^%(hlm)s' %(location)s" % {
+            'hlm':management_pattern,
+            'location':os.path.join(interfaces_path, file)},
+            check_rc=False)
+        return rc == 0
+    return filter(matches_pattern, files)
+
+
+def dir_scan(root_path, dir_path=''):
+    # Scan the named directory looking for files. Return an array of
+    # relative paths (to root_path).
+    files = []
+    for file in os.listdir(os.path.join(root_path, dir_path)):
+        rel_path = os.path.join(dir_path, file)
+        if os.path.isdir(os.path.join(root_path, rel_path)):
+            files += dir_scan(root_path, rel_path)
+        else:
+            files.append(rel_path)
+    return files
+
+
+def persist_route_tables(module, persist_file, tables, marker, start_id):
+    '''Write the set of route-table specifications to the file specified.
+
+       Note: that we do not explicitly flush the current set of route
+             tables here as the stopping of each interface will have
+             explicitly removed the rules added
+    '''
+    log.info("Updating '%s' route-tables in %s", marker, persist_file)
+    file_list = read_config_file(module, persist_file)
+    update_route_tables(module, file_list, tables, marker, start_id)
+    write_config_file(module, persist_file, file_list)
+
+
+def read_config_file(module, filename):
+    '''Return the content of the file specified as a list of strings
+    '''
+    file_contents = []
+
+    try:
+        with open(filename, 'r') as pfile:
+            file_contents = pfile.read().splitlines()
+    except:
+        # failure to open is OK, the file may not exist
+        pass
+
+    return file_contents
+
+
+def write_config_file(module, filename, content_list):
+    '''Write the content to the file specified.
+       This will raise an exception if the create fails
+    '''
+    lines = '\n'.join(content_list)
+    lines += '\n'
+
+    with open(filename, "w") as pfile:
+        pfile.write(lines)
+
+
+def update_route_tables(module, content_list, tables, marker, start_id):
+    '''Update the route-table specifications with our new content.
+    '''
+    # purge previous route-tables (and comment) matching the marker
+    content_list[:] = (line for line in content_list if marker not in line)
+
+    # insert a comment to track the edit
+    content_list.append('#%s: route-tables updated on %s' %
+                        (marker, time.ctime()))
+    id = start_id
+    for table in tables:
+        content_list.append("%d %s #%s" % (id, table, marker))
+        id += 1
+
+
+# import module snippets
+from ansible.module_utils.basic import *
+if __name__ == '__main__':
+    main()

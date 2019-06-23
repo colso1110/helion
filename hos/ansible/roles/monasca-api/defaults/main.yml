@@ -1,0 +1,73 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+influxdb_db: mon
+keystone_auth_method: password
+keystone_client_auth: false
+monasca_keystone_user: "{{ MON_API.consumes_KEY_API.vars.keystone_monasca_user }}"
+monasca_keystone_password: "{{ MON_API.consumes_KEY_API.vars.keystone_monasca_password | quote }}"
+monasca_admin_client_port: "{{ host.bind.MON_API.metrics.port }}"
+monasca_api_admin_bind_host: localhost
+monasca_api_client_keystore:
+monasca_api_client_keystore_password:
+monasca_api_truststore: "/usr/lib/jvm/default-java/jre/lib/security/cacerts"
+monasca_api_truststore_password: "changeit"
+monasca_api_keystore_password:
+monasca_api_version: 1.1.0-SNAPSHOT
+monasca_wait_for_period: 60
+monasca_log_dir: /var/log/monasca
+monasca_log_level: WARN
+monasca_log_rotation_backup_count: 5
+monasca_mysql_db: "{{ MON_API.consumes_FND_MDB.vars.databases.monasca.dbname }}"
+monasca_api_jar: "{{ monasca_jars_virtualenv_dir }}/lib/monasca-api-{{ monasca_api_version }}-shaded.jar"
+monasca_api_jar_saved_md5: /opt/monasca/md5sums/monasca-api.md5
+
+old_api_jar: False
+run_mode: Deploy
+skip_install: False
+verify: True
+
+vertica_vip: "{% if database_type == 'vertica' %}{{ MON_API.consumes_FND_VDB.vips.private[0].host }}{% endif %}"
+vertica_vip_port: "{% if database_type == 'vertica' %}{{ MON_API.consumes_FND_VDB.vips.private[0].port }}{% endif %}"
+vertica_url: "{% if database_type == 'vertica' %}jdbc:vertica://{{ vertica_vip }}:{{ vertica_vip_port }}/mon{% endif %}"
+
+monasca_api_region: "unset"
+
+influxdb_url: "{% if database_type == 'influxdb' %}{{ MON_API.consumes_FND_IDB.vips.private[0].url }}{% endif %}"
+influxdb_user: "{% if database_type == 'influxdb' %}{{ MON_API.consumes_FND_IDB.vars.influxdb_monasca_api_user }}{% endif %}"
+influxdb_password: "{% if database_type == 'influxdb' %}{{ MON_API.consumes_FND_IDB.vars.influxdb_monasca_api_password | quote }}{% endif %}"
+
+kafka_nodes: "{{ MON_API.consumes_FND_KFK.members.private }}"
+kafka_hosts: "{% for node in kafka_nodes %}{{ node.host }}:{{ node.port }}{% if not loop.last %},{% endif %}{% endfor %}"
+
+keystone_host: "{{MON_API.consumes_KEY_API.vips.private[0].host}}"
+keystone_port: "{{MON_API.consumes_KEY_API.vips.private[0].port}}"
+keystone_use_https: "{{MON_API.consumes_KEY_API.vips.private[0].use_tls}}"
+keystone_admin_project: "{{KEY_API.vars.keystone_admin_tenant}}"
+
+monasca_api_bind_host: "{{ host.bind.MON_API.internal.ip_address }}"
+monasca_api_client_port: "{{MON_API.advertises.vips.private[0]['port']}}"
+monasca_api_protocol_https: "{% if MON_API.advertises.vips.private[0].protocol == 'https' %}true{% else %}false{% endif %}"
+
+mysql_host: "{{MON_API.consumes_FND_MDB.vips.private[0].host}}"
+mysql_port: "{{ MON_API.consumes_FND_MDB.vips.private[0].port }}"
+mysql_https_arg: "{% if MON_API.consumes_FND_MDB.vips.private[0].use_tls %}&useSSL=true{% endif %}"
+monasca_api_mysql_user: "{{ MON_API.consumes_FND_MDB.vars.accounts.monasca_api.username }}"
+monasca_api_mysql_password: "{{ MON_API.consumes_FND_MDB.vars.accounts.monasca_api.password | quote }}"
+
+zookeeper_nodes: "{{ MON_API.consumes_FND_ZOO.members.private }}"
+zookeeper_hosts: "{% for node in zookeeper_nodes %}{{ node.host }}:{{ node.port }}{% if not loop.last %},{% endif %}{% endfor %}"
+# TODO: Get the connector port and set it

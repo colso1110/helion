@@ -1,0 +1,28 @@
+#
+# (c) Copyright 2015 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+# The following relative symlinks are created under the
+# my_cloud/config directory.
+---
+symlinks:
+  "ironic/ironic-api.conf.j2": "roles/ironic-common/templates/ironic-api.conf.j2"
+  "ironic/ironic-conductor.conf.j2": "roles/ironic-common/templates/ironic-conductor.conf.j2"
+  "ironic/ironic-api-logging.conf.j2": "roles/ironic-common/templates/ironic-api-logging.conf.j2"
+  "ironic/ironic-conductor-logging.conf.j2": "roles/ironic-common/templates/ironic-conductor-logging.conf.j2"
+  "ironic/ironic-rootwrap.j2": "roles/ironic-conductor/templates/ironic-rootwrap.j2"
+  "ironic/ironic.conf.j2": "roles/ironic-conductor/templates/ironic.conf.j2"
+  "ironic/map-file.j2": "roles/ironic-conductor/templates/map-file.j2"
+  "ironic/tftp.j2": "roles/ironic-conductor/templates/tftp.j2"

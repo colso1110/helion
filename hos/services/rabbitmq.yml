@@ -1,0 +1,89 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+  version: 2
+
+service-components:
+- name: rabbitmq
+  mnemonic: FND-RMQ
+  service: foundation
+
+  advertise-member-list: true
+
+  multi-consumers:
+    default: block
+
+  relationship-vars-schema:
+    - name: accounts
+      vars:
+        - name: username
+        - name: password
+        - name: vhost
+          default: "/"
+        - name: tags
+          default: ""
+        - name: conf_permissions
+          default: .*
+        - name: read_permissions
+          default: .*
+        - name: write_permissions
+          default: .*
+
+  config-set:
+    -   name: .erlang.cookie
+        ansible-vars:
+        -   name: erlang_cookie
+            value: '%random-string%'
+            immutable: 'True'
+            properties:
+                max-length: 20
+                min-length: 20
+        -   name: rmq_service_user
+            value: guest
+        -   name: rmq_service_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+  endpoints:
+    - port: 5671
+      roles:
+        - tls_listener
+      tls-terminator: false
+    - port: 5672
+      roles:
+        - tcp_listener
+      tls-terminator: false
+    - port: 5672
+      tls-port: 5671
+      roles:
+       - internal
+      tls-terminator: false
+    - port: 15672
+      roles:
+        - rabbitmq_management
+      tls-terminator: false
+    - port: 61000
+      roles:
+        - rabbitmq_inet_dist_listen
+      tls-terminator: false
+    # RabbitMQ default Erlang Port Mapper Daemon (epmd)
+    - port: 4369
+      roles:
+        - rabbitmq_epmd
+      tls-terminator: false

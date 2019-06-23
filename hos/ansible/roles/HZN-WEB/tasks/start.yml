@@ -1,0 +1,46 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Activate the new venv
+- name: HZN-WEB | start | Activate new horizon venv
+  install_package:
+    name: horizon
+    service: horizon
+    activate: act_on
+    version: "{{ hlm_notify_horizon_venv_activate_required.version }}"
+  when: hlm_notify_horizon_venv_activate_required is defined
+
+# Enable virtual host for horizon
+
+- name:  HZN-WEB | start | Enable Horizon vhost
+  command: a2ensite horizon
+  register: horizon_enable_result
+  changed_when: ( horizon_enable_result | success ) and
+                ( 'already enabled' not in horizon_enable_result.stdout )
+
+# HLM-4663 - changing the apache config (specifically the Listen address)
+# requires a restart, whereas changing the django config can be a reload
+- include: "{{ playbook_dir }}/roles/FND-AP2/tasks/start_reload.yml"
+  vars:
+    apache_reload_requested: "{{ hlm_notify_horizon_venv_activate_required is defined
+                              or horizon_enable_result.changed 
+                               or (hlm_notify_horizon_config_changed is defined
+                               and hlm_notify_horizon_config_changed.changed) }}"
+    apache_restart_requested: "{{ (hlm_notify_horizon_mod_enable_result is defined
+                               and hlm_notify_horizon_mod_enable_result.changed)
+                               or (hlm_notify_horizon_apache_config_changed is defined
+                               and hlm_notify_horizon_apache_config_changed.changed) }}"

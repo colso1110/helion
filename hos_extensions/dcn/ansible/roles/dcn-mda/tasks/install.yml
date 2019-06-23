@@ -1,0 +1,86 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: dcn-mda | install | Update venv cache
+  become: yes
+  install_package:
+    cache: update
+
+- name: dcn-mda | install | Install dcn mda, not activated
+  become: yes
+  install_package:
+    name: dcn-metadata-agent
+    service: dcn-metadata-agent
+    state: present
+    activate: act_off
+  register: dcn_mda_install_result
+
+- name: dcn-mda | install | Notify restart on install
+  command: /bin/true
+  register: hlm_notify_dcn_mda_restart_required
+  when: dcn_mda_install_result.changed
+
+- include: _set_directories.yml
+  vars:
+    install_package_result: "{{ dcn_mda_install_result }}"
+
+- name: dcn-mda | install | Copy fake python-novaclient deb
+  become: yes
+  copy:
+    src: ../files/python-novaclient_0fake_all.deb
+    dest: /tmp/python-novaclient_0fake_all.deb
+    owner: root
+    group: root
+    mode: 0644
+
+- name: dcn-mda | install |
+    Install fake python-novaclient deb to satify dependency
+  become: yes
+  shell: 'dpkg -i /tmp/python-novaclient_0fake_all.deb'
+
+- name: dcn-mda | install | Set new required_packages to DCN-MDA dependencies
+  set_fact:
+    required_packages: "{{ dcn_mda_dependent_pkgs }}"
+
+# common_install installs dependencies based on ansible_os_family
+- include: ../../dcn-common/tasks/common_install.yml
+
+- name: dcn-mda | install | Notify restart on dependent package update
+  command: /bin/true
+  register: hlm_notify_dcn_mda_restart_required
+  when: check_updated_packages_result.changed
+
+- name: dcn-mda | install | Set new required_packages to DCN-MDA
+  set_fact:
+    required_packages: "{{ dcn_mda_pkgs }}"
+
+# Use common_install to install the DCN-MDA packages
+- include: ../../dcn-common/tasks/common_install.yml
+
+- name: dcn-mda | install | Notify restart on DCN-MDA package update
+  command: /bin/true
+  register: hlm_notify_dcn_mda_restart_required
+  when: check_updated_packages_result.changed
+
+- name: dcn-mda | install | Activate the latest install
+  become: yes
+  install_package:
+    name: dcn-metadata-agent
+    service: dcn-metadata-agent
+    activate: act_on
+    version: "{{ dcn_mda_install_result.version }}"
+  when: dcn_mda_install_result is defined

@@ -1,0 +1,81 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: vertica | recover vertica database | Check database status
+  sudo_user: dbadmin
+  command: /opt/vertica/bin/admintools -t view_cluster -d {{ vertica_database_name }}
+  register: running_result
+  ignore_errors: yes
+
+- name: vertica | recover vertica database | Set variable that the database is not in a failed state
+  set_fact: database_down=false
+  when: (running_result.stdout.find("ALL") != -1 and running_result.stdout.find("UP") != -1)
+
+- name: vertica | recover vertica database | Set variable that the database is in a failed state
+  set_fact: database_down=true
+  when: database_down is not defined
+
+- name: vertica | recover vertica database | make sure vertica is down before trying to start
+  include: stop_cluster_nodes.yml
+  when: database_down
+
+- name: vertica | recover vertica database | Attempt to start database without rolling back
+  sudo_user: dbadmin
+  command: /opt/vertica/bin/admintools -t start_db -d {{ vertica_database_name }} -p "{{ vertica_dbadmin_password }}" -i
+  register: start_result
+  no_log: True
+  ignore_errors: yes
+  when: database_down
+
+- name: vertica | recover vertica database | make sure vertica is down before trying to rollback vertica cluster
+  include: stop_cluster_nodes.yml
+  when: database_down and start_result | failed
+
+- name: vertica | recover vertica database | Attempt to restart database from last good known epoch
+  sudo_user: dbadmin
+  command: /opt/vertica/bin/admintools -t restart_db -d {{ vertica_database_name }} -e last -p "{{ vertica_dbadmin_password }}" -i
+  register: restart_database_result
+  no_log: True
+  ignore_errors: yes
+  when: database_down and start_result | failed
+
+- name: vertica | recover vertica database | make sure vertica is down before trying to rollback vertica nodes
+  include: stop_cluster_nodes.yml
+  when: database_down and start_result | failed and restart_database_result | failed
+
+- name: vertica | recover vertica database | Attempt to restart each node in the database from last good known epoch
+  sudo_user: dbadmin
+  command: /opt/vertica/bin/admintools -t restart_node -s {{ vertica_ips }} -d {{ vertica_database_name }} -p "{{ vertica_dbadmin_password }}" -F -i
+  register: restart_nodes_result
+  no_log: True
+  ignore_errors: yes
+  when: database_down and start_result | failed and restart_database_result | failed
+
+- name: vertica | recover vertica database | Check if the database recovery failed
+  fail: "Vertica database could not recover"
+  when: database_down and start_result | failed and restart_database_result | failed and restart_nodes_result | failed
+
+- name: vertica | recover vertica database | Restart the Persister as Vertica was just recovered
+  service: name=monasca-persister state=restarted
+  delegate_to: "{{ item }}"
+  with_items: "{{ groups['MON-PST'] }}"
+  when: database_down
+
+- name: vertica | recover vertica database | Restart the API as Vertica was just recoverd
+  service: name=monasca-api state=restarted
+  delegate_to: "{{ item }}"
+  with_items: "{{ groups['MON-API'] }}"
+  when: database_down

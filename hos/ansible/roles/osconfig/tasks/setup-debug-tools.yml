@@ -1,0 +1,65 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+---
+
+- name: osconfig | setup-debug-tools | Get variables
+  include_vars: debug-tools.yml
+
+- name: osconfig | setup-debug-tools | Gather debug tools (RedHat)
+  set_fact: osconfig_debug_tools="{{ redhat_debug_tools }}"
+  when: ansible_os_family == 'RedHat'
+
+- name: osconfig | setup-debug-tools | gather debug tools (Debian)
+  set_fact: osconfig_debug_tools="{{ debian_debug_tools }}"
+  when: ansible_os_family == 'Debian'
+
+- name: osconfig | setup-debug-tools | Directory for collectl
+  become: yes
+  file: path={{ collectl_dir }} owner=root group=root mode=0755 state=directory
+  when: '"collectl" in osconfig_debug_tools'
+
+- name: osconfig | setup-debug-tools | Config for collectl
+  become: yes
+  template:
+    src: collectl.conf.j2
+    dest: /etc/collectl.conf
+    owner: root
+    group: root
+    mode: 0644
+  register: collectl_conf
+  when: '"collectl" in osconfig_debug_tools'
+
+- name: osconfig | setup-debug-tools | Install additional debugging packages - Debian
+  become: yes
+  apt:
+    pkg: "{{ item }}"
+    force: yes
+  with_items:
+    "{{osconfig_debug_tools}}"
+  when: ansible_os_family == 'Debian'
+
+- name: osconfig | setup-debug-tools | Install additional debugging packages - RedHat
+  become: yes
+  yum:
+    pkg: "{{ item }}"
+  with_items:
+    "{{osconfig_debug_tools}}"
+  when: ansible_os_family == 'RedHat'
+
+- name: osconfig | setup-debug-tools | Restart collectl if necessary
+  become: yes
+  service:
+    name: collectl
+    state: restarted
+  when: '"collectl" in osconfig_debug_tools and collectl_conf.changed'

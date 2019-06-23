@@ -1,0 +1,85 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+mon_tra_component_name: "monasca-transform"
+mon_tra_spark_component_name: "spark"
+mon_tra_spark_group_name: "spark"
+mon_tra_app_dir: "/opt/monasca/{{ mon_tra_component_name }}"
+mon_tra_configuration_file: "monasca-transform.conf"
+mon_tra_service_name: "monasca-transform"
+mon_tra_monasca_run_dir: "/var/run/monasca"
+mon_tra_service_run_dir: "{{ mon_tra_monasca_run_dir }}/{{ mon_tra_component_name }}"
+mon_tra_service_pid_file: "{{ mon_tra_service_run_dir }}/{{ mon_tra_service_name }}.pid"
+mon_tra_monasca_log_dir: "/var/log/monasca"
+mon_tra_service_log_dir: "{{ mon_tra_monasca_log_dir }}/{{ mon_tra_component_name }}"
+mon_tra_service_log_filename: "{{ mon_tra_component_name }}.log"
+mon_tra_event_logging_enabled: "false"
+mon_tra_service_user: "monasca-transform"
+mon_tra_service_group: "{{ mon_tra_service_user }}"
+mon_tra_service_start_levels: "2 3 4 5"
+mon_tra_virtualenv_location: "/opt/stack/service/monasca-transform/venv/"
+mon_tra_service_dir: "{{ mon_tra_app_dir }}/lib"
+mon_tra_tools_dir: "{{ mon_tra_app_dir }}/tools"
+mon_tra_service_file: "service_runner.py"
+mon_tra_bin_dir: "{{ mon_tra_component_name | bin_dir() }}"
+mon_tra_lib_dir: "{{ mon_tra_component_name | jar_dir() }}"
+mon_tra_zip_filename: monasca_transform.zip
+
+
+mon_tra_admin_project:  "{{ KEY_API.vars.keystone_admin_tenant }}"
+mon_tra_keystone_url: "{{ MON_TRA.consumes_KEY_API.vips.private[0].url }}/v3"
+mon_tra_keystone_admin: "{{ KEY_API.vars.keystone_admin_user }}"
+mon_tra_keystone_admin_project: "{{ KEY_API.vars.keystone_admin_tenant }}"
+mon_tra_keystone_admin_password: "{{ KEY_API.vars.keystone_admin_pwd | quote }}"
+mon_tra_keystone_default_domain_name: "{{ KEY_API.vars.keystone_default_domain }}"
+
+# the following value will be populated in the 'discover_admin_tenant' play
+# in time for the 'configure' where the config template is processed
+mon_tra_admin_project_id: "{{ mon_tra_project_result.result.id }}"
+mon_tra_stream_interval: 600
+
+mon_tra_kafka_target_host: "{{ groups[verb_hosts.FND_KFK][0] }}"
+
+mon_tra_kafka_nodes: "{{ MON_TRA.consumes_FND_KFK.members.private }}"
+mon_tra_kafka_node_count: "{{ MON_TRA.consumes_FND_KFK.members.private | length }}"
+mon_tra_kafka_replicas: "{% if mon_tra_kafka_node_count | int > 3 %}3{% else %}{{ mon_tra_kafka_node_count }}{% endif %}"
+mon_tra_kafka_brokers: "{% for node in mon_tra_kafka_nodes %}{{ node.host }}:{{ node.port }}{% if not loop.last %},{% endif %}{% endfor %}"
+mon_tra_zookeeper_nodes: "{{ MON_TRA.consumes_FND_ZOO.members.private }}"
+mon_tra_zookeeper_hosts: "{% for node in mon_tra_zookeeper_nodes %}{{ node.host }}:{{ node.port }}{% if not loop.last %},{% endif %}{% endfor %}"
+mon_tra_spark_masters: "{% for node in FND_SPA.members.master %}{{ node.host }}:{{ node.port }}{% if not loop.last %},{% endif %}{% endfor %}"
+mon_tra_spark_home: "{{ mon_tra_spark_component_name | bin_dir() }}/../current"
+# systemd
+mon_tra_systemd_service: /etc/systemd/system/monasca-transform.service
+mon_tra_init_dir: /etc/monasca/transform/init
+
+# database related vars
+mon_tra_database_root_dir: "{{ mon_tra_app_dir }}/schema_files"
+mon_tra_mysql_user: "{{ MON_TRA.consumes_FND_MDB.vars.mysql_monasca_transform_user }}"
+mon_tra_mysql_password: "{{ MON_TRA.consumes_FND_MDB.vars.mysql_monasca_transform_password }}"
+mon_tra_mysql_target_host: "{{ MON_TRA.consumes_FND_MDB.vips.private[0].host }}"
+# database ssl
+mon_tra_db_use_ssl: "{{ MON_TRA.consumes_FND_MDB.vips.private[0].use_tls }}"
+mon_tra_ca_file: /etc/ssl/certs/ca-certificates.crt
+# schema and data to populate
+mon_tra_schema_file: "{{ mon_tra_database_root_dir }}/monasca-transform_mysql.sql"
+mon_tra_pre_transform_specs_file: "{{ mon_tra_database_root_dir }}/pre_transform_specs.sql"
+mon_tra_transform_specs_file: "{{ mon_tra_database_root_dir }}/transform_specs.sql"
+
+# monitoring
+mon_tra_agent_detection_plugin_dir: "{{ monasca_agent_detection_plugin_dir }}"
+mon_tra_deferred_start_monitored_processes:
+    - "pyspark"
+    - "org.apache.spark.executor.CoarseGrainedExecutorBackend"

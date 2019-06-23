@@ -1,0 +1,57 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- hosts: HZN-WEB
+  sudo: yes
+  roles:
+    - HZN-WEB
+    - tls-trust
+  tasks:
+    - include: roles/HZN-WEB/tasks/install.yml
+    - include: roles/HZN-WEB/tasks/configure.yml
+    - include: roles/tls-trust/tasks/install.yml
+
+- hosts: HZN-WEB
+  sudo: yes
+  roles:
+    - HZN-WEB
+    - horizon-designate-dashboard
+    - horizon-freezer-ui
+    - horizon-lbaas-dashboard
+  tasks:
+    - include: roles/horizon-designate-dashboard/tasks/install.yml
+    - include: roles/horizon-freezer-ui/tasks/install.yml
+    - include: roles/horizon-lbaas-dashboard/tasks/install.yml
+
+- hosts: HZN-WEB
+  sudo: yes
+  roles:
+    - HZN-WEB
+  tasks:
+    - include: roles/HZN-WEB/tasks/_post-configure.yml
+    - include: roles/HZN-WEB/tasks/start.yml
+  serial: 1
+
+- include: horizon-configure-monasca.yml
+
+- hosts: localhost
+  connection: local
+  sudo: yes
+  roles:
+    - HZN-WEB
+  tasks:
+    - include: roles/HZN-WEB/tasks/_cleanup.yml

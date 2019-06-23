@@ -1,0 +1,48 @@
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: CEP-OSD | _get_disks | Check user defined disk model
+  set_fact: user_disk_model=item.consumer.name
+  when: item.consumer.name == "ceph"
+  with_items: "{{ host.my_disk_models.device_groups }}"
+
+- name: CEP-OSD | _get_disks | Fail if disks for osd is not defined
+  fail: msg="osd disks are not defined in input model"
+  when: user_disk_model is not defined
+
+- name: CEP-OSD | _get_disks | Create a temporary file
+  command: mktemp
+  register: ceph_mktemp_result
+  delegate_to: localhost
+
+- name: CEP-OSD | _get_disks | Generate the user specified disk model yaml
+  become: yes
+  template:
+    src: ceph_disk_model.j2
+    dest: "{{ ceph_mktemp_result.stdout }}"
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0644
+  delegate_to: localhost
+
+- name: CEP-OSD | _get_disks | Load the disk model specification
+  include_vars: "{{ ceph_mktemp_result.stdout }}"
+  delegate_to: localhost
+
+- name: CEP-OSD | _get_disks | Delete the temporary disk input model file
+  become: yes
+  file: path="{{ ceph_mktemp_result.stdout }}" state=absent
+  delegate_to: localhost

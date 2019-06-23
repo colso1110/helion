@@ -1,0 +1,73 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: logging-monitor | start-SVR | Restart Directory Detection Plugin
+  become: yes
+  monasca_agent_plugin:
+    name: "DirectoryDetectLogging"
+  when: >-
+    hlm_notify_monitor_directory_restart is
+    defined and hlm_notify_monitor_directory_restart.changed
+  ignore_errors: yes
+
+- name: logging-monitor | start-SVR | Restart Elasticsearch Monitor Plugin
+  become: yes
+  monasca_agent_plugin:
+    name: "ElasticDetect"
+  when: >-
+    hlm_notify_monitor_elasticsearch_restart
+    is defined and hlm_notify_monitor_elasticsearch_restart.changed or
+    not hlm_notify_elasticsearch_restart
+    is not defined and hlm_notify_elasticsearch_restart.changed
+  ignore_errors: yes
+
+- name: logging-monitor | start-SVR | Restart Kibana Monitor Plugin
+  become: yes
+  monasca_agent_plugin:
+    name: "KibanaDetect"
+  when: >-
+    hlm_notify_monitor_kibana_restart is defined
+    and hlm_notify_monitor_kibana_restart.changed or
+    not hlm_notify_kibana_restart is not defined
+    and hlm_notify_kibana_restart.changed
+  ignore_errors: yes
+
+- name: logging-monitor | start-SVR | Restart Logstash Monitor Plugin
+  become: yes
+  monasca_agent_plugin:
+    name: "LogstashDetect"
+  when: >-
+    hlm_notify_monitor_logstash_restart is defined
+    and hlm_notify_monitor_logstash_restart.changed or
+    not hlm_notify_logstash_restart is not defined
+    and hlm_notify_logstash_restart.changed
+  ignore_errors: yes
+
+- name: logging-monitor | start-SVR | Restart Kronos Logging API Monitor Plugin
+  become: yes
+  monasca_agent_plugin:
+    name: "KronosAPIDetect"
+  when: >-
+    hlm_notify_monitor_kronos_api_restart is defined
+    and hlm_notify_monitor_kronos_api_restart.changed or
+    not hlm_notify_kronos_api_restart is not defined
+    and hlm_notify_kronos_api_restart.changed
+
+- name: logging-monitor | start-SVR | Restart kafka Monitor Plugin
+  become: yes
+  monasca_agent_plugin:
+    name: "kafka"
+    args: "kronos=logs service_name=logging"

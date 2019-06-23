@@ -1,0 +1,120 @@
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+---
+
+network_pkgs:
+  - python-selinux
+  - ifenslave-2.6
+  - vlan
+
+openvswitch_packages:
+  - openvswitch-switch
+
+openvswitch_packages_dpdk:
+  - openvswitch-switch
+  - openvswitch-switch-dpdk
+
+linuxbridge_packages:
+  - bridge-utils
+
+net_path: "/etc/network/interfaces.d"
+shadow_dir: "/etc/network/.shadow"
+
+disable_lro: true
+
+switchd:
+  orig_checksum: "8a7fa0b8be60d1f5c049e56b84a32804ecaed79e"
+
+dpdk_enabled: "
+  {%- if dpdk_network_devices is defined and \
+       dpdk_network_devices.FND_OVS is defined and \
+       dpdk_network_devices.FND_OVS.devices is defined -%}
+    {%- if dpdk_network_devices.FND_OVS.devices|length > 0 -%}
+      True
+    {% else %}
+      False
+    {%- endif -%}
+  {% else %}
+    False
+  {%- endif -%}"
+
+dpdk_eal_opts: "
+  {% set temp_list = [] %}
+    {%- if dpdk_network_devices is defined and \
+           dpdk_network_devices.FND_OVS is defined and \
+           dpdk_network_devices.FND_OVS.eal_options is defined -%}
+      {%- for opt in dpdk_network_devices.FND_OVS.eal_options -%}
+        {%- if opt.value is defined -%}
+          {%- if opt.value|string|length == 1 -%}
+            {%- set opts = '-'+opt.name+' '+opt.value|string+' ' -%}
+          {%- else -%}
+            {%- set opts = '--'+opt.name+' '+opt.value|string+' ' -%}
+          {%- endif -%}
+        {%- else -%}
+          {%- set opts = opt.name+' ' -%}
+        {%- endif -%}
+        {%- if temp_list.append( opts ) -%}{%- endif -%}
+      {%- endfor -%}
+    {%- endif -%}
+  {{ temp_list|join ('') }}"
+
+dpdk_core_mask: "{{ host | item('cpu_assignments.FND_OVS.eal.bitmask', default='1') }}"
+dpdk_pmd_mask: "{{ host | item('cpu_assignments.FND_OVS.pmd.bitmask', default='2') }}"
+
+# this will leave tmp_dpdk_rx_queues either an empty string or opt.value
+tmp_dpdk_rx_queues: "
+  {%- if dpdk_network_devices is defined and \
+         dpdk_network_devices.FND_OVS is defined and \
+         dpdk_network_devices.FND_OVS.component_options is defined -%}
+    {%- for opt in dpdk_network_devices.FND_OVS.component_options -%}
+      {%- if opt.name|string == 'n-dpdk-rxqs' -%}
+        {{ opt.value }}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}"
+
+# handle the empty string as a default
+dpdk_rx_queues: "
+  {%- if tmp_dpdk_rx_queues == '' -%}
+    1
+  {%- else -%}
+    {{ tmp_dpdk_rx_queues }}
+  {%- endif -%}"
+
+dpdk_bindings: "
+  {% set temp_list = [] %}
+    {%- if dpdk_network_devices is defined and \
+           dpdk_network_devices.FND_OVS is defined and \
+           dpdk_network_devices.FND_OVS.devices is defined -%}
+      {%- for entry in dpdk_network_devices.FND_OVS.devices -%}
+        {% if entry.driver is defined -%}
+          {% set line = '\npci ' + entry.bus_address + ' ' + entry.driver %}
+          {%- if temp_list.append( line ) -%}{%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+    {%- endif -%}
+  {{ temp_list |join ('') }}"
+
+dpdk_drivers: "
+  {% set temp_list = [] %}
+    {%- if dpdk_network_devices is defined and \
+           dpdk_network_devices.FND_OVS is defined and \
+           dpdk_network_devices.FND_OVS.devices is defined -%}
+      {%- for device in dpdk_network_devices.FND_OVS.devices -%}
+        {% if device.driver is defined -%}
+          {%- if temp_list.append( device.driver ) -%}{%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+    {%- endif -%}
+  {{ temp_list|unique|join(',')}}"

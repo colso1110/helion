@@ -1,0 +1,109 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- hosts: NEU-SVR
+  max_fail_percentage: 0
+  roles:
+    - neutron-server
+
+  tasks:
+    - include: roles/neutron-server/tasks/status.yml
+
+- hosts: NEU-OVS
+  max_fail_percentage: 0
+  roles:
+    - neutron-openvswitch-agent
+
+  tasks:
+    - include: roles/neutron-openvswitch-agent/tasks/status.yml
+
+- hosts: NEU-OVSVAPP
+  max_fail_percentage: 0
+  roles:
+    - neutron-ovsvapp-agent
+
+  tasks:
+    - include: roles/neutron-ovsvapp-agent/tasks/status.yml
+
+- hosts: NEU-DHCP
+  max_fail_percentage: 0
+  roles:
+    - neutron-dhcp-agent
+
+  tasks:
+    - include: roles/neutron-dhcp-agent/tasks/status.yml
+
+- hosts: NEU-MDA
+  max_fail_percentage: 0
+  roles:
+    - neutron-metadata-agent
+
+  tasks:
+    - include: roles/neutron-metadata-agent/tasks/status.yml
+
+- hosts: NEU-L3A
+  max_fail_percentage: 0
+  roles:
+    - neutron-l3-agent
+
+  tasks:
+    - include: roles/neutron-l3-agent/tasks/status.yml
+
+- hosts: NEU-LBAV2
+  max_fail_percentage: 0
+  roles:
+    - neutron-lbaasv2-agent
+
+  tasks:
+    - include: roles/neutron-lbaasv2-agent/tasks/status.yml
+
+- hosts: NEU-LBAV1
+  max_fail_percentage: 0
+  roles:
+    - neutron-lbaas-agent
+
+  tasks:
+    - include: roles/neutron-lbaas-agent/tasks/status.yml
+
+- hosts: NEU-VPNA
+  max_fail_percentage: 0
+  roles:
+    - neutron-vpn-agent
+
+  tasks:
+    - include: roles/neutron-vpn-agent/tasks/status.yml
+
+- hosts: NEU-L2GWA
+  max_fail_percentage: 0
+  roles:
+    - neutron-l2gateway-agent
+
+  tasks:
+    - include: roles/neutron-l2gateway-agent/tasks/status.yml
+
+- hosts: NEU-SRIOV
+  roles:
+    - neutron-sriov-nic-agent
+
+  tasks:
+    - include: roles/neutron-sriov-nic-agent/tasks/status.yml
+
+- hosts: NEU-IFBLXA
+  max_fail_percentage: 0
+  roles:
+    - neutron-infoblox-ipam-agt
+  tasks:
+    - include: roles/neutron-infoblox-ipam-agt/tasks/status.yml

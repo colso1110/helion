@@ -1,0 +1,36 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: influxdb | fix_auth | Determine if old Influxdb Version
+  stat: path=/etc/opt/influxdb/influxdb.conf
+  run_once_per: verb_hosts.FND_IDB
+  register: old_auth_exists_result
+
+- name: influxdb | fix_auth | Determine Auth Status
+  command: grep auth-enabled /etc/opt/influxdb/influxdb.conf
+  run_once_per: verb_hosts.FND_IDB
+  register: auth_enabled_result
+  when: old_auth_exists_result.stat.exists
+
+- name: influxdb | fix_auth | Write upgrade script
+  template: dest=/opt/influxdb/influxdb_upgrade.py owner=root group=root mode=0750 src=influxdb_upgrade.py.j2
+  run_once_per: verb_hosts.FND_IDB
+  when: old_auth_exists_result.stat.exists and 'false' in auth_enabled_result.stdout
+
+- name: influxdb | fix_auth | Run upgrade script
+  command: /opt/influxdb/influxdb_upgrade.py
+  run_once_per: verb_hosts.FND_IDB
+  when: old_auth_exists_result.stat.exists and 'false' in auth_enabled_result.stdout

@@ -1,0 +1,66 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Configure Kronos API
+#------------------------------------------------------------------------------
+- name: kronos-api | configure | Configure Kronos API INI file
+  become: yes
+  template:
+    src: kronos-api.ini.j2
+    dest: /etc/monasca/log-api-config.ini
+    owner: "{{ kronos_user }}"
+    group: "{{ kronos_group }}"
+    mode: 0600
+  register: hlm_notify_kronos_api_restart
+  when: ( 'MON_API' in verb_hosts )
+
+- name: kronos-api | configure | Configure Kronos API Conf file
+  become: yes
+  template:
+    src: kronos-api.conf.j2
+    dest: /etc/monasca/log-api-config.conf
+    owner: "{{ kronos_user }}"
+    group: "{{ kronos_group }}"
+    mode: 0600
+  register: hlm_notify_kronos_api_restart
+  when: ( 'MON_API' in verb_hosts )
+
+- name: kronos-api | configure | Configure Kronos API WSGI file
+  become: yes
+  template:
+    src: app.wsgi.j2
+    dest: "{{ kronos_wsgi_dir }}/app.wsgi"
+    owner: "{{ kronos_user }}"
+    group: "{{ kronos_group }}"
+    mode: 0755
+  register: hlm_notify_kronos_api_restart
+
+- name: kronos-api | configure | Configure Kronos/Apache virtualhost available
+  become: yes
+  template:
+    src: kronos-apache2.conf.j2
+    dest: /etc/apache2/sites-available/kronos-apache2.conf
+    mode: 0755
+  register: hlm_notify_kronos_apache_reload
+
+- name: kronos-api | configure | Configure Kronos/Apache virtualhost enabled
+  become: yes
+  file:
+    src: /etc/apache2/sites-available/kronos-apache2.conf
+    dest: /etc/apache2/sites-enabled/kronos-apache2.conf
+    state: link
+  register: hlm_notify_kronos_apache_reload

@@ -1,0 +1,33 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# The following relative symlinks are created under the
+# my_cloud/config directory.
+---
+
+symlinks:
+  "designate/designate.conf.j2": "roles/designate-common/templates/designate.conf.j2"
+  "designate/rootwrap.conf.j2": "roles/designate-common/templates/rootwrap.conf.j2"
+  "designate/policy.json": "roles/designate-common/files/policy.json"
+  "designate/central.conf.j2": "roles/designate-central/templates/central.conf.j2"
+  "designate/central-logging.conf.j2": "roles/designate-central/templates/central-logging.conf.j2"
+  "designate/mdns.conf.j2": "roles/designate-mdns/templates/mdns.conf.j2"
+  "designate/mdns-logging.conf.j2": "roles/designate-mdns/templates/mdns-logging.conf.j2"
+  "designate/api.conf.j2": "roles/designate-api/templates/api.conf.j2"
+  "designate/api-logging.conf.j2": "roles/designate-api/templates/api-logging.conf.j2"
+  "designate/pool-manager.conf.j2": "roles/designate-pool-manager/templates/pool-manager.conf.j2"
+  "designate/pool-manager-logging.conf.j2": "roles/designate-pool-manager/templates/pool-manager-logging.conf.j2"
+  "designate/pools.yaml.j2": "roles/designate-pool-manager/templates/pools.yaml.j2"
+  "designate/rndc.key.j2" : "roles/designate-pool-manager/templates/rndc.key.j2"

@@ -1,0 +1,46 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+kafka_event:
+  consumer_topic: events
+  group: thresh-event
+  producer_topic: alarm-state-transitions
+kafka_metric:
+  topic: metrics
+  group: thresh-metric
+thresh_conf_file: "{{ 'monasca' | config_dir() }}/thresh-config.yml"
+monasca_group: monasca
+thresh_group: thresh
+monasca_mysql_db: "{{ MON_THR.consumes_FND_MDB.vars.databases.monasca.dbname }}"
+monasca_thresh_version: 2.0.0-SNAPSHOT
+thresh_statsd_host: localhost
+monasca_thresh_jar: "{{ monasca_jars_virtualenv_dir }}/lib/monasca-thresh-{{ monasca_thresh_version }}-shaded.jar"
+monasca_thresh_jar_saved_md5: /opt/monasca/md5sums/monasca-thresh.md5
+
+run_mode: Deploy
+skip_install: False
+
+kafka_nodes: "{{ MON_THR.consumes_FND_KFK.members.private }}"
+kafka_hosts: "{% for node in kafka_nodes %}{{ node.host }}:{{ node.port }}{% if not loop.last %},{% endif %}{% endfor %}"
+
+mysql_host: "{{MON_THR.consumes_FND_MDB.vips.private[0].host}}"
+mysql_port: "{{ MON_THR.consumes_FND_MDB.vips.private[0].port }}"
+mysql_https_arg: "{% if MON_THR.consumes_FND_MDB.vips.private[0].use_tls %}&useSSL=true{% endif %}"
+monasca_thresh_mysql_user: "{{ MON_THR.consumes_FND_MDB.vars.accounts.monasca_thresh.username }}"
+monasca_thresh_mysql_password: "{{ MON_THR.consumes_FND_MDB.vars.accounts.monasca_thresh.password | quote }}"
+
+zookeeper_nodes: "{{ MON_THR.consumes_FND_ZOO.members.private }}"
+zookeeper_hosts: "{% for node in zookeeper_nodes %}{{ node.host }}:{{ node.port }}{% if not loop.last %},{% endif %}{% endfor %}"

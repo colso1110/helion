@@ -1,0 +1,98 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Confidential computer software. Valid license from HPE required for
+# possession, use or copying. Consistent with FAR 12.211 and 12.212,
+# Commercial Computer Software, Computer Software Documentation, and
+# Technical Data for Commercial Items are licensed to the U.S.
+# Government under vendor's standard commercial license.
+#
+---
+product:
+    version: 2
+
+service-components:
+-   name: barbican-api
+    mnemonic: KEYMGR-API
+    service: barbican
+
+    advertises-to-services:
+    -   service-name: KEY-API
+        entries:
+        -   service-name: barbican
+            service-type: key-manager
+            service-description: "Barbican as a Key Manager Service (created via barbican deploy)"
+
+
+    config-set:
+    -   name: barbican.conf
+        ansible-vars:
+        -   name: barbican_admin_tenant
+            value: service
+
+        -   name: barbican_admin_user
+            value: barbican
+
+        -   name: barbican_admin_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: barbican_service_user
+            value: barbican_service
+
+        -   name: barbican_service_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: barbican_admin_role
+            value: key-manager:admin
+
+        -   name: barbican_service_admin_role
+            value: key-manager:service-admin
+
+        -   name: barbican_master_kek_db_plugin
+            value: '%random-password%'
+            properties:
+                max-length: 32
+                min-length: 32
+            immutable: 'True'
+
+    # Needed for now until we can update all the neutron playbooks that read
+    # the "KEY_API.vars" variables
+    global-vars:
+      - barbican_admin_role
+
+    consumes-services:
+    -   service-name: FND-MDB
+
+    -   service-name: FND-RMQ
+
+    -   service-name: KEY-API
+
+    requires:
+    # Needed for barbican api and HSM connectivity via secret operation.
+    - name: barbican-client
+      scope: host
+    # Needed for keystone registration of service.
+    - name: keystone-client
+      scope: host
+
+    endpoints:
+    -   port: '9311'
+        has-vip: true
+        vip-options:
+        - "balance leastconn"
+        - "mode http"
+        - "option httpchk GET /"
+        - "option redispatch"
+        - "option http-server-close"
+        - "option forwardfor"
+        - "reqadd X-Forwarded-Proto:\\ https if { ssl_fc }"
+        roles:
+        - public
+        - internal
+        - admin

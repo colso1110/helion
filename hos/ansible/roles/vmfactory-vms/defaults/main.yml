@@ -1,0 +1,60 @@
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+---
+vmf_all_vms: "{{ host.my_vms | default([]) }}"
+vmf_vms_to_start: "{{ vmf_all_vms }}"
+vmf_vms_to_stop: "{{ vmf_all_vms }}"
+
+vmf_start_delay: 3
+vmf_start_retries: 100
+vmf_start_timeout: "{{ (vmf_start_delay * vmf_start_retries) | int }}"
+
+vmf_stop_delay: 5
+vmf_stop_retries: 60
+
+vmf_dest_image_path: '{{ host.my_disk_models | consumer_lv_mount("hlm-hypervisor",
+                                                                 "hlm-hypervisor-images",
+                                                                 "/var/lib/libvirt/images") }}'
+vmf_base_image_name: 'hlinux.qcow2'
+vmf_deployer_image: 'stage/images/{{ vmf_base_image_name }}'
+vmf_dest_dist_name: 'hlinux_dist.qcow2'
+vmf_dest_dist_image: "{{ vmf_dest_image_path }}/{{ vmf_dest_dist_name }}"
+vmf_dest_image: "{{ vmf_dest_image_path }}/{{ vmf_base_image_name }}"
+
+vmf_vms_to_create: []
+vmf_create_status:
+  # failed is set to true if an action during create fails
+  failed: False
+  # indicates stage at which failure occurred
+  stage: ""
+  # set of vms to cleanup
+  vms: []
+  # msg provides summary description of failure
+  msg: ""
+
+vmf_vm_disks_bus_base: 2
+vmf_vm_disks_per_bus: 31
+vmf_vm_disks_limit: 31
+
+# The dist user is the one in the release generated qcow2
+vmf_vm_dist_user: hlmuser
+vmf_vm_ansible_user: '{{ ansible_env.USER }}'
+
+# The tmp files within the vm during the image setup phase that
+# hold the encrypted password and setup scripts.
+vmf_vm_passwd_file: /tmp/hos_password
+vmf_vm_setup_script: /tmp/setup_account
+
+# Options to use when creating qcow2 devices
+vmf_qcow2_opts: "preallocation=metadata,cluster_size=256k"

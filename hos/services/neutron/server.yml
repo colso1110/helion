@@ -1,0 +1,80 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+    version: 2
+
+service-components:
+-   name: neutron-server
+    mnemonic: NEU-SVR
+    service: neutron
+
+    advertises-to-services:
+    -   service-name: KEY-API
+        entries:
+        -   service-name: neutron
+            service-type: network
+            service-description: "OpenStack Networking Service"
+            url-suffix: "/"
+
+    multi-consumers:
+      default: allow
+      blocked:
+        - nova
+
+    config-set:
+    -   name: NEU-SVR
+        ansible-vars:
+        -   name: neutron_metadata_proxy_secret
+            value: openstack
+
+    consumes-services:
+    -   service-name: FND-MDB
+
+    -   service-name: FND-RMQ
+
+    -   service-name: KEY-API
+        relationship-vars:
+        -   name: keystone_neutron_user
+            value: neutron
+        -   name: keystone_neutron_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+    -   service-name: NOV-API
+
+    -   service-name: OCT-API
+        optional: true
+
+    # This is required for provider_net_create.
+    requires:
+    - name: openstack-client
+      scope: host
+    - name: neutron-client
+      scope: host
+    # Needed for keystone registration of service.
+    - name: keystone-client
+      scope: host
+
+    endpoints:
+    -   port: '9696'
+        has-vip: true
+        roles:
+        - public
+        - internal
+        - admin

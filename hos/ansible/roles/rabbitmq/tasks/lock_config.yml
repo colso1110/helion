@@ -1,0 +1,63 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: rabbitmq | lock_config | Get RabbitMQ Status
+  become: yes
+  command: rabbitmqctl status
+  register: _rabbitmq_status_result
+  changed_when: false
+
+# Lockout low-level plays in RabbitMQ if we detect a complex change
+# requiring orchestration across services.
+- name: rabbitmq | lock_config | Check for unsafe RabbitMQ configuration change
+  fail:
+    msg: "Unsafe configuration change: Please run HLM top level playbook"
+  when: (rabbitmq_config_lock | bool) and
+        (not (rabbitmq_cp.tls_enabled | bool)) and
+        (_rabbitmq_status_result.stdout | search("'amqp/ssl'"))
+  run_once: true
+
+- name: rabbitmq | lock_config | Set-up facts prefix and clear lockout_tls
+  set_fact:
+    hlm_notify_set_false_prefix: hlm_notify_rabbitmq
+  changed_when: true
+  register: _rabbitmq_lock_config_prefix_result # Not a persistant facts.
+  when: hlm_notify_rabbitmq_lockout_tls is defined and
+        hlm_notify_rabbitmq_lockout_tls.changed
+
+- name: rabbitmq | lock_config | Set RabbitMQ persistant facts False
+  debug:
+    msg: "Clear {{ hlm_notify_set_false_prefix }}:{{ inventory_hostname }}"
+  changed_when: true
+  register: hlm_notify_set_persistent_facts_to_false # This forces the reset.
+  when: _rabbitmq_lock_config_prefix_result is defined and
+        _rabbitmq_lock_config_prefix_result.changed
+
+- name: rabbitmq | lock_config | Default persistant facts prefix
+  set_fact:
+    hlm_notify_set_false_prefix: hlm_notify
+  changed_when: true
+  when: _rabbitmq_lock_config_prefix_result is defined and
+        _rabbitmq_lock_config_prefix_result.changed
+
+- name: rabbitmq | lock_config | Detect TLS is being disabled
+  debug:
+    msg: "Lock TLS config, services must transition: {{ inventory_hostname }}"
+  changed_when: true
+  when: (hlm_notify_rabbitmq_lockout_tls is not defined) and
+        (not (rabbitmq_cp.tls_enabled | bool)) and
+        (_rabbitmq_status_result.stdout | search("'amqp/ssl'"))
+  register: hlm_notify_rabbitmq_lockout_tls

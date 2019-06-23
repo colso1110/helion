@@ -1,0 +1,51 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: ../../eon-common/tasks/_set_directories.yml
+  vars:
+    eon_install_package_result: "{{ eon_oneview_install_result }}"
+
+- include: ../../eon-common/tasks/_write_conf.yml
+  src: "eon.conf.j2"
+  dest: "{{ eon_service_conf_dir }}/{{ eon_common }}.conf"
+
+- name: eon-oneview | configure | save eon.conf status
+  set_fact:
+    write_eon_conf: "{{ write_conf_result }}"
+
+- include: ../../eon-common/tasks/_write_conf.yml
+  src: "../../eon-oneview/templates/oneview.conf.j2"
+  dest: "{{ eon_service_conf_dir }}/{{ eon_component }}.conf"
+
+- name: eon-oneview | configure | save eon-oneview.conf status
+  set_fact:
+    write_oneview_conf: "{{ write_conf_result }}"
+
+- name: eon-oneview | configure | notify on eon.conf change
+  shell: echo "notify change"
+  register: hlm_notify_eon_oneview_restart_required
+  when: write_eon_conf.changed or write_oneview_conf.changed
+
+- name: eon-oneview | configure | Create eon-oneview-logging.conf
+  become: yes
+  template:
+    src: "../../eon-common/templates/logging.conf.j2"
+    dest: "{{ eon_service_conf_dir }}/{{ eon_component }}-logging.conf"
+    owner: "{{ eon_user }}"
+    group: "{{ eon_group }}"
+    mode: 0400
+  register: hlm_notify_eon_oneview_restart_required

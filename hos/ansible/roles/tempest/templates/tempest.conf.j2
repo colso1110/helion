@@ -1,0 +1,107 @@
+{#
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+# Basic configuration file
+# The keystone credentials and host need to be referenced here explicitly
+# because of https://github.com/ansible/ansible/issues/9008
+
+[DEFAULT]
+debug = true
+log_file = {{ tempest_worker.log_filename }}
+use_stderr = false
+
+{% if (tempest_available.nova | bool) %}
+[compute]
+flavor_ref = {{ flavor_ref }}
+flavor_ref_alt = {{ flavor_ref_alt }}
+allow_tenant_isolation = true
+min_compute_nodes = 2
+
+[compute-feature-enabled]
+resize = true
+live_migration = true
+block_migration_for_live_migration = true
+block_migrate_cinder_iscsi = false
+disk_config = true
+vnc_console = true
+{% endif %}
+
+[identity]
+username = {{ tempest_keystone.demo_user }}
+tenant_name = {{ tempest_keystone.demo_tenant }}
+password = {{ tempest_keystone.demo_pwd }}
+alt_username = {{ tempest_keystone.demo_user }}
+alt_tenant_name = {{ tempest_keystone.demo_tenant }}
+alt_password = {{ tempest_keystone.demo_pwd }}
+admin_username = {{ tempest_keystone.admin_user }}
+admin_tenant_name = {{ tempest_keystone.admin_tenant }}
+admin_password = {{ tempest_keystone.admin_pwd }}
+admin_domain_name = Default
+# use domain scoped tokens for v3 admin tests
+admin_domain_scope = True
+region = {{ tempest_worker.region_name }}
+
+[identity-feature-enabled]
+api_v3 = true
+
+[service_available]
+cinder = {{ tempest_available.cinder }}
+neutron = {{ tempest_available.neutron }}
+glance = {{ tempest_available.glance }}
+swift = {{ tempest_available.swift }}
+nova = {{ tempest_available.nova }}
+heat = {{ tempest_available.heat }}
+ceilometer = {{ tempest_available.ceilometer }}
+horizon = {{ tempest_available.horizon }}
+sahara = {{ tempest_available.sahara }}
+ironic = {{ tempest_available.ironic }}
+trove = {{ tempest_available.trove }}
+zaqar = {{ tempest_available.zaqar }}
+designate = {{ tempest_available.designate }}
+
+{% if (tempest_available.neutron | bool) %}
+[network]
+tenant_network_cidr = 10.10.0.0/16
+tenant_networks_reachable = false
+{% if (cp_tempest_data[tempest_worker.region_name].external_networks is defined) or
+      tempest_network_name == 'ext-net' %}
+floating_network_name = {{ tempest_network_name }}
+{% endif %}
+
+[network-feature-enabled]
+ipv6 = true
+ipv6_subnet_attributes = true
+api_extensions = default-subnetpools, network-ip-availability, network_availability_zone, auto-allocated-topology, ext-gw-mode, binding, agent, subnet_allocation, l3_agent_scheduler, tag, external-net, fwaasrouterinsertion, net-mtu, availability_zone, quotas, l3-ha, provider, multi-provider, vpnaas, address-scope, extraroute, lbaasv2, timestamp_core, fwaas, lbaas_agent_schedulerv2, extra_dhcp_opt, dns-integration, service-type, vpn-endpoint-groups, security-group, dhcp_agent_scheduler, router_availability_zone, rbac-policies, standard-attr-description, router, allowed-address-pairs, dvr
+{% endif %}
+
+[validation]
+run_validation = True
+ssh_timeout = {{ ssh_timeout }}
+
+{% if (tempest_available.swift | bool) %}
+[object-storage]
+realm_name = intracluster
+cluster_name = thiscluster
+{% endif %}
+
+[scenario]
+large_ops_number = 3
+
+{% if (tempest_available.designate | bool) %}
+[dns]
+build_timeout = {{ dns_build_timeout }}
+{% endif %}

@@ -1,0 +1,32 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+# The following relative symlinks are created under the
+# my_cloud/config directory.
+---
+symlinks:
+  "keystone/keystone.conf.j2": roles/KEY-API/templates/keystone.conf.j2
+  "keystone/keystone-paste.ini.j2": roles/KEY-API/templates/keystone-paste.ini.j2
+  "keystone/keystone_deploy_config.yml": roles/keystone-common/vars/keystone_deploy_config.yml
+  "keystone/keystone_configure_ldap_sample.yml": roles/KEY-API/files/samples/keystone_configure_ldap_sample.yml
+  "keystone/keystone_configure_ldap_certs_sample.yml": roles/KEY-API/files/samples/keystone_configure_ldap_certs_sample.yml
+  "keystone/policy.json": roles/KEY-API/templates/policy.v3cloudsample.json
+  "keystone/README.md": roles/KEY-API/README.md
+  "keystone/keystone_configure_adfs_sample.yml": roles/KEY-API/files/samples/websso/keystone_configure_adfs_sample.yml
+  "keystone/keystone_configure_idp_sample.yml": roles/KEY-API/files/samples/k2k/keystone_configure_idp_sample.yml
+  "keystone/keystone_configure_sp_sample.yml": roles/KEY-API/files/samples/k2k/keystone_configure_sp_sample.yml
+  "keystone/k2k_sp_mapping.json": roles/KEY-API/files/samples/k2k/k2k_sp_mapping.json
+  "keystone/adfs_sp_mapping.json": roles/KEY-API/files/samples/websso/adfs_sp_mapping.json

@@ -1,0 +1,50 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# The monasca agent tasks need to run after cinder has started
+- hosts: CND-API:CND-BCK:CND-SCH:CND-VOL:&MON-AGN
+  become: yes
+  roles:
+    - {role: monasca-agent, run_mode: Use}
+    - cinder-monitor
+  tasks:
+  - include: roles/cinder-monitor/tasks/install.yml
+  - include: roles/cinder-monitor/tasks/monasca_custom_plugins.yml
+  - include: roles/cinder-monitor/tasks/monasca_agents.yml
+    vars:
+      cinder_agent: "True"
+  - include: roles/cinder-monitor/tasks/monasca_alarms.yml
+    vars:
+      cinder_volume_monitor_state: present
+
+- hosts: CND-API:&MON-AGN
+  become: yes
+  roles:
+    - cinder-monitor
+  tasks:
+  - include: roles/cinder-monitor/tasks/monasca_api_alarms.yml
+
+# Apply the monasca agent to backend nodes
+- hosts: VSA-BLK:CEP-MON:CEP-OSD:&MON-AGN
+  become: yes
+  roles:
+    - {role: monasca-agent, run_mode: Use}
+    - cinder-monitor
+  tasks:
+  - include: roles/cinder-monitor/tasks/install.yml
+  - include: roles/cinder-monitor/tasks/monasca_custom_plugins.yml
+  - include: roles/cinder-monitor/tasks/monasca_agents.yml

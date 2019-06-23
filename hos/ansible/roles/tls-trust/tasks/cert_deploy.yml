@@ -1,0 +1,129 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# First check if cert directories exist on the deployer
+# and fail if not
+- name: tls-trust | cert_deploy | Check cert source directory
+  stat:
+    path: "{{ tls_certs_dir }}"
+  delegate_to: localhost
+  register: _tls_certs_dir_result
+
+- name: tls-trust | cert_deploy | Fail if certs not available
+  fail:
+    msg: "TLS certs missing on deployer. Run with TLS-CA in the hosts list"
+  when: not _tls_certs_dir_result.stat.exists | bool
+
+- name: tls-trust | cert_deploy | Check CA source directory
+  stat:
+    path: "{{ tls_cacerts_dir }}"
+  delegate_to: localhost
+  register: _tls_cacerts_dir_result
+
+- name: tls-trust | cert_deploy | Fail if certs not available
+  fail:
+    msg: "TLS CA certs missing on deployer. Run with TLS-CA in the hosts list"
+  when: not _tls_cacerts_dir_result.stat.exists | bool
+
+- name: tls-trust | cert_deploy | install vip cert requests
+  copy:
+    src: "{{ tls_certs_dir }}/{{ item }}.req"
+    dest: "{{ frontend_server_cert_directory }}/{{ item }}.req"
+    owner: root
+    group: root
+    mode: 0440
+  with_items:
+    - "{{ install_vip_certs_items }}"
+    - "helion-node-cert"
+  become: yes
+  register: cert_request_copy_result
+
+- name: tls-trust | cert_deploy | install vip certificates
+  copy:
+    src: "{{ tls_certs_dir }}/{{ item.item }}"
+    dest: "{{ frontend_server_cert_directory }}/{{ item.item }}"
+    owner: root
+    group: root
+    mode: 0440
+  with_items:
+    - "{{ cert_request_copy_result.results }}"
+  when: item.changed
+  become: yes
+  register: hlm_notify_haproxy_restart_required
+
+# Find out if there are certs about to expire
+- name: tls-trust | cert_deploy | check expiry
+  command: "openssl x509 -in {{ item }} -checkend {{ tls_expiry_check }}"
+  args:
+    chdir: "{{ frontend_server_cert_directory }}"
+  with_items:
+    - "{{ install_vip_certs_items }}"
+    - "helion-node-cert"
+  register: _expiry_checks_result
+  become: yes
+  ignore_errors: yes
+
+- name: tls-trust | cert_deploy | replace expiring certificates
+  copy:
+    src: "{{ tls_certs_dir }}/{{ item.item }}"
+    dest: "{{ frontend_server_cert_directory }}/{{ item.item }}"
+    owner: root
+    group: root
+    mode: 0440
+  with_items:
+    - "{{ _expiry_checks_result.results }}"
+  when: item.rc == 1
+  become: yes
+  register: hlm_notify_haproxy_restart_required
+
+# Finally, if we are told to regenerate all certs
+- name: tls-trust | cert_deploy | install vip cert requests
+  file:
+    path: "{{ frontend_server_cert_directory }}/{{ item }}.req"
+    state: absent
+  with_items:
+    - "{{ install_vip_certs_items }}"
+    - "helion-node-cert"
+  become: yes
+  when: tls_force_cert_regeneration
+
+- name: tls-trust | cert_deploy | install vip cert requests
+  copy:
+    src: "{{ tls_certs_dir }}/{{ item }}.req"
+    dest: "{{ frontend_server_cert_directory }}/{{ item }}.req"
+    owner: root
+    group: root
+    mode: 0440
+  with_items:
+    - "{{ install_vip_certs_items }}"
+    - "helion-node-cert"
+  become: yes
+  register: _cert_request_copy_result
+  when: tls_force_cert_regeneration
+
+- name: tls-trust | cert_deploy | install vip certificates
+  copy:
+    src: "{{ tls_certs_dir }}/{{ item.item }}"
+    dest: "{{ frontend_server_cert_directory }}/{{ item.item }}"
+    owner: root
+    group: root
+    mode: 0440
+  with_items:
+    - "{{ _cert_request_copy_result.results }}"
+  when: item.changed
+  become: yes
+  register: hlm_notify_haproxy_restart_required
+  when: tls_force_cert_regeneration

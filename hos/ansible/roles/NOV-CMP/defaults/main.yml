@@ -1,0 +1,47 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# This file will contain the default values for the nova-compute service
+# that are the same on every distro. If they need to be different on
+# different distros then put them in vars/<distro>.yml
+---
+nova_component: nova-compute
+
+# the filters nova-common will copy for this service
+nova_rootwrap_filters:
+  - rootwrap.d/compute.filters
+  - rootwrap.d/network.filters
+
+# the policy file nova-common will copy for this service
+nova_policy_file: ../../nova-common/templates/policy.json.j2
+
+# nova-compute.conf
+## [DEFAULT]
+nova_reboot_wait_timeout: 300
+nova_reboot_check_ip: "{{ host.bind.OPS_LMTGT.ssh.ip_address }}"
+nova_reboot_check_port: "{{ host.bind.OPS_LMTGT.ssh.port }}"
+
+numa_huge_pages: "{{ host | item('my_memory_model.numa_huge_pages', default=[]) }}"
+non_numa_huge_pages: "{{ host | item('my_memory_model.non_numa_huge_pages', default=[]) }}"
+total_huge_pages: "{{ numa_huge_pages | union(non_numa_huge_pages) }}"
+
+## [vnc]
+novncproxy_base_url: "{{ NOV_VNC.advertises.vips.public[0].url }}/vnc_auto.html"
+vncserver_proxyclient_address: "{{ host.bind.NOV_CMP.vncdisplay.ip_address }}"
+
+# the log files nova-common will create for this service
+nova_log_files:
+  - "{{ nova_log_file_location }}/nova-compute.log"
+  - "{{ nova_log_file_location }}/nova-compute-json.log"

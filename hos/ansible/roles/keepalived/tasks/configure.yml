@@ -1,0 +1,85 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: keepalived | configure | workout vrrp_router_id
+  set_fact:
+    router_id: >
+      {{ (keepalived_vrrp_index | int) * 20 +
+          (keepalived_vrrp_offset | int) +
+          (network_interfaces | default({}) | length| int) }}
+
+- name: keepalived | configure | check bounds of vrrp_router_id
+  fail:
+    msg: "The vrrp_router_id {{ router_id }} exceeds max limit for keepalived"
+  when: router_id|int > 255
+
+- name: keepalived | configure | Configure keepalived daemon
+  become: yes
+  template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    owner: root
+    group: root
+    mode: 0644
+  register: hlm_notify_keepalived_restart_required
+
+- name: keepalived | configure | Install keepalived_vip_change.sh script
+  become: yes
+  template:
+    src: keepalived_vip_change.sh.j2
+    dest: /usr/local/bin/keepalived_vip_change.sh
+    owner: root
+    group: root
+    mode: 0744
+
+- name: keepalived | configure | Install virtual_ips list
+  become: yes
+  template:
+    src: virtual_ips.j2
+    dest: /etc/keepalived/virtual_ips
+    owner: root
+    group: root
+    mode: 0640
+
+- name: keepalived | configure | Configure rsyslog settings
+  become: yes
+  template:
+    src: 50-helion-keepalived.conf.j2
+    dest: /etc/rsyslog.d/50-helion-keepalived.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - Restart rsyslog
+
+- name: keepalived | configure | Configure logrotate settings
+  become: yes
+  template:
+    src: keepalived.logrotate.j2
+    dest: /etc/logrotate.d/keepalived
+    owner: root
+    group: root
+    mode: 0644
+
+- name: keepalived | configure | Configure service defaults
+  become: yes
+  template:
+    src: keepalived.default.j2
+    dest: /etc/default/keepalived
+    owner: root
+    group: root
+    mode: 0644
+  register: hlm_notify_keepalived_restart_required

@@ -1,0 +1,45 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: swift-dispersion | report | Run swift-dispersion-report
+  command: swift-dispersion-report --policy-name={{ item.policy.name }}
+  become: yes
+  register: dispersion_report_result
+  with_items: "{{ storage_policies }}"
+
+- name: swift-dispersion | report | Save dispersion report results
+  set_fact: output= "{{ item }}"
+  register: output_result
+  no_log: True
+  with_items: "{{ dispersion_report_result.results }}"
+
+- name: swift-dispersion | report | Check if populate has been run
+  set_fact: run_populate=True
+  no_log: True
+  with_items: "{{ dispersion_report_result.results }}"
+  when: "'swift-dispersion-populate' in item.stderr"
+
+- name: swift-dispersion | report | Get dispersion report results
+  set_fact: >
+    dispersion_report_results="{{ output_result.results |
+    map(attribute='item.stdout_lines') | list }}"
+
+- name: swift-dispersion | report | Display dispersion report results
+  debug: var=dispersion_report_results
+
+- name: swift-dispersion | report | Warn when populate not yet run
+  debug: msg="Please run swift-dispersion-populate.yml"
+  when: run_populate is defined

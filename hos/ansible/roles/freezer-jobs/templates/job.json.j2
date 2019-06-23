@@ -1,0 +1,84 @@
+{#
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+{
+    "action_defaults": {
+{% if job_storage == 'ssh' %}
+        "storage": "ssh",
+        "ssh_host": "{{ freezer_ssh_host }}",
+        "ssh_port": "{{ freezer_ssh_port }}",
+        "ssh_username": "{{ freezer_ssh_username }}",
+        "ssh_key": "/etc/freezer/ssh_key",
+        "container": "{{ freezer_ssh_base_dir }}/{{ jobs[job_name]['container'] }}",
+{% elif job_storage == 'local' %}
+        "storage": "local",
+        "container": "{{ jobs[job_name]['local_storage_base_dir'] }}/{{ jobs[job_name]['container'] }}",
+{% elif job_storage == 'swift' %}
+        "container": "{{ jobs[job_name]['container'] }}",
+{% endif %}
+        "log_config_append": "{{ freezer_agent_conf_dir }}/agent-logging.conf"
+    },
+    "job_actions": [
+{% for action in jobs[job_name]['actions'] %}
+        {
+            "freezer_action": {
+{% if job_type == 'backup' %}
+                "action": "backup",
+                "path_to_backup": "{{ action['backup_path'] }}",
+{% if action['backup_options'] is mapping  %}
+{% for opt_key, opt_val in action['backup_options'].iteritems() %}
+{% if opt_val is string %}
+                "{{ opt_key }}": "{{ opt_val }}",
+{% else %}
+                "{{ opt_key }}": {{ opt_val | lower }},
+{% endif %}
+{% endfor %}
+{% endif %}
+{% elif job_type == 'restore' %}
+                "action": "restore",
+                "hostname": "{{ ansible_hostname }}",
+                "restore_abs_path": "{{ action['restore_path'] }}",
+{% if action['restore_options'] is mapping  %}
+{% for opt_key, opt_val in action['restore_options'].iteritems() %}
+{% if opt_val is string %}
+                "{{ opt_key }}": "{{ opt_val }}",
+{% else %}
+                "{{ opt_key }}": {{ opt_val | lower}},
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+                "backup_name": "{{ action['backup_name'] }}"
+            },
+            "max_retries": {{ action['max_retries'] | default(5) }},
+            "max_retries_interval": {{ action['max_retries_interval'] | default(60) }}
+{% if loop.last %}
+        }
+{% else %}
+        },
+{% endif %}
+{% endfor %}
+    ],
+    "job_schedule": {
+{% if job_type == 'backup' %}
+        "schedule_interval": "{{ jobs[job_name]['schedule'] }}"
+{% elif job_type == 'restore' %}
+        "event": "stop"
+{% endif %}
+    },
+    "description": "{{ job_description }}"
+}

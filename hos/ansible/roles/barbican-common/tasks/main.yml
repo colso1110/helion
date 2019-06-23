@@ -1,0 +1,74 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: barbican-common | main |
+    Include vars file with customer barbican configuration values
+  include_vars: barbican_deploy_config.yml
+  tags:
+    - barbican
+    - barbican_debug
+
+- include: _read_existing_master_key.yml
+
+- name: barbican-common | main |
+    Set max api worker count to 8 if dynamic CPU based count is less than 8
+  set_fact:
+    barbican_api_max_worker_count: 8
+  when: barbican_api_max_worker_count < 8
+  tags:
+    - barbican
+
+- name: barbican-common | main |
+    Increase max api worker count by 4 if incorrectly set to be less than min
+    count value.
+  debug:
+    msg: "WARNING Barbican API max worker count
+        [{{ barbican_api_max_worker_count }}] must be greater than
+        min worker count [{{ barbican_api_min_worker_count }}].
+        Setting max count to be greater by 4."
+  tags:
+    - barbican
+  when: barbican_api_max_worker_count|int <= barbican_api_min_worker_count|int
+
+- name: barbican-common | main |
+    Increase max api worker count by 4 if its not set to be greater than min
+    count value.
+  set_fact:
+    barbican_api_max_worker_count: "{{ barbican_api_min_worker_count + 4 }}"
+  when: barbican_api_max_worker_count|int <= barbican_api_min_worker_count|int
+  tags:
+    - barbican
+
+- name: barbican-common | main |
+    Display variables that are configured for KEYMGR-API
+  debug:
+    var: KEYMGR_API
+  tags:
+    - barbican
+    - barbican_debug
+  when: barbican_debug is defined
+  run_once: True
+
+
+- name: barbican-common | main | Display variables for the inventory host
+  debug:
+    var: hostvars[inventory_hostname]
+  tags:
+    - barbican
+    - barbican_debug
+  when: barbican_debug is defined
+  run_once: True

@@ -1,0 +1,65 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Wait for queues to synchronise, during synchronisation the queues will
+# pause and not allow any messages to be placed in the queue that is
+# synchronising.
+- include: _wait-for-cluster-sync.yml
+  when: (rabbitmq_clustered | bool)
+
+# This will disable/stop all running plugins. This must be performed before
+# leaving a cluster (gracefully exit) as we must inform all cluster node
+# of our plugin states before we exit so not to have restart issues.
+#
+# Note: For non-gracefully we should work as we do not do a host reset
+#       and hence we use the internal Rabbit HA mechanism to get back
+#       online.
+- include: _disable-plugins.yml
+
+# The 'when' statement below make sure that never run reset in the stop
+# incorrectly in a cluster even when rabbitmq_permit_multi_stop is defined.
+# This allows us to preserve at least one node with the current DB, which must
+# be the last node to stop and the first node to start.
+#
+# NOTE: the conditions on this next step are in ADDITION to restrictions
+#       that the top-level playbooks impose. It is VITAL that you read
+#       these conditions in conjunction with the guards in those playbooks!
+- include: _reset-host.yml
+  when: not rabbitmq_do_not_reset_node and (
+          (not rabbitmq_permit_multi_stop and
+            (rabbitmq_clustered | bool)) or
+          (rabbitmq_permit_multi_stop and
+            inventory_hostname != rabbitmq_primary_hostname) or
+          (rabbitmq_reset_option == "force_reset")
+        )
+
+# Stop the RabbitMQ application including Erlang.
+- name: rabbitmq | stop | Ensure that RabbitMQ service is stopped
+  become: yes
+  service:
+    name: rabbitmq-server
+    enabled: no
+    state: stopped
+  when: inventory_hostname != rabbitmq_primary_hostname
+
+# Stop the RabbitMQ application including Erlang.
+- name: rabbitmq | stop | Ensure that RabbitMQ service is stopped
+  become: yes
+  service:
+    name: rabbitmq-server
+    enabled: no
+    state: stopped
+  when: inventory_hostname == rabbitmq_primary_hostname

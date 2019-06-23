@@ -1,0 +1,132 @@
+{#
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+# Setting the cluster.name locally to statically define the names of the log files below
+cluster.name: elasticsearch
+
+# you can override this by setting a system property, for example -Des.logger.level=DEBUG
+es.logger.level: INFO
+rootLogger: ${es.logger.level}, console, file
+logger:
+  # log action execution errors for easier debugging
+  action: DEBUG
+
+  # deprecation logging, turn to DEBUG to see them
+  deprecation: INFO, deprecation_log_file
+
+  # reduce the logging for aws, too much is logged under the default INFO
+  com.amazonaws: WARN
+  # aws will try to do some sketchy JMX stuff, but its not needed.
+  com.amazonaws.jmx.SdkMBeanRegistrySupport: ERROR
+  com.amazonaws.metrics.AwsSdkMetrics: ERROR
+
+  org.apache.http: INFO
+
+  # gateway
+  #gateway: DEBUG
+  #index.gateway: DEBUG
+
+  # peer shard recovery
+  #indices.recovery: DEBUG
+
+  # discovery
+  #discovery: TRACE
+
+  index.search.slowlog: TRACE, index_search_slow_log_file
+  index.indexing.slowlog: TRACE, index_indexing_slow_log_file
+
+additivity:
+  index.search.slowlog: false
+  index.indexing.slowlog: false
+  deprecation: false
+
+appender:
+  console:
+    type: console
+    layout:
+      type: consolePattern
+      conversionPattern: "[%d{ISO8601}][%-5p][%-25c] %m%n"
+
+  # Use the RollingFileAppender to get the maxBackupIndex variable
+  # which will ensure there is a max number of rotated log files.
+  # Log4j does not currently support both compression
+  # and maxBackupIndex.
+  file:
+    type: rollingFile
+    file: ${path.logs}/${cluster.name}.log
+    maxFileSize: 40MB
+    maxBackupIndex: 7
+    layout:
+      type: pattern
+      conversionPattern: "[%d{ISO8601}][%-5p][%-25c] %.10000m%n"
+
+  deprecation_log_file:
+    type: rollingFile
+    file: ${path.logs}/${cluster.name}_deprecation.log
+    maxFileSize: 40MB
+    maxBackupIndex: 7
+    layout:
+      type: pattern
+      conversionPattern: "[%d{ISO8601}][%-5p][%-25c] %m%n"
+
+  index_search_slow_log_file:
+    type: rollingFile
+    file: ${path.logs}/${cluster.name}_index_search_slowlog.log
+    maxFileSize: 40MB
+    maxBackupIndex: 7
+    layout:
+      type: pattern
+      conversionPattern: "[%d{ISO8601}][%-5p][%-25c] %m%n"
+
+  index_indexing_slow_log_file:
+    type: rollingFile
+    file: ${path.logs}/${cluster.name}_index_indexing_slowlog.log
+    maxFileSize: 40MB
+    maxBackupIndex: 7
+    layout:
+      type: pattern
+      conversionPattern: "[%d{ISO8601}][%-5p][%-25c] %m%n"
+
+# Use the log4j-extras RollingFileAppender for gzip compression of log files
+# https://logging.apache.org/log4j/
+#       extras/apidocs/org/apache/log4j/rolling/RollingFileAppender.html
+#  file:
+#    type: extrasRollingFile
+#    file: ${path.logs}/${cluster.name}.log
+#    rollingPolicy: timeBased
+#    rollingPolicy.FileNamePattern: ${path.logs}/${cluster.name}.log.%d{yyyy-MM-dd}.gz
+#    layout:
+#      type: pattern
+#      conversionPattern: "[%d{ISO8601}][%-5p][%-25c] %m%n"
+#
+#  index_search_slow_log_file:
+#    type: extrasRollingFile
+#    file: ${path.logs}/${cluster.name}_index_search_slowlog.log
+#    rollingPolicy: timeBased
+#    rollingPolicy.FileNamePattern: ${path.logs}/${cluster.name}_index_search_slowlog.log.%d{yyyy-MM-dd}.gz
+#    layout:
+#      type: pattern
+#      conversionPattern: "[%d{ISO8601}][%-5p][%-25c] %m%n"
+#
+#  index_indexing_slow_log_file:
+#    type: extrasRollingFile
+#    file: ${path.logs}/${cluster.name}_index_indexing_slowlog.log
+#    rollingPolicy: timeBased
+#    rollingPolicy.FileNamePattern: ${path.logs}/${cluster.name}_index_indexing_slowlog.log.%d{yyyy-MM-dd}.gz
+#    layout:
+#      type: pattern
+#      conversionPattern: "[%d{ISO8601}][%-5p][%-25c] %m%n"

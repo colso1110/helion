@@ -1,0 +1,55 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+# Uninstall Ceilometer agent central if it exists
+---
+- name: CEI-CAG | uninstall | stop and disable the service
+  become: yes
+  service:
+    name: ceilometer-agent-central
+    state: stopped
+    enabled: no
+
+- name: CEI-CAG | uninstall | disable monitoring process check alarm
+  become: yes
+  monasca_agent_plugin:
+    name: "HLMCeilometer"
+    state: "absent"
+  ignore_errors: yes
+
+- name: CEI-CAG | uninstall | remove service from systemd
+  become: yes
+  file:
+    path: /usr/lib/systemd/system/ceilometer-agent-central.service
+    state: absent
+  register: hlm_notify_ceilometer_cag_uninstalled
+
+- name: CEI-CAG | uninstall | Reload Systemd after uninstall
+  become: yes
+  command: systemctl daemon-reload
+  when: hlm_notify_ceilometer_cag_uninstalled is defined and
+        hlm_notify_ceilometer_cag_uninstalled.changed and
+        ceilometer_cag_unistalled_result is not defined
+  register: ceilometer_cag_unistalled_result
+
+- name: CEI-CAG | uninstall | Remove Ceilometer Agent Central DPKG (if exists)
+  become: yes
+  apt:
+    name: ceilometer-agent-central
+    install_recommends: no
+    state: absent
+    force: yes
+  ignore_errors: True

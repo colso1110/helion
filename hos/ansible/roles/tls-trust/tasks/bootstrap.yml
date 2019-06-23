@@ -1,0 +1,113 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Clean directories (TODO: secure delete)
+- name: tls-trust | bootstrap | Clean working directory
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - "{{ tls_temp_dir }}"
+
+# Create directories
+- name: tls-trust | bootstrap | Create working directory
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+  with_items:
+    - "{{ tls_temp_dir }}"
+
+# Create directories on deployer
+- name: tls-trust | bootstrap | Create cert source directory
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0755
+  with_items:
+    - "{{ tls_certs_dir }}"
+    - "{{ tls_cacerts_dir }}"
+  run_once: true
+  delegate_to: localhost
+
+- name: tls-trust | bootstrap | Get CA private key from CP
+  template:
+    src: "{{ helion_internal_ca.key }}"
+    dest: "{{ tls_temp_dir }}"
+    mode: 0600
+
+- name: tls-trust | bootstrap | Check modulus of the CA key
+  command: >
+    /usr/bin/openssl rsa -in {{ helion_internal_ca.key }} -noout -modulus
+  args:
+    chdir: "{{ tls_temp_dir }}"
+  register: _tls_ca_modulus_result
+
+- name: tls-trust | bootstrap | Check for existing internal CA on deployer
+  stat:
+    path: "{{ tls_cacerts_dir }}/{{ helion_internal_ca.cert }}"
+  register: _tls_deployer_cacert_stat_result
+  delegate_to: localhost
+
+- name: tls-trust | bootstrap | Check modulus of the CA cert on deployer
+  command: >
+    /usr/bin/openssl x509 -in {{ helion_internal_ca.cert }} -noout -modulus
+  args:
+    chdir: "{{ tls_cacerts_dir }}"
+  register: _tls_cacert_modulus_result
+  delegate_to: localhost
+  when: _tls_deployer_cacert_stat_result.stat.exists
+
+- name: tls-trust | bootstrap | Create Internal CA cert if modules differ
+  hos_ca:
+    chdir: "{{ tls_temp_dir }}"
+    cakey: "{{ helion_internal_ca.key }}"
+    cacert: "{{ helion_internal_ca.cert }}"
+    conf: "{{ helion_internal_ca.conf }}"
+    ca_days: "{{ helion_internal_ca.days }}"
+    subj: "{{ helion_internal_ca.subj }}"
+    combined: False
+    generate_ca: True
+  register: _tls_cacert_result
+  when: >
+        not _tls_deployer_cacert_stat_result.stat.exists or
+        _tls_cacert_modulus_result.stdout != _tls_ca_modulus_result.stdout
+
+- name: tls-trust | bootstrap | Fetch new Internal CA to deployer
+  fetch:
+    src: "{{ tls_temp_dir }}/{{ helion_internal_ca.cert }}"
+    dest: "{{ tls_cacerts_dir }}"
+    flat: yes
+    validate_checksum: no
+  when: _tls_cacert_result.changed
+
+- name: tls-trust | bootstrap | Copy user CA
+  copy:
+    src: "{{ item }}"
+    dest: "{{ tls_cacerts_dir }}"
+    mode: 0644
+  with_fileglob:
+    - "public/*.crt"
+  run_once: true
+  delegate_to: localhost
+
+- name: tls-trust | bootstrap | Copy openssl config
+  template:
+    src: "{{ item }}"
+    dest: "{{ tls_temp_dir }}/{{ item }}"
+    mode: 0644
+  with_items:
+    - "{{ helion_internal_ca.conf }}"

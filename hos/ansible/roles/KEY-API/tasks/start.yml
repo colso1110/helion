@@ -1,0 +1,147 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Set the fact for restart based on hlm_notify
+- name: KEY-API | start | Set fact to start based on hlm_notify_fact
+  set_fact:
+    keystone_restart_required: True
+  when: hlm_notify_keystone_change is defined and
+          hlm_notify_keystone_change.changed
+
+- name: KEY-API | start | Check if keystone site enabled
+  stat:
+    path: /etc/apache2/sites-enabled/keystone-modwsgi.conf
+  register: keystone_site_file_result
+
+# This is for the case stop after start
+- name: KEY-API | start | Set fact to start if it is disabled
+  set_fact:
+    keystone_restart_required: True
+  when: not keystone_site_file_result.stat.exists
+
+- name:  KEY-API | start | Enable keystone site
+  become: yes
+  command: a2ensite keystone-modwsgi
+  tags:
+    - keystone
+
+- include: "{{ playbook_dir }}/roles/FND-AP2/tasks/start_reload.yml"
+  vars:
+    apache_reload_requested: False
+    apache_restart_requested: "{{ keystone_restart_required }}"
+
+- name: KEY-API | start | Restart shibd
+  become: yes
+  service:
+    name: shibd
+    state: restarted
+  tags:
+    - keystone
+
+- name: KEY-API | start | Wait for keystone to become active
+  become: yes
+  wait_for:
+    host: "{{ keystone_internal_listen_ip }}"
+    port: "{{ item }}"
+    state: "started"
+    timeout: 60
+  with_items:
+    - "{{ keystone_admin_port }}"
+    - "{{ keystone_internal_port }}"
+  tags:
+    - keystone
+
+- name: KEY-API | start | Make sure keystone is up and responding
+  uri:
+      url: "{{ keystone_internal_endpoint }}"
+      status_code: 300
+      timeout: 20
+  register: keystone_version_status_result
+  until: keystone_version_status_result.status is defined and
+          keystone_version_status_result.status == 300
+  delay: 10
+  retries: 3
+  run_once: true
+  ignore_errors: true
+  tags:
+    - keystone
+
+# Debug Keystone start/resonding issues by the followings:
+# This is usually the first point at which we'll hit SSL cert
+# issues. If you still observe cert connection info above, then
+# failure at this point may not be related to cert issues.
+# you don't see cert connection info above, then failure may
+# be related to cert issue.
+# If the output is blank it implies the internal VIP can't be reached.
+- name: KEY-API | start | Debug keystone cert if appropriate
+  run_once: true
+  command: >
+    timeout 10 openssl s_client -CAfile /etc/ssl/certs/ca-certificates.crt
+      -connect {{ keystone_internal_vip_host }}:{{ keystone_internal_vip_port }}
+  register: keystone_cert_result
+  ignore_errors: true
+  when: not (keystone_version_status_result.status is defined
+             and keystone_version_status_result.status == 300)
+  tags:
+    - keystone
+
+- name: KEY-API | start | Report cert debug hint - internal VIP
+  run_once: true
+  fail:
+    msg="Error-Internal VIP
+        {{ keystone_internal_vip_host }}:{{ keystone_internal_vip_port }}
+        can't be reached."
+  ignore_errors: true
+  when: not (keystone_version_status_result.status is defined
+         and keystone_version_status_result.status == 300) and
+        (keystone_cert_result.stdout_lines | length == 0)
+  tags:
+    - keystone
+
+- name: KEY-API | start | Report cert debug - cert connection result
+  run_once: true
+  ignore_errors: true
+  debug:
+    var: keystone_cert_result.stdout_lines
+  when: not (keystone_version_status_result.status is defined
+         and keystone_version_status_result.status == 300) and
+        (keystone_cert_result.stdout_lines | length > 0)
+  tags:
+    - keystone
+
+- name: KEY-API | start | Report cert debug - hint
+  run_once: true
+  ignore_errors: true
+  debug:
+    msg="Certificate debug Hint -
+         If you still observe cert connection info above,
+         then failure at this point may not be related to cert issues.
+         If you don't see cert connection info above, then failure may
+         be related to cert issue."
+  when: not (keystone_version_status_result.status is defined
+         and keystone_version_status_result.status == 300) and
+        (keystone_cert_result.stdout_lines | length > 0)
+  tags:
+    - keystone
+
+- name: KEY-API | start | Report keystone error status result
+  fail: msg="{{ keystone_version_status_result }}"
+  when: not (keystone_version_status_result.status is defined
+             and keystone_version_status_result.status == 300)
+  tags:
+    - keystone
+

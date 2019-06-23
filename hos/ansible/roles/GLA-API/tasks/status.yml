@@ -1,0 +1,49 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: singleton.yml
+
+# The parameter glance_api_enabled will be true or false
+# depending on whether the glance-api is enabled on a particular
+# node. If ha_mode is false then the glance-api should only
+# be enabled (running) on the first node. We check that the api is enabled
+# on all nodes it should be enabled on. We also check that the
+# glance-api is disabled (not running) on all nodes it should be disabled on.
+
+- name: GLA-API | status | Check glance-api service status
+  command: systemctl status glance-api
+  ignore_errors: yes
+  changed_when: false
+  register: systemctl_status_result
+
+- name: GLA-API | status | Report any issues (HA).
+  fail:
+    msg: |
+      glance-api is not running.
+      systemctl status glance-api output:
+      {{ systemctl_status_result.stdout }}
+      {{ systemctl_status_result.stderr }}
+  when: systemctl_status_result.rc != 0 and glance_api_enabled
+
+- name: GLA-API | status | Report any issues (singleton mode).
+  fail:
+    msg: |
+      glance-api is running on this machine but it should not be (singleton mode).
+      systemctl status glance-api output:
+      {{ systemctl_status_result.stdout }}
+      {{ systemctl_status_result.stderr }}
+  when: systemctl_status_result.rc == 0 and not glance_api_enabled

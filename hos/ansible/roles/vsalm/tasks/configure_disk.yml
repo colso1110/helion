@@ -1,0 +1,72 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+
+---
+
+- name: vsalm | configure_disk | Fail if number of disks exceed {{ vsa_disk_limit }}
+  fail:
+    msg: "Exceeds maximum number of supported disks {{ vsa_disk_limit }} in VSA"
+  when: "{{ host.my_disk_models.device_groups | map(attribute='devices')| chain | map(attribute='name') | map('string') | list | length}} > {{ vsa_disk_limit }}"
+
+- name: vsalm | configure_disk | Fetch disks attached to VSA
+  become: yes
+  shell: echo $(virsh domblklist {{ vsa_vm_hostname }} --details | awk '{ print $4 }' | grep '/dev/')
+  register: vsa_disks_result
+
+- name: vsalm | configure_disk | Check if disk(s) removed from VSA disk input model
+  set_fact: vsa_removal_disks="{{ vsa_disks_result.stdout.split() | list | difference(host.my_disk_models.device_groups | map(attribute='devices')| chain | map(attribute='name') | map('string') | list )}}"
+
+- name: vsalm | configure_disk | Fail if disk is removed from VSA disk from input model
+  fail:
+    msg: "Removal of disk using this playbook is not supported - {{ item }}"
+  with_items: vsa_removal_disks
+
+- name: vsalm | configure_disk | List of additional disks need to be added
+  set_fact: vsa_additional_disks="{{ host.my_disk_models.device_groups | map(attribute='devices')| chain | map(attribute='name') | map('string') | list | difference(vsa_disks_result.stdout.split() | list )}}"
+
+- name: vsalm | configure_disk | Check if disks are physically present on the VSA node
+  become: yes
+  shell: ls /dev/sd* | grep "/dev/sd[a-z]\+$"
+  register: disk_presence_result
+  ignore_errors: True
+
+- name: vsalm | configure_disk | Check if disk(s) present on VSA host
+  set_fact: vsa_absent_disks="{{ host.my_disk_models.device_groups | map(attribute='devices')| chain | map(attribute='name') | map('string') | list | difference(disk_presence_result.stdout.split() | list)}}"
+
+- name: vsalm | configure_disk | Fail if disk is not present on the VSA host
+  fail:
+    msg: "Disk should be physically present on the host - {{ item }}"
+  with_items: vsa_absent_disks
+
+- name: vsalm | configure_disk | Present new disks to VSA appliance
+  become: yes
+  shell: "virsh attach-disk {{ vsa_vm_hostname }} --source {{ item }} --target $(echo {{ item }} | cut -f3 -d\"/\" | sed s/s/v/1) --persistent"
+  with_items: vsa_additional_disks
+  register: attach_disk_result
+
+- name: vsalm | configure_disk | Net sets of disks presented to VSA appliance
+  become: yes
+  shell: "virsh domblklist {{ vsa_vm_hostname }} --details | grep {{item}}"
+  with_items: vsa_additional_disks
+  when: not attach_disk_result|skipped
+
+- name: vsalm | configure_disk | Display the message for the next steps to add disks to VSA
+  debug:
+    msg: "New disks are presented to VSA appliance. However, it requires to be added to cluster. For that, please do following: \
+          1. Go to CMC \
+          2. Add newly presented disk to existing VSA"
+  when: not attach_disk_result|skipped

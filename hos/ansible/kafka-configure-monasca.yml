@@ -1,0 +1,48 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: Kafka Monasca Agent detection plugin
+  hosts: FND-KFK:&MON-AGN
+  sudo: yes
+  tags: [kafka]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+  roles:
+    - {role: monasca-agent, run_mode: Use, tags: [kafka]}
+  tasks:
+    - name: Check if config file exists
+      stat:
+        path: "{{ kafka_consumer_path }}"
+      register: kafka_config_result
+    - name: Fix obsolete config file
+      lineinfile:
+        dest: "{{ kafka_consumer_path }}"
+        backrefs: True
+        state: present
+        regexp: '(^  name: \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,4}(?!_monasca))$'
+        line: '\1_monasca'
+      when: kafka_config_result.stat.exists == True
+    - name: Run Monasca Agent detection plugin for kafka
+      monasca_agent_plugin:
+        name: "kafka"
+        args:
+          1_alarm-state-transitions: alarm-state-transitions
+          1_metrics: metrics
+          monasca-notification: alarm-state-transitions
+          thresh-event: events
+          thresh-metric: metrics
+          service_name: monasca

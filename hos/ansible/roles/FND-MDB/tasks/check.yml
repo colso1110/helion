@@ -1,0 +1,86 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: FND-MDB | check |
+    This bootstrap procedure will WIPE all database data other
+    than that on the first controller
+  pause:
+    prompt: |
+        You have 5 minutes to abort this procedure with a ctrl+c
+
+        This procedure assumes the database which exists on
+        {{ inventory_hostname }} is the latest. The database server (mysqld) on
+        {{ inventory_hostname }} should be the last mysqld in your Percona
+        cluster to shutdown and therefore the host with the latest sequence
+        number.
+
+        This procedure also assumes mysqld is DOWN on all cluster hosts.
+        Confirm this is the case before you run this procedure by running
+            $ps -elf |grep mysqld
+        On all hosts in your percona cluster.
+        If mysqld is up on any host you will need to shut it down by running
+
+            $sudo service mysql stop
+
+        If the mysqld daemon does not stop, kill the daemon using kill -9 <pid>
+        BEFORE running this procedure.
+
+        You need to find the sequence number on every host in your MySQL
+        cluster by following this procedure, and bootstrap on the host with the
+        highest sequence number. For each host, find the sequence number and
+        compare it with the other hosts.
+
+        The sequence number on a host can be found using
+                $ sudo cat /var/lib/mysql/grastate.dat
+        If the sequence number is -1 in the grastate.dat use
+                $ sudo /usr/bin/mysqld_safe --wsrep-recover
+        when mysqld is down, this logs the sequence number to
+        /var/log/mysql/error.log .  For example:
+
+        $ sudo grep --text 'Recovered position'
+            /var/log/mysql/error.log| tail -1
+            2016-05-05 17:16:52 32336 [Note] WSREP: Recovered position:
+            a0cd6b29-f027-11e5-b9e3-fb0ed503c0ac:165252407
+
+        165252407 is the sequence number in the error.log above.
+
+        If {{ inventory_hostname }} HAS the latest sequence number from the list
+        of the above controllers then use this script to bootstrap.
+
+        If {{ inventory_hostname }} DOES NOT HAVE the latest sequence number
+        from the list of the above controllers then DO NOT use this script to
+        bootstrap, ctrl C this script.
+
+        If {{ inventory_hostname }} DOES NOT HAVE the latest sequence number
+        then you can restart your cluster as follows:
+
+        On the host which has the latest sequence no do this:
+            sudo /etc/init.d/mysql bootstrap-pxc
+            sudo service mysql restart
+        On the deployer run percona-start.yml:
+            ansible-playbook -i hosts/verb_hosts percona-start.yml
+
+  delegate_to: localhost
+  when: automate is not defined
+
+- name: FND-MDB | check |
+    5 minutes to reconsider. press ctrl+c then c if you are sure.
+    if not press ctrl+c then a to abort.
+  pause:
+    minutes: 5
+  delegate_to: localhost
+  when: automate is not defined
+

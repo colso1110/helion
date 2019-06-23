@@ -1,0 +1,103 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Configure logging for the implicated services
+#------------------------------------------------------------------------------
+- name: kronos-logrotation | configure | Load logging profiles
+  local_action: kronos_load_profiles
+  args:
+    host: "{{ inventory_hostname }}"
+    hosts: "{{ verb_hosts }}"
+    groups: "{{ groups }}"
+  register: logrotate_profiles
+
+- name: kronos-logrotation | configure | Configure logging for service
+  become: yes
+  kronos_process_profiles:
+    profiles: "{{ logrotate_profiles.result }}"
+    control_plane: "{{ host.my_dimensions.control_plane }}"
+    cluster: "{{ host.my_dimensions.cluster }}"
+    cloud_name: "{{ host.my_dimensions.cloud_name }}"
+    audit_log_dir: "{{ audit_mount_name }}"
+    config_actions: "rotation"
+
+# Configure Logrotate
+#-------------------------------------------------------------------------------
+- name: >-
+    kronos-logrotation | configure | Install
+    default logrotate.conf file
+  become: yes
+  copy:
+    src: logrotate.conf
+    dest: /etc/logrotate.conf
+    mode: 0644
+
+- name: kronos-logrotation | configure | Set hourly logrotate cron job
+  become: yes
+  copy:
+    src: /etc/cron.daily/logrotate
+    dest: /etc/cron.hourly/
+    mode: 0755
+
+# Configure Audit Logrotate
+#-------------------------------------------------------------------------------
+- name: >-
+    kronos-logrotation | configure | Install
+    default auditlogrotate.conf file
+  become: yes
+  template:
+    src: auditlogrotate.conf.j2
+    dest: /etc/auditlogrotate.conf
+    mode: 0644
+
+- name: >-
+    kronos-logrotation | configure | Set hourly auditlogrotate cron job
+  become: yes
+  copy:
+    src: auditlogrotate.sh
+    dest: /etc/cron.daily/auditlogrotate
+    mode: 0755
+
+# Configure Logrotate Check
+#-------------------------------------------------------------------------------
+- name: kronos-logrotation | configure | Create /opt/kronos directory
+  become: yes
+  file:
+    path: "{{ opt_kronos_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: >-
+    kronos-logrotation | configure | Configure
+    Logrotate if needed script
+  become: yes
+  template:
+    src: "logrotate_if_needed.sh.j2"
+    dest: "{{ logrotate_if_needed_path }}"
+    mode: 0755
+  when: logrotate_check_enable
+
+- name: >-
+    kronos-logrotation | configure | Add
+    cron job for logrotate if needed
+  become: yes
+  cron:
+    name: "Run logrotate if high watermark hit"
+    minute: "*/{{ logrotate_check_sleep_minutes }}"
+    job: "{{ logrotate_if_needed_path }}"

@@ -1,0 +1,208 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Configure libvirt
+---
+- include: ../../nova-common/tasks/_set_directories.yml
+  vars:
+    install_package_result: "{{ hlm_notify_nova_compute_install_result }}"
+
+- include: ../../nova-common/tasks/_read_migrate_enabled.yml
+
+# hypervisor.conf will be loaded last by nova-compute
+# filename should remain the same across hypervisors
+# we can use nova_service_conf_dir as this will be set to compute
+# by including the nova-compute role as a dependency
+- include: ../../nova-common/tasks/_write_conf.yml
+  src: "../../NOV-CMP-KVM/templates/hypervisor.conf.j2"
+  dest: "{{ nova_service_conf_dir }}/hypervisor.conf"
+  owner: "{{ nova_system_user }}"
+  group: "{{ nova_system_group }}"
+
+- name: NOV-CMP-KVM | configure | notify on hypervisor.conf change
+  command: /bin/true
+  notify:
+    - restart libvirtd
+  register: hlm_notify_nova_compute_restart_required
+  when: write_conf_result.changed
+
+# TODO (rajjoh) Update Selinux config for RedHat distro
+- name: NOV-CMP-KVM | configure | Copy apparmor config files
+  become: yes
+  copy:
+    src: "{{ item.file }}"
+    dest: "/{{ item.file }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode | default('a-rwx,u=rw,g=r,a=r') }}"
+  with_items:
+    - file: 'etc/apparmor.d/abstractions/base'
+    - file: 'etc/apparmor.d/abstractions/consoles'
+    - file: 'etc/apparmor.d/abstractions/libvirt-qemu'
+    - file: 'etc/apparmor.d/abstractions/nameservice'
+    - file: 'etc/apparmor.d/usr.lib.libvirt.virt-aa-helper'
+    - file: 'etc/apparmor.d/usr.sbin.libvirtd'
+  notify:
+    - reload apparmor
+    - restart libvirtd
+  when: ansible_os_family == 'Debian'
+  register: hlm_notify_nova_compute_restart_required
+
+# TODO (rajjoh) Update Selinux config for RedHat distro
+- name: NOV-CMP-KVM | configure | Create symlink for apparmor kvm profile
+  become: yes
+  file:
+    src: /etc/apparmor.d/libvirt/TEMPLATE.qemu
+    dest: /etc/apparmor.d/libvirt/TEMPLATE.kvm
+    owner: root
+    group: root
+    mode: 0644
+    force: yes
+    state: link
+  notify:
+    - reload apparmor
+    - restart libvirtd
+  when: ansible_os_family == 'Debian'
+  register: hlm_notify_nova_compute_restart_required
+
+- name: NOV-CMP-KVM | configure | Copy libvirtd config files
+  become: yes
+  copy:
+    src: "{{ item.file }}"
+    dest: "/{{ item.file }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode | default('a-rwx,u=rw,g=r,a=r') }}"
+  with_items:
+    - file: 'etc/libvirt/libvirtd.conf'
+    - file: "{{ libvirt_defaults_file }}"
+      mode: '0755'
+  notify:
+    - restart libvirtd
+  register: hlm_notify_nova_compute_restart_required
+
+- name: NOV-CMP-KVM | configure | Enable login for Nova user
+  become: yes
+  user:
+    name: "{{ nova_system_user }}"
+    shell: /bin/bash
+  when: nova_migrate_enabled|bool
+
+- name: NOV-CMP-KVM | configure | Disable login for Nova user
+  become: yes
+  user:
+    name: "{{ nova_system_user }}"
+    shell: /bin/false
+  when: not nova_migrate_enabled|bool
+
+- name: NOV-CMP-KVM | configure | Ensure .ssh directory exists
+  become: yes
+  file:
+    path: "{{ nova_system_home_folder }}/.ssh"
+    state: directory
+    setype: ssh_home_t
+    owner: "{{ nova_system_user }}"
+    mode: 0700
+  when: nova_migrate_enabled|bool
+
+- name: NOV-CMP-KVM | configure | Remove .ssh directory
+  become: yes
+  file:
+    path: "{{ nova_system_home_folder }}/.ssh"
+    state: absent
+  when: not nova_migrate_enabled|bool
+
+- name: NOV-CMP-KVM | configure | Write private key
+  become: yes
+  copy:
+    content: "{{ nova_private_ssh_key }}"
+    dest: "{{ nova_system_home_folder }}/.ssh/id_rsa"
+    owner: "{{ nova_system_user }}"
+    group: "{{ nova_system_group }}"
+    mode: 0600
+  when: nova_migrate_enabled|bool and
+        nova_private_ssh_key is defined
+
+- name: NOV-CMP-KVM | configure | Generate and copy public key
+  become: yes
+  shell: >
+          ssh-keygen -y -f "{{ nova_system_home_folder }}"/.ssh/id_rsa >>
+          "{{ nova_system_home_folder }}"/.ssh/authorized_keys
+  when: nova_migrate_enabled|bool and
+        nova_private_ssh_key is defined
+
+- name: NOV-CMP-KVM | configure | Turn off strict host key checking
+  become: yes
+  lineinfile:
+    dest: "{{ nova_system_home_folder }}/.ssh/config"
+    regexp: ^StrictHostKeyChecking
+    line: StrictHostKeyChecking no
+    create: True
+    owner: "{{ nova_system_user }}"
+    group: "{{ nova_system_group }}"
+  when: nova_migrate_enabled|bool
+
+- name: NOV-CMP-KVM | configure | Stat qemu/save folder to check if it is a link
+  become: yes
+  stat:
+    path: /var/lib/libvirt/qemu/save
+  register: sym_result
+
+- name: NOV-CMP-KVM | configure | Create save folder in nova home folder
+  become: yes
+  file:
+    path: "{{ nova_system_home_folder }}/save"
+    owner: "{{ libvirt_qemu_user }}"
+    group: "{{ libvirt_qemu_user }}"
+    mode: 0755
+    state: directory
+  when: sym_result.stat.islnk is defined and sym_result.stat.islnk == False
+
+#(TODO)From 4.0 version we can remove the copy of saved instances images
+- name: NOV-CMP-KVM | configure | Copy saved instances images to new location
+  become: yes
+  command: cp -r /var/lib/libvirt/qemu/save/ "{{ nova_system_home_folder }}/"
+  when: sym_result.stat.islnk is defined and sym_result.stat.islnk == False
+
+- name: NOV-CMP-KVM | configure | Delete save folder in qemu folder
+  become: yes
+  file:
+    path: /var/lib/libvirt/qemu/save/
+    state: absent
+  when: sym_result.stat.islnk is defined and sym_result.stat.islnk == False
+
+- name: NOV-CMP-KVM | configure |
+    Create link from nova save folder to qemu folder
+  become: yes
+  file:
+    src: "{{ nova_system_home_folder }}/save"
+    dest:  /var/lib/libvirt/qemu/save
+    owner: "{{ libvirt_qemu_user }}"
+    group: "{{ libvirt_qemu_user }}"
+    state: link
+  when: sym_result.stat.islnk is defined and sym_result.stat.islnk == False
+
+- include: ../../nova-common/tasks/_write_conf.yml
+  become: yes
+  src: "../../NOV-CMP-KVM/templates/qemu.conf.j2"
+  dest: "/etc/libvirt/qemu.conf"
+  owner: "{{ libvirt_qemu_user }}"
+  group: "{{ libvirt_qemu_user }}"
+
+- name: NOV-CMP-KVM | configure | notify on qemu.conf change
+  command: /bin/true
+  notify:
+    - restart libvirtd
+  when: write_conf_result.changed

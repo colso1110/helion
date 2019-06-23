@@ -1,0 +1,53 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+  product:
+    version: 2
+
+    # This example is based on using a flat provider network as the
+    # guest network for ironic nodes to use.
+
+  configuration-data:
+    - name:  NEUTRON-CONFIG-CP1
+      services:
+        - neutron
+      data:
+        neutron_provider_networks:
+        - name: guest-network
+          cidr: 192.168.245.0/24
+
+          # DHCP must be enabled for guest network being used for ironic
+          # nodes.
+          enable_dhcp: True
+          shared: True
+          allocation_pools:
+            - start: 192.168.245.20
+              end: 192.168.245.250
+
+          # Make sure the gateway can route to Management network.
+          gateway_ip: 192.168.245.1
+          provider:
+            # Ironic cloud supports only flat network type.
+            - network_type: flat
+              physical_network: physnet1
+
+          # Uncomment to set specific routes.
+
+          # host_routes:
+          #   - destination: 192.168.245.0/28
+          #     nexthop: 192.168.245.1
+          #   - destination: 192.168.245.128/28
+          #     nexthop: 192.168.245.129

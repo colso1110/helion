@@ -1,0 +1,89 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: rabbitmq | check-upgraded-pkgs | Check upgraded packages
+  debug:
+    msg: "Notify change in RabbitMQ package dependency: {{ item.package }}"
+  changed_when: true
+  when: item.upgrade != "" and
+        item.package in list_pkg_upgrades_base | default({})
+  with_items: rabbitmq_restart_packages
+  register: hlm_notify_rabbitmq_restart_required
+
+- name: rabbitmq | check-upgraded-pkgs | Get current installed package version
+  shell: >
+    dpkg-query -W -f='${Version} ${status}\n' {{ item.package }} |
+    awk '/ok installed/{print $1}'
+  when: item.upgrade != "" and
+        hlm_notify_rabbitmq_restart_required.changed
+  changed_when: false
+  register: _rabbitmq_current_version_result
+  with_items: rabbitmq_restart_packages
+
+# This task is required as the upgrade should stop if all nodes do not have
+# the same version of the checked packages. This task has run_once_per RabbitMQ
+# server cluster group as we only need to compare a singe node to the others
+# and we do not need the cross product.
+- name: rabbitmq | check-upgraded-pkgs | Check installed package are constant
+  fail:
+    msg: "Inconstant RabbitMQ package found: {{ item.key }} : {{ item.value }}"
+  when: (item.value | length != 1)
+  with_dict: >
+    (rabbitmq_cp_hosts.ansible_cluster |
+    package_consistency_check(hostvars, '_rabbitmq_current_version_result'))
+  run_once_per: rabbitmq_cp.group_name
+
+- name: rabbitmq | check-upgraded-pkgs | Get current available package version
+  shell: >
+    apt-cache show {{ item.package }} |
+    awk '/Version/{print $2; exit}'
+  when: item.upgrade != "" and
+        hlm_notify_rabbitmq_restart_required.changed
+  changed_when: false
+  register: _rabbitmq_available_version_result
+  with_items: rabbitmq_restart_packages
+
+# This task is required as the upgrade should stop if all nodes cannot see the
+# same repository version of the checked packages. This task has run_once_per
+# RabbitMQ cluster group as we only need to compare a singe node to the others
+# and we do not need the cross product.
+- name: rabbitmq | check-upgraded-pkgs | Check repository package are constant
+  fail:
+    msg: "Inconstant repository found: {{ item.key }} : {{ item.value }}"
+  when: (item.value | length != 1)
+  with_dict: >
+    (rabbitmq_cp_hosts.ansible_cluster |
+    package_consistency_check(hostvars, '_rabbitmq_available_version_result'))
+  run_once_per: rabbitmq_cp.group_name
+
+- name: rabbitmq | check-upgraded-pkgs | Set upgrade strategy for RabbitMQ
+  debug:
+    msg: "Notify RabbitMQ Major upgrade required for: {{ item[0].package }}"
+  changed_when: true
+  when: item[0].upgrade != "" and
+        hlm_notify_rabbitmq_restart_required.changed and (
+          (item[0].upgrade == "major" and
+            item[1].stdout !=
+            item[2].stdout) or
+          (item[0].upgrade == "check" and
+            (item[1].stdout | regex_replace('(^(\\d+\\.){2}).*', '\\1')) !=
+            (item[2].stdout | regex_replace('(^(\\d+\\.){2}).*', '\\1')))
+        )
+  with_together:
+    - rabbitmq_restart_packages
+    - _rabbitmq_available_version_result.results
+    - _rabbitmq_current_version_result.results
+  register: hlm_notify_rabbitmq_major_change

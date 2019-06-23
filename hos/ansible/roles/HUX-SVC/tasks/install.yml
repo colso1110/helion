@@ -1,0 +1,79 @@
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: HUX-SVC | install | Update installed packager cache
+  become: yes
+  install_package:
+    cache: update
+
+- name: HUX-SVC | install | install hlm-ux-services
+  become: yes
+  install_package:
+    name: "{{ hux_svc_service_venv_name }}"
+    service: "{{ hux_svc_service }}"
+    state: present
+  register: hlm_notify_hlm_ux_services_restart_required
+
+# NOTE: This is currently broken in 1.9.4 due to overlapping "lib" folder
+#
+#- name: HUX-SVC | install | Extract hlm-ux-services files
+#  become: yes
+#  unarchive:
+#    dest: "{{ hux_svc_component | venv_dir }}"
+#    src: "{{ item }}"
+#    copy: no
+#    owner: "{{ hux_svc_os_user }}"
+#    group: "{{ hux_svc_os_group }}"
+#    mode: 0775
+#  with_fileglob:
+#    - "{{ hux_svc_component | jar_dir }}/{{ hux_svc_component }}-*.tar.gz"
+
+# Work around 1.9.4 unarchive issue: Currently we need to untar manually
+# TODO: once we move to 2.0 remove this in favour of unarchive
+- name: HUX-SVC | install | Extract hlm-ux-services files
+  tags:
+  - skip_ansible_lint
+  become: yes
+  shell: >
+    tar -xzf {{ hux_svc_component | jar_dir }}/{{ hux_svc_component }}-*.tar.gz
+    && chown -R {{ hux_svc_os_user }}:{{ hux_svc_os_group }} *
+  args:
+    chdir: "{{ hux_svc_component | venv_dir }}"
+
+- name: HUX-SVC | install | Create required directories
+  become: yes
+  file:
+    path: "{{ item }}"
+    owner: "{{ hux_svc_os_user }}"
+    group: "{{ hux_svc_os_group }}"
+    mode: 0775
+    state: directory
+  with_items:
+    -  "{{ hux_svc_log_dir }}"
+    -  "{{ hux_svc_process_logs_dir }}"
+    -  "{{ hux_svc_process_archive_dir }}"
+
+- name: HUX-SVC | install | Setup HUX Services
+  become: yes
+  setup_systemd:
+    name: "{{ hux_svc_service }}"
+    service: "{{ hux_svc_service }}"
+    user: "{{ hux_svc_os_user }}"
+    group: "{{ hux_svc_os_group }}"
+    cmd: node
+    args: >
+      {{ hux_svc_component | venv_dir }}/index.js
+      --config {{ hux_svc_component | config_dir }}/config.yml

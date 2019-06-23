@@ -1,0 +1,316 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Install Kronos server stack misc.
+#------------------------------------------------------------------------------
+- name: logging-server | install | Install hLinux packages
+  become: yes
+  apt:
+    pkg: "{{ item }}"
+    install_recommends: no
+    state: latest
+    force: yes
+  with_items:
+    - curl
+    - default-jre-headless
+    - python-passlib
+    - python-pika
+    - elasticsearch-curator
+  register: hlm_notify_kronos_restart
+
+- name: logging-server | install | Create /opt/kronos directory
+  become: yes
+  file:
+    path: "{{ opt_kronos_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: logging-server | install | Create /var/log/kronos directory
+  become: yes
+  file:
+    path: "{{ var_kronos_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: logging-server | install | Update venv package cache
+  become: yes
+  install_package:
+    cache: update
+
+# Installing Elasticsearch
+#------------------------------------------------------------------------------
+- name: logging-server | install | Install Elasticsearch venv package
+  become: yes
+  install_package:
+    name: elasticsearch_235
+    service: elasticsearch_235
+    state: present
+    activate: act_off
+  register: hlm_notify_elasticsearch_install
+
+- name: logging-server | install | Set Elasticsearch venv varibles
+  become: yes
+  set_fact:
+    elasticsearch_install: true
+    elasticsearch_pkg_dir: "{{ hlm_notify_elasticsearch_install.name|\
+      jar_dir(hlm_notify_elasticsearch_install.version) }}"
+  when: >-
+    not hlm_notify_elasticsearch_install is not defined and
+    hlm_notify_elasticsearch_install.changed
+
+- name: logging-server | install | Register new Elasticsearch version
+  become: yes
+  shell: >-
+    basename `ls -1 {{ elasticsearch_pkg_dir }}/*.deb` |
+    sed "s/.*\([0-9]\.[0-9]\.[0-9]\).*/\1/"
+  register: elasticsearch_new_ver_result
+  when: elasticsearch_install is defined
+
+- name: logging-server | install | Register Elasticsearch current version
+  become: yes
+  shell: >-
+    dpkg -l | grep " elasticsearch " | sed "s/.*\([0-9]\.[0-9]\.[0-9]\).*/\1/"
+  register: elasticsearch_ver_result
+  when: elasticsearch_install is defined
+
+- name: logging-server | install | Register new Elasticsearch pkg path
+  become: yes
+  shell: basename `ls -1 {{ elasticsearch_pkg_dir }}/*.deb`
+  register: elasticsearch_pkg_result
+  when: elasticsearch_install is defined
+
+- name: logging-server | install | Install Elasticsearch pkg
+  become: yes
+  shell: >-
+    dpkg --force-confnew -i
+    {{ elasticsearch_pkg_dir }}/{{ elasticsearch_pkg_result.stdout }}
+  when: >-
+    hlm_notify_elasticsearch_install is defined and
+    hlm_notify_elasticsearch_install.changed or
+    elasticsearch_ver_result.stdout != elasticsearch_new_ver_result.stdout
+  register: hlm_notify_elasticsearch_restart
+
+- name: logging-server | install | Ensure elasticsearch has permissions
+  become: yes
+  file:
+    path: "/var/lib/elasticsearch"
+    state: directory
+    owner: elasticsearch
+    group: elasticsearch
+    mode: 0750
+
+- name: logging-server | install | Install Elasticsearch util script
+  become: yes
+  template:
+    src: "esutil.py.j2"
+    dest: "{{ opt_kronos_dir }}/esutil.py"
+    mode: 0644
+
+# Installing Logstash
+#------------------------------------------------------------------------------
+- name: logging-server | install | Install Logstash venv package
+  become: yes
+  install_package:
+    name: logstash_232
+    service: logstash_232
+    state: present
+    activate: act_off
+  register: hlm_notify_logstash_install
+
+- name: logging-server | install | Set Logstash venv varibles
+  become: yes
+  set_fact:
+    logstash_install: true
+    logstash_pkg_dir: "{{ hlm_notify_logstash_install.name|\
+      jar_dir(hlm_notify_logstash_install.version) }}"
+  when: >-
+    not hlm_notify_logstash_install is not defined and
+    hlm_notify_logstash_install.changed
+
+- name: logging-server | install | Register new Logstash version
+  become: yes
+  shell: >-
+    basename `ls -1 {{ logstash_pkg_dir }}/*.deb` |
+    sed "s/.*\([0-9]\.[0-9]\.[0-9]\).*/\1/"
+  register: logstash_new_ver_result
+  when: logstash_install is defined
+
+- name: logging-server | install | Register Logstash current installed version
+  become: yes
+  shell: dpkg -l | grep " logstash " | sed "s/.*\([0-9]\.[0-9]\.[0-9]\).*/\1/"
+  register: logstash_ver_result
+  when: logstash_install is defined
+
+- name: logging-server | install | Register new Logstash pkg path
+  become: yes
+  shell: basename `ls -1 {{ logstash_pkg_dir }}/*.deb`
+  register: logstash_pkg_result
+  when: logstash_install is defined
+
+- name: logging-server | install | Install Logstash pkg
+  become: yes
+  shell: >-
+    dpkg --force-confnew -i
+    {{ logstash_pkg_dir }}/{{ logstash_pkg_result.stdout }}
+  when: >-
+    hlm_notify_logstash_install is defined and
+    hlm_notify_logstash_install.changed or
+    logstash_ver_result.stdout != logstash_new_ver_result.stdout
+  register: hlm_notify_logstash_restart
+
+# Installing Kibana
+#------------------------------------------------------------------------------
+- name: logging-server | install | Install Kibana venv package
+  become: yes
+  install_package:
+    name: kibana_450
+    service: kibana_450
+    state: present
+    activate: act_off
+  register: hlm_notify_kibana_install
+
+- name: logging-server | install | Set Kibana venv varibles
+  become: yes
+  set_fact:
+    kibana_install: true
+    kibana_pkg_dir: "{{ hlm_notify_kibana_install.name|\
+      jar_dir(hlm_notify_kibana_install.version) }}"
+  when: >-
+    not hlm_notify_kibana_install is not defined and
+    hlm_notify_kibana_install.changed
+
+- name: logging-server | install | Register new Kibana version
+  become: yes
+  shell: >-
+    basename `ls -1 {{ kibana_pkg_dir }}/*.deb` |
+    sed "s/.*\([0-9]\.[0-9]\.[0-9]\).*/\1/"
+  register: kibana_new_ver_result
+  when: kibana_install is defined
+
+- name: logging-server | install | Register Kibana current version
+  become: yes
+  shell: dpkg -l | grep " kibana " | sed "s/.*\([0-9]\.[0-9]\.[0-9]\).*/\1/"
+  register: kibana_ver_result
+  when: kibana_install is defined
+
+- name: logging-server | install | Register new Kibana pkg path
+  become: yes
+  shell: basename `ls -1 {{ kibana_pkg_dir }}/*.deb`
+  register: kibana_pkg_result
+  when: kibana_install is defined
+
+- name: logging-server | install | Install Kibana pkg
+  become: yes
+  shell: >-
+    dpkg --force-confnew -i {{ kibana_pkg_dir }}/{{ kibana_pkg_result.stdout }}
+  when: >-
+    hlm_notify_kibana_install is defined and
+    hlm_notify_kibana_install.changed or
+    kibana_ver_result.stdout != kibana_new_ver_result.stdout
+  register: hlm_notify_kibana_restart
+
+- name: logging-server | install | Create /var/log/kibana directory
+  become: yes
+  file:
+    path: "{{ kibana_log_path }}"
+    state: directory
+    owner: kibana
+    group: kibana
+    mode: 0750
+
+# Install systemd service units
+#------------------------------------------------------------------------------
+- name: logging-server | install | Install Kibana systemd unit file
+  become: yes
+  template:
+    src: "kibana.service.j2"
+    dest: "/etc/systemd/system/kibana.service"
+    mode: 0644
+  register: hlm_notify_kibana_restart
+
+- name: logging-server | install | Install Logstash systemd unit file
+  become: yes
+  template:
+    src: "logstash.service.j2"
+    dest: "/etc/systemd/system/logstash.service"
+    mode: 0644
+  register: hlm_notify_logstash_restart
+
+- name: logging-server | install | Install Elasticsearch systemd unit file
+  become: yes
+  template:
+    src: "elasticsearch.service.j2"
+    dest: "/etc/systemd/system/elasticsearch.service"
+    mode: 0644
+
+# Reload systemd and enable services
+#------------------------------------------------------------------------------
+- name: logging-server | install | Reload systemd to pick up new services
+  become: yes
+  command: systemctl daemon-reload
+  when: >-
+    hlm_notify_elasticsearch_install is defined and
+    hlm_notify_elasticserach_install.changed or
+    hlm_notify_logstash_install is defined and
+    hlm_notify_logstash_install.changed or
+    hlm_notify_kibana_install is defined and
+    hlm_notify_kibana_install.changed
+
+- name: logging-server | install | Check elasticsearch service enabled
+  become: yes
+  stat:
+    path: "/etc/systemd/system/multi-user.target.wants/elasticsearch.service"
+  register: es_enabled_result
+
+- name: logging-server | install | Configure Elasticsearch to start on boot
+  become: yes
+  service:
+    name: elasticsearch
+    enabled: yes
+  when: not es_enabled_result.stat.exists
+  register: hlm_notify_elasticsearch_restart
+
+- name: logging-server | install | Check Logstash service enabled
+  become: yes
+  stat:
+    path: "/etc/systemd/system/multi-user.target.wants/logstash.service"
+  register: ls_enabled_result
+
+- name: logging-server | install | Configure Logstash to start on boot
+  become: yes
+  service:
+    name: logstash
+    enabled: yes
+  when: not ls_enabled_result.stat.exists
+  register: hlm_notify_logstash_restart
+
+- name: logging-server | install | Check Kibana service enabled
+  become: yes
+  stat:
+    path: "/etc/systemd/system/multi-user.target.wants/kibana.service"
+  register: ks_enabled_result
+
+- name: logging-server | install | Configure Kibana to start on boot
+  become: yes
+  service:
+    name: kibana
+    enabled: yes
+  when: not ks_enabled_result.stat.exists

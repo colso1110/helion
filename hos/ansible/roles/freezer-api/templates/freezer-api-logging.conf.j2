@@ -1,0 +1,79 @@
+[loggers]
+{% if freezer_api_audit_enabled | bool %}
+keys: root, iso8601, audit
+{% else %}
+keys: root, iso8601
+{% endif %}
+
+[handlers]
+{% if freezer_api_audit_enabled | bool %}
+keys: watchedfile, logstash, auditfile
+{% else %}
+keys: watchedfile, logstash
+{% endif %}
+
+[formatters]
+keys: context, logstash, minimal
+
+[logger_root]
+qualname: root
+handlers: watchedfile, logstash
+level: NOTSET
+
+[logger_iso8601]
+qualname: iso8601
+handlers: watchedfile, logstash
+level: INFO
+
+{% if freezer_api_audit_enabled | bool %}
+[logger_audit]
+qualname: oslo.messaging.notification.audit
+handlers: auditfile
+propagate: 0
+level: INFO
+{% endif %}
+
+
+# Writes to disk
+# Note: log rotation configuration is being handled by Centralized Logging
+# and is surfaced to customers on the deployer via ...configs/logging/vars/glance-clr.yml
+[handler_watchedfile]
+class: handlers.WatchedFileHandler
+args: ('{{ freezer_api_log_python }}',)
+formatter: context
+level: {{ freezer_api_loglevel }}
+
+# Writes JSON to disk, beaver will ship to logstash
+# Note: log rotation configuration is being handled by Centralized Logging
+# and is surfaced to customers on the deployer via ...configs/logging/vars/glance-clr.yml
+[handler_logstash]
+class: handlers.WatchedFileHandler
+args: ('{{ freezer_api_log_python_json }}',)
+formatter: logstash
+level: {{ freezer_api_logstash_loglevel }}
+
+{% if freezer_api_audit_enabled | bool %}
+[handler_auditfile]
+class: handlers.WatchedFileHandler
+args: ('{{ freezer_api_log_audit }}',)
+formatter = minimal
+level: INFO
+{% endif %}
+
+
+# datefmt must be set otherwise you end up with too many (msecs) fields
+[formatter_context]
+class: oslo_log.formatters.ContextFormatter
+args: (datefmt=datefmt)
+format: %(asctime)s.%(msecs)03d %(process)d %(levelname)s %(name)s [%(request_id)s %(user)s %(tenant)s] %(instance)s%(message)s
+datefmt: %Y-%m-%d %H:%M:%S
+
+# the "format" and "datefmt" actually set the "type" and "tags"
+[formatter_logstash]
+class: logstash.LogstashFormatterVersion1
+format: freezer
+datefmt: freezer-api
+
+[formatter_minimal]
+format=%(message)s
+

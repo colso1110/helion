@@ -1,0 +1,40 @@
+{#
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+Listen {{ kronos_api_host }}:{{ kronos_api_port }}
+
+<VirtualHost *:{{ kronos_api_port }}>
+    WSGIDaemonProcess log-api processes=4 threads=4 socket-timeout=300  user={{ kronos_user }} group={{ kronos_group }} python-path=/opt/stack/service/kronos/venv:/opt/stack/service/kronos/venv/bin/../lib/python2.7/site-packages/ display-name=monasca-log-api
+    WSGIProcessGroup log-api
+    WSGIApplicationGroup log-api
+    WSGIScriptAlias / {{ kronos_wsgi_dir }}/app.wsgi
+
+    ErrorLog /var/log/kronos/wsgi.log
+    LogLevel info
+    CustomLog /var/log/kronos/wsgi-access.log combined
+
+    <Directory /opt/stack/service/kronos/venv/bin/../lib/python2.7/site-packages/monasca_log_api>
+      Options Indexes FollowSymLinks MultiViews
+      Require all granted
+      AllowOverride None
+      Order allow,deny
+      allow from all
+      LimitRequestBody 102400
+    </Directory>
+
+    SetEnv no-gzip 1
+</VirtualHost>

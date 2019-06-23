@@ -1,0 +1,113 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Remove old Directory Detect Plugin files for 2.X to 3.0 upgrade only
+#------------------------------------------------------------------------------
+- name: logging-monitor | configure-SVR | Directory Detect plugin files removal
+  become: yes
+  file:
+    state: "absent"
+    path: "{{ item }}"
+  register: hlm_notify_monitor_directory_restart
+  with_items:
+    - /usr/lib/monasca/agent/custom_detect.d/DirectoryDetect.pyc
+    - /usr/lib/monasca/agent/custom_detect.d/DirectoryDetect.py
+    - /etc/monasca/agent/conf.d/directory.yaml
+
+# Configure Monasca detection plugins for SVR hosts
+#------------------------------------------------------------------------------
+- name: logging-monitor | configure-SVR | Create detection plugins directory
+  become: yes
+  file:
+    path: /usr/lib/monasca/agent/custom_detect.d
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: logging-monitor | configure-SVR | Beaver detection plugin file copy
+  become: yes
+  copy:
+    src: BeaverDetect.py
+    dest: /usr/lib/monasca/agent/custom_detect.d/
+    owner: root
+    group: root
+    mode: 0644
+  register: hlm_notify_monitor_beaver_restart
+
+- name: >-
+    logging-monitor | configure-SVR | Elasticsearch detection plugin file copy
+  become: yes
+  template:
+    src: ElasticDetect.py.j2
+    dest: /usr/lib/monasca/agent/custom_detect.d/ElasticDetect.py
+    owner: root
+    group: root
+    mode: 0644
+  register: hlm_notify_monitor_elasticsearch_restart
+
+- name: logging-monitor | configure-SVR | Directory detection plugin file copy
+  become: yes
+  template:
+    src: DirectoryDetectLogging.py.j2
+    dest: /usr/lib/monasca/agent/custom_detect.d/DirectoryDetectLogging.py
+    owner: root
+    group: root
+    mode: 0644
+  register: hlm_notify_monitor_directory_restart
+
+- name: logging-monitor | configure-SVR | Kibana detection plugin file copy
+  become: yes
+  copy:
+    src: KibanaDetect.py
+    dest: /usr/lib/monasca/agent/custom_detect.d/
+    owner: root
+    group: root
+    mode: 0644
+  register: hlm_notify_monitor_kibana_restart
+
+- name: logging-monitor | configure-SVR | Kronos API detection plugin file copy
+  become: yes
+  copy:
+    src: KronosAPIDetect.py
+    dest: /usr/lib/monasca/agent/custom_detect.d/
+    owner: root
+    group: root
+    mode: 0644
+  register: hlm_notify_monitor_kronos_api_restart
+
+- name: logging-monitor | configure-SVR | Logstash detection plugin file copy
+  become: yes
+  copy:
+    src: LogstashDetect.py
+    dest: /usr/lib/monasca/agent/custom_detect.d/
+    owner: root
+    group: root
+    mode: 0644
+  register: hlm_notify_monitor_logstash_restart
+
+# NOTE - this is currently a work in progress to monitor the size of
+# individual log files.
+#
+#- name: logging-monitor | configure-SVR | File Size plugin file copy
+#  become: yes
+#  template:
+#    src: FileSize.py.j2
+#    dest: /usr/lib/monasca/agent/custom_detect.d/FileSize.py
+#    owner: root
+#    group: root
+#    mode: 0644
+#  register: hlm_notify_monitor_filesize_restart

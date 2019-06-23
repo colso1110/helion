@@ -1,0 +1,118 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: Create dbadmin group
+  group: name="{{ vertica_dbadmin_group }}" state=present
+  when: rebuild_user
+
+- name: Create dbadmin user
+  user: name="{{ vertica_dbadmin_user }}" home="{{ vertica_dbadmin_home }}" group="{{ vertica_dbadmin_group }}" shell=/bin/bash
+  when: rebuild_user
+
+- name: Create ssh directory in vertica home directory
+  file: path="{{ vertica_dbadmin_home }}"/.ssh owner="{{ vertica_dbadmin_user }}" group="{{ vertica_dbadmin_group }}" mode=0700 state=directory
+  when: rebuild_user
+
+- name: Create config for ssh
+  copy: dest={{ vertica_dbadmin_home }}/.ssh/config owner="{{ vertica_dbadmin_user }}" group="{{ vertica_dbadmin_group }}" mode=0600 content="StrictHostKeyChecking no"
+  when: rebuild_user
+
+# Try reading ssh keys from the first host as it will the use the same keys throughout the cluster
+- name: Set ssh variables from the first host
+  set_fact: vertica_ssh_private_key="{{ hostvars[vertica_group[0]].vertica_ssh_private_key }}"  vertica_ssh_public_key="{{ hostvars[vertica_group[0]].vertica_ssh_public_key }}"
+  when: vertica_group is defined and  hostvars[vertica_group[0]].vertica_ssh_private_key is defined and rebuild_user
+
+# Try reading ssh keys from second host in case the first host is the rebuild node
+- name: Set ssh variables from the second host
+  set_fact: vertica_ssh_private_key="{{ hostvars[vertica_group[1]].vertica_ssh_private_key }}"  vertica_ssh_public_key="{{ hostvars[vertica_group[1]].vertica_ssh_public_key }}"
+  when: vertica_group is defined and  hostvars[vertica_group[1]].vertica_ssh_private_key is defined and rebuild_user
+
+# Try reading ssh keys from third host in case of rebuilding all nodes
+- name: Set ssh variables from the third host
+  set_fact: vertica_ssh_private_key="{{ hostvars[vertica_group[2]].vertica_ssh_private_key }}"  vertica_ssh_public_key="{{ hostvars[vertica_group[2]].vertica_ssh_public_key }}"
+  when: vertica_group is defined and  hostvars[vertica_group[2]].vertica_ssh_private_key is defined and rebuild_user
+
+- name: Create id_rsa
+  copy: dest={{ vertica_dbadmin_home }}/.ssh/id_rsa owner="{{ vertica_dbadmin_user }}" group="{{ vertica_dbadmin_group }}" mode=0600 content="{{ vertica_ssh_private_key }}"
+  when: rebuild_user and vertica_ssh_private_key is defined
+
+- name: Create id_rsa.pub
+  copy: dest={{ vertica_dbadmin_home }}/.ssh/id_rsa.pub owner="{{ vertica_dbadmin_user }}" group="{{ vertica_dbadmin_group }}" mode=0600 content="{{ vertica_ssh_public_key }}"
+  when: rebuild_user and vertica_ssh_private_key is defined
+
+- name: Add public key to authorized keys
+  authorized_key: user="{{ vertica_dbadmin_user }}" key="{{ vertica_ssh_public_key }}"
+  when: rebuild_user and vertica_ssh_private_key is defined
+
+- name: Create vertica_config_dir, share, and log directories
+  file: path={{item}} owner="{{ vertica_dbadmin_user }}" group="{{ vertica_dbadmin_group }}" mode=0775 state=directory
+  with_items:
+    - "{{ vertica_config_dir }}"
+    - /opt/vertica/config/share
+    - /opt/vertica/log
+  when: rebuild_vertica
+
+# Try reading the agent ssh keys from the first host as it will the use the same keys throughout the cluster
+- name: Set agent keys from the first host
+  set_fact: vertica_agent_key="{{ hostvars[vertica_group[0]].vertica_agent_key }}"  vertica_agent_cert="{{ hostvars[vertica_group[0]].vertica_agent_cert }}" vertica_agent_pem="{{ hostvars[vertica_group[0]].vertica_agent_pem }}"
+  when: vertica_group is defined and  hostvars[vertica_group[0]].vertica_agent_key is defined and rebuild_vertica
+
+# Try reading the agent ssh keys from the second host in case the first host is the rebuild node
+- name: Set agent keys from the second host
+  set_fact: vertica_agent_key="{{ hostvars[vertica_group[1]].vertica_agent_key }}"  vertica_agent_cert="{{ hostvars[vertica_group[1]].vertica_agent_cert }}" vertica_agent_pem="{{ hostvars[vertica_group[1]].vertica_agent_pem }}"
+  when: vertica_group is defined and  hostvars[vertica_group[1]].vertica_agent_key is defined and rebuild_vertica
+
+# Try reading the agent ssh keys from the third host in case of rebuilding two nodes
+- name: Set agent keys from the third host
+  set_fact: vertica_agent_key="{{ hostvars[vertica_group[2]].vertica_agent_key }}"  vertica_agent_cert="{{ hostvars[vertica_group[2]].vertica_agent_cert }}" vertica_agent_pem="{{ hostvars[vertica_group[2]].vertica_agent_pem }}"
+  when: vertica_group is defined and  hostvars[vertica_group[2]].vertica_agent_key is defined and rebuild_vertica
+
+- name: Create agent key
+  copy: dest={{ vertica_config_dir }}/share/agent.key owner="{{ vertica_dbadmin_user }}" group="{{ vertica_dbadmin_group }}" mode=0400 content="{{ vertica_agent_key }}"
+  when: rebuild_vertica and vertica_agent_key is defined
+
+- name: Create agent cert
+  copy: dest={{ vertica_config_dir }}/share/agent.cert owner="{{ vertica_dbadmin_user }}" group="{{ vertica_dbadmin_group }}" mode=0400 content="{{ vertica_agent_cert }}"
+  when: rebuild_vertica and vertica_agent_cert is defined
+
+- name: Create agent pem
+  copy: dest={{ vertica_config_dir }}/share/agent.pem owner="{{ vertica_dbadmin_user }}" group="{{ vertica_dbadmin_group }}" mode=0400 content="{{ vertica_agent_pem }}"
+  when: rebuild_vertica and vertica_agent_pem is defined
+
+# Try reading the admintools_conf from the first host
+- name: Set admintools_conf from first host
+  set_fact: admintools_conf="{{ hostvars[vertica_group[0]].admintools_conf }}"
+  when: vertica_group is defined and hostvars[vertica_group[0]].admintools_conf is defined and rebuild_vertica
+
+# Try reading admintools_conf from the second host in case the first host is the rebuild node
+- name: Set admintools_conf from the second host
+  set_fact: admintools_conf="{{ hostvars[vertica_group[1]].admintools_conf }}"
+  when: vertica_group is defined and  hostvars[vertica_group[1]].admintools_conf is defined and rebuild_vertica
+
+# Try reading admintools_conf from the third host in case rebuilding two nodes
+- name: Set admintools_conf from the third host
+  set_fact: admintools_conf="{{ hostvars[vertica_group[2]].admintools_conf }}"
+  when: vertica_group is defined and  hostvars[vertica_group[2]].admintools_conf is defined and rebuild_vertica
+
+- name: Create admintools.conf file
+  copy: dest={{ vertica_config_dir }}/admintools.conf owner="{{ vertica_dbadmin_user }}" group="{{ vertica_dbadmin_group }}" mode=0660 content="{{ admintools_conf }}"
+  when: rebuild_vertica and admintools_conf is defined
+
+- name: Remove the known_hosts from each node as a new node is joining the cluster
+  file: path=/home/dbadmin/.ssh/known_hosts state=absent
+  delegate_to: "{{ item }}"
+  with_items: "{{ groups['FND-VDB']}}"
+  when: rebuild_user or rebuild_vertica

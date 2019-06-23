@@ -1,0 +1,56 @@
+#
+# (c) Copyright 2015 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: "designate-common | _write_conf_delegated | Check for pre-existing version of {{ dest }}"
+  stat: path="{{ designate_service_conf_dir }}/{{ dest }}"
+  register: conf_stat_result
+  delegate_to: "{{ item }}"
+  with_items: "{{ delegate }}"
+
+- name: "designate-common | _write_conf_delegated | get timestamp"
+  command: date +%Y%m%d%H%M%S
+  register: time_result
+
+- name: "designate-common | _write_conf_delegated | Create a backup version of the existing {{ dest }} file"
+  command: cp {{ designate_service_conf_dir }}/{{ dest }} {{ designate_service_conf_dir }}/{{ dest }}.{{ time_result.stdout }}
+  when: item.stat.exists
+  delegate_to: "{{ item.item }}"
+  with_items: "{{ conf_stat_result.results }}"
+
+- name: "designate-common | _write_conf_delegated | Template {{ dest }}"
+  template:
+    src: "{{ src }}"
+    dest: "{{ designate_service_conf_dir }}/{{ dest }}"
+    owner: "{{ designate_system_user }}"
+    group: "{{ designate_system_group }}"
+    mode: 0600
+  register: write_conf_result
+  delegate_to: "{{ item }}"
+  with_items: "{{ delegate }}"
+
+- name: "designate-common | _write_conf_delegated | Delete backup file that has not changed."
+  file:
+    path: "{{ designate_service_conf_dir }}/{{ dest }}.{{ time_result.stdout }}"
+    state: absent
+  when: item.changed==false
+  delegate_to: "{{ item.item }}"
+  with_items: "{{ write_conf_result.results }}"
+
+- name: "designate-common | _write_conf_delegated | remove all but last 10 backups of {{ dest }}"
+  shell: ls -td {{ designate_service_conf_dir }}/{{ dest }}.* |awk 'NR>10' |xargs rm -f
+  when: item.stat.exists
+  delegate_to: "{{ item.item }}"
+  with_items: "{{ conf_stat_result.results }}"

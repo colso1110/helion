@@ -1,0 +1,127 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# common install tasks associated with the install of nova services
+---
+
+- name: nova-common | install | debug msg for nova_component
+  debug:
+    msg: "Running nova-common install for {{ nova_component }}"
+  when: nova_component is defined
+  run_once: true
+
+# accounts & group
+- name: nova-common | install | Add group '{{ nova_system_group }}'
+  become: yes
+  group:
+    name: "{{ nova_system_group }}"
+
+- name: nova-common | install |
+    Add nova system user account '{{ nova_system_user }}'
+  become: yes
+  user:
+    name: "{{ nova_system_user }}"
+    group: "{{ nova_system_group }}"
+    createhome: "{{ nova_system_createhome }}"
+    home: "{{ nova_system_home_folder }}"
+    shell: "{{ nova_system_shell }}"
+    system: True
+
+# directories
+- name: nova-common | install | Create directories
+  become: yes
+  file:
+    path: "{{ item.file }}"
+    owner: "{{ nova_system_user }}"
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode | default('a-rwx,u+rwx,g+rx,o+rx') }}"
+    state: directory
+  with_items:
+    - file: "{{ nova_lock_file_location }}"
+    - file: "{{ nova_keys_file_location }}"
+    - file: "{{ nova_log_file_location }}"
+      group: "{{ nova_system_group }}"
+      mode: "0755"
+
+# consoleauth uses a fact on deployer to store where service is running
+- name: nova-common | install | create /etc/ansible/facts.d/ on localhost
+  become: yes
+  delegate_to: localhost
+  run_once: true
+  file:
+    path: "{{ nova_facts_dir }}"
+    state: directory
+    mode: 0755
+
+# Make sure we do not create a path to a symlink that does not exist yet
+- name: nova-common | install | Check '{{ nova_service_etc_dir }}' dir exists
+  become: yes
+  stat:
+    path: "{{ nova_service_etc_dir }}"
+  register: nova_service_etc_dir_result
+
+- name: nova-common | install |
+    Fail when '{{ nova_service_etc_dir }}' does not exist
+  fail:
+    msg: "{{ nova_service_etc_dir }} does not exist."
+  when: not nova_service_etc_dir_result.stat.exists or
+        not nova_service_etc_dir_result.stat.isdir
+
+- name: nova-common | install | Create directory '{{ nova_service_conf_dir }}'
+  become: yes
+  file:
+    path: "{{ nova_service_conf_dir }}"
+    owner: "{{ nova_system_user }}"
+    group: "{{ nova_system_group }}"
+    mode: 0755
+    state: directory
+
+- name: nova-common | install | Install required packages in Debian derivatives
+  become: yes
+  apt:
+    name: "{{ item }}"
+    install_recommends: no
+    state: latest
+  with_items:
+    nova_required_packages | default([])
+  when: ansible_os_family == 'Debian'
+
+- name: nova-common | install | Install required packages in RedHat derivatives
+  become: yes
+  yum:
+    name: "{{ item }}"
+    state: latest
+  with_items:
+    nova_required_packages | default([])
+  when: ansible_os_family == 'RedHat'
+
+- name: nova-common | install | Add kernel modules
+  become: yes
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    nova_kernel_modules | default([])
+
+- name: nova-common | install | Set kernel modules to load on reboot
+  become: yes
+  template:
+    src: modules_load.conf.j2
+    dest: "/etc/modules-load.d/{{ nova_kernel_module_file }}.conf"
+    owner: root
+    group: root
+    mode: '0640'
+  with_items:
+    nova_kernel_modules | default([])

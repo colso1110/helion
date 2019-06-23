@@ -1,0 +1,40 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- hosts: localhost
+  roles:
+    - osconfig
+  tasks:
+    - include: roles/osconfig/tasks/setup-resolv-conf.yml
+    - include: roles/osconfig/tasks/copy-hlm-version-file.yml
+  tags: fcoe_enable
+
+- hosts: "{{ osconfig_resources | default('resources') }}"
+  roles:
+    - ssh
+    - osconfig
+    - cobbler
+    - deployer-setup
+    - thirdparty-repo
+  tasks:
+    - include: roles/osconfig/tasks/check-for-apt-repo.yml
+    - include: roles/osconfig/tasks/check-for-yum-repo.yml
+    - include: roles/cobbler/tasks/set-vars.yml
+    - include: roles/osconfig/tasks/setup-apt.yml
+      when: ansible_os_family == 'Debian'
+    - include: roles/osconfig/tasks/setup-yum.yml
+      when: ansible_os_family == 'RedHat'
+  tags: fcoe_enable

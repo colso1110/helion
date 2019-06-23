@@ -1,0 +1,118 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: vertica | upgrade vertica version | get Vertica version
+  command: /opt/vertica/bin/vsql -U dbadmin -w '{{ vertica_dbadmin_password }}' -t -A -c "select version();"
+  sudo_user: dbadmin
+  environment: "{{vertica_env}}"
+  register: current_vertica_version
+  no_log: True
+
+- name: vertica | upgrade vertica version | set update version boolean
+  set_fact: update_vertica="{{ vertica_version != ( current_vertica_version.stdout.split(' v') | last ) }}"
+
+- name: vertica | upgrade vertica version | get avaiable vertica versions if trying to upgrade
+  command: apt-cache policy vertica
+  register: apt_result
+  when: update_vertica
+
+- name: vertica | upgrade vertica version | stop vertica upgrade if version is not avaiable
+  set_fact: update_vertica = False
+  when: update_vertica and apt_result.stdout.find('{{ vertica_version }}') == -1
+
+- name: vertica | upgrade vertica version | stop monasca-persister service
+  service: name=monasca-persister state=stopped
+  when: update_vertica
+
+- name: vertica | upgrade vertica version | stop monasca-api service
+  service: name=monasca-api state=stopped
+  when: update_vertica
+
+- name: vertica | upgrade vertica version | pause to allow monasca-api and monasca-persister to fully stop
+  pause: seconds=20
+  when: update_vertica
+
+- name: vertica | upgrade vertica version | check vertica service status
+  command: /opt/vertica/bin/admintools -t view_cluster -d {{ vertica_database_name }}
+  sudo_user: dbadmin
+  register: running_result
+  run_once_per: verb_hosts.FND_VDB
+  ignore_errors: yes
+  when: update_vertica
+
+- name: vertica | upgrade vertica version | close any leftover client connections (when up)
+  command: /opt/vertica/bin/vsql -U dbadmin -w '{{ vertica_dbadmin_password }}' -c "SELECT CLOSE_ALL_SESSIONS();"
+  sudo_user: dbadmin
+  environment: "{{vertica_env}}"
+  run_once_per: verb_hosts.FND_VDB
+  no_log: True
+  when: update_vertica and running_result.stdout.find("UP") != -1
+
+- name: vertica | upgrade vertica version | stop vertica service (when up)
+  command: /opt/vertica/bin/admintools -t stop_db -d {{ vertica_database_name }} -p "{{ vertica_dbadmin_password }}"
+  sudo_user: dbadmin
+  register: vertica_handler_result
+  run_once_per: verb_hosts.FND_VDB
+  until: vertica_handler_result | success
+  retries: 12
+  delay: 15
+  when: update_vertica and running_result.stdout.find("UP") != -1
+  no_log: True
+
+- name: vertica | upgrade vertica version | pause to allow vertica to fully stop
+  pause: seconds=10
+  when: update_vertica and running_result.stdout.find("UP") != -1
+
+- name: vertica | upgrade vertica version | install new Vertica version from apt repo
+  apt: name="vertica"={{ vertica_version }}
+  sudo: true
+
+- name: vertica | upgrade vertica version | update to new EULA from vertica 7.1.1
+  copy: src=vertica_7_2_eula.dat dest={{ vertica_config_dir }}/d5415f948449e9d4c421b568f2411140.dat owner="{{ vertica_dbadmin_user }}" group="{{ vertica_dbadmin_group }}" mode=0755
+  when: update_vertica and ( current_vertica_version.stdout.split(' v') | last ) == '7.1.1-0'
+
+- name: vertica | upgrade vertica version | change ownership of vertica logrotate directory when current version is 7.1.1
+  file: path=/opt/vertica/config/logrotate state=directory owner="{{ vertica_dbadmin_user }}" group="{{ vertica_dbadmin_group }}" mode=0775
+  when: update_vertica and ( current_vertica_version.stdout.split(' v') | last ) == '7.1.1-0'
+
+- name: vertica | upgrade vertica version | start vertica service
+  command: /opt/vertica/bin/admintools -t start_db -d {{ vertica_database_name }} -p "{{ vertica_dbadmin_password }}"
+  sudo_user: dbadmin
+  register: status_start
+  failed_when: status_start | failed
+  run_once_per: verb_hosts.FND_VDB
+  no_log: True
+  when: update_vertica
+
+- name: vertica | upgrade vertica version | wait for vertica service port
+  wait_for: port={{ vertica_client_port }} host='127.0.0.1' state=started timeout={{ monasca_wait_for_period }}
+  when: update_vertica
+
+- name: vertica | upgrade vertica version | change schema to take away non-unique primary key
+  command: /opt/vertica/bin/vsql -U dbadmin -w '{{ vertica_dbadmin_password }}' -c "alter table MonMetrics.Measurements drop constraint C_PRIMARY;"
+  sudo_user: dbadmin
+  environment: "{{ vertica_env }}"
+  run_once_per: verb_hosts.FND_VDB
+  no_log: True
+  when: update_vertica and ( current_vertica_version.stdout.split(' v') | last ) == '7.1.1-0'
+
+- name: vertica | upgrade vertica version | start monasca-api service
+  service: name=monasca-api state=started enabled=yes
+  when: update_vertica
+
+- name: vertica | upgrade vertica version | start monasca-persister service
+  service: name=monasca-persister state=started enabled=yes
+  when: update_vertica

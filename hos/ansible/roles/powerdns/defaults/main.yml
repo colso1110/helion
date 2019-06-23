@@ -1,0 +1,41 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# This file will contain the default values for the designate-central service
+---
+designate_component: powerdns
+
+# packages listed here will trigger a restart of the service when updated
+designate_powerdns_restart_packages:
+  - pdns-server
+  - pdns-backend-mysql
+
+designate_powerdns_conf_dir: /etc/powerdns
+designate_powerdns_system_user: pdns
+designate_powerdns_system_group: pdns
+
+# pdns.conf
+## database config
+designate_powerdns_gmysql_dbname: "{{ FND_PDN.consumes_FND_MDB.vars.databases.powerdns.dbname }}"
+designate_powerdns_gmysql_host: "{{ FND_PDN.consumes_FND_MDB.vips.private[0].host }}"
+designate_powerdns_gmysql_user: "{{ FND_PDN.consumes_FND_MDB.vars.accounts.powerdns.username }}"
+designate_powerdns_gmysql_password: "{{ FND_PDN.consumes_FND_MDB.vars.accounts.powerdns.password }}"
+
+##  bind address and port
+designate_powerdns_local_address: "{{ host.bind.FND_PDN.internal.ip_address }}{% if host.bind.FND_PDN.internal.ip_address != host.bind.FND_PDN_EXT.public.ip_address %},{{ host.bind.FND_PDN_EXT.public.ip_address }}{% endif %}"
+designate_powerdns_local_port: "{{ host.bind.FND_PDN.internal.port }}"
+
+# Find me a home
+designate_powerdns_pool_target_id: 00000000-0000-0001-0002-000000000001

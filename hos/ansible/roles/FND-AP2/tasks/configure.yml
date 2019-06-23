@@ -1,0 +1,172 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Configure the apache service
+---
+- name: FND-AP2 | configure | Disable default port listeners
+  become: yes
+  replace:
+    dest: /etc/apache2/ports.conf
+    regexp: '^((?!#).)*(Listen[ ]+.*)' # noqa
+    replace: '# \2'
+  register: hlm_notify_apache2_restart_required
+
+- name: FND-AP2 | configure | Disable the default sites
+  become: yes
+  command: a2dissite {{ item }}
+  with_items:
+    - 000-default
+    - default-ssl
+  register: disable_result
+
+# Check to see if apache2 needs to be restarted.
+# Should only restart when disable site is a success above
+# and if already disabled doesn't show in stdout.
+- name: FND-AP2 | configure | Check if restart is needed
+  become: yes
+  debug:
+    msg: "Checking disable_result to see if an apache restart is needed"
+  when: (item | success) and
+        ('already disabled' not in item.stdout)
+  with_items: disable_result.results
+  register: hlm_notify_apache2_restart_required
+
+# needed because there was a bug in configure where a conf was being
+# copied directly into sites-enabled. can remove this section in future
+# version
+- name: FND-AP2 | configure | stat deployer_venv_server.conf
+  stat:
+    path: /etc/apache2/sites-available/deployer_venv_server.conf
+  register: _deployer_venv_conf_correct_result
+
+- name: FND-AP2 | configure | stat deployer_venv_server.conf
+  stat:
+    path: /etc/apache2/sites-enabled/deployer_venv_server.conf
+  register: _deployer_venv_conf_result
+
+- name: FND-AP2 | configure | delete deployer_venv_server.conf
+  become: yes
+  file:
+    path: /etc/apache2/sites-enabled/deployer_venv_server.conf
+    state: absent
+  when: _deployer_venv_conf_result.stat.exists and
+        not _deployer_venv_conf_correct_result.stat.exists and
+        FND_AP2_sites_enabled is defined
+##########
+
+- name: FND-AP2 | configure | Set maxrequestworkers
+  become: yes
+  lineinfile:
+    line: "	MaxRequestWorkers {{ max_request_workers }}"
+    regexp: "MaxRequestWorkers"
+    dest: "/etc/apache2/mods-available/mpm_worker.conf"
+    state: present
+  register: hlm_notify_apache2_reload_required
+
+- name: FND-AP2 | configure | Add any sites to be enabled
+  become: yes
+  template:
+    dest: /etc/apache2/sites-available/{{ item.key }}
+    src: sites-enabled.conf.j2
+    mode: 0644
+  with_dict: FND_AP2_sites_enabled | default({})
+  register: hlm_notify_apache2_restart_required
+
+- name: FND-AP2 | configure | enable sites
+  become: yes
+  command: a2ensite "{{ item.key }}"
+  register: hlm_notify_apache2_restart_required
+  changed_when: (hlm_notify_apache2_restart_required | success) and
+                ('already enabled' not in
+                    hlm_notify_apache2_restart_required.stdout)
+  with_dict: FND_AP2_sites_enabled | default({})
+
+# This matches the keystone status play, that we use to check that
+# keystone comes up.
+- name: FND-AP2 | configure | Increase timeout
+  become: yes
+  lineinfile:
+    line: "Timeout {{ apache2_timeout }}"
+    regexp: "^Timeout [0-9]+"
+    dest: /etc/apache2/apache2.conf
+    state: present
+  register: hlm_notify_apache2_reload_required
+
+- name: FND-AP2 | configure | Set loglevel
+  become: yes
+  lineinfile:
+    line: "LogLevel {{ apache2_loglevel }}"
+    regexp: "^LogLevel"
+    dest: /etc/apache2/apache2.conf
+    state: present
+  register: hlm_notify_apache2_reload_required
+
+# These lines are a workaround for apache problem
+# identified in KEYSTONE-297
+
+- name:  FND-AP2 | configure | Disable mpm_event
+  become: yes
+  apache2_module:
+    name: mpm_event
+    state: absent
+  register: hlm_notify_apache2_restart_required
+
+- name:  FND-AP2 | configure | Enable mpm_worker
+  become: yes
+  apache2_module:
+    name: mpm_worker
+    state: present
+  register: hlm_notify_apache2_restart_required
+
+- name: FND-AP2 | configure | Install modwsgi dependencies
+  become: yes
+  apt:
+    state: latest
+    name: "{{ item }}"
+  with_items:
+    - libapache2-mod-wsgi
+    - libapache2-mod-shib2
+
+# We always use wsgi
+- name:  FND-AP2 | configure | Enable wsgi module in apache
+  become: yes
+  apache2_module:
+    state: present
+    name: wsgi
+  register: hlm_notify_apache2_restart_required
+
+# Keystone requires shib2 module
+- name:  FND-AP2 | configure | Enable shib module in apache
+  become: yes
+  apache2_module:
+    state: present
+    name: shib2
+  register: hlm_notify_apache2_restart_required
+
+# Include mod_proxy for proxying Apache Kibana requests to nodeJS server
+- name:  FND-AP2 | configure | Enable proxy module in apache
+  become: yes
+  apache2_module:
+    state: present
+    name: proxy
+  register: hlm_notify_apache2_restart_required
+
+# Include proxy_http proxying Apache Kibana requests to nodeJS server
+- name:  FND-AP2 | configure | Enable proxy_http module in apache
+  become: yes
+  apache2_module:
+    state: present
+    name: proxy_http
+  register: hlm_notify_apache2_restart_required

@@ -1,0 +1,44 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Purge old major packages if they are there
+
+- name: FND-MDB | remove_packages | Remove Percona packages
+  become: yes
+  apt:
+    name:  "{{ item }}"
+    install_recommends: no
+    state: absent
+    purge: yes
+    force: yes
+  with_items:
+    - percona-xtradb-cluster-server-{{ percona_latest_installed_version }}
+    - percona-xtradb-cluster-client-{{ percona_latest_installed_version }}
+  register: packages_removed_result
+
+# Autoremove dependent packages (Not yet supported by the apt module)
+#  https://github.com/ansible/ansible-modules-core/issues/1976
+- name: FND-MDB | remove_packages | Remove Dependent Percona packages
+  become: yes
+  shell: >
+    /usr/bin/apt-get --yes autoremove
+    percona-xtradb-cluster-server-{{ percona_latest_installed_version }}
+    percona-xtradb-cluster-client-{{ percona_latest_installed_version }}
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  register: dependent_packages_removed_result
+  tags:
+    - skip_ansible_lint

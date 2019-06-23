@@ -1,0 +1,48 @@
+#!/bin/bash
+
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+function decrease_retention() {
+    /opt/kafka/bin/kafka-topics.sh --zookeeper {{ zookeeper_hosts }} --alter \
+        --topic $1 --config retention.ms={{ kafka_low_disk_retention }}
+}
+
+function reset_retention() {
+    /opt/kafka/bin/kafka-topics.sh --zookeeper {{ zookeeper_hosts }} --alter \
+        --topic $1 --deleteConfig retention.ms
+}
+
+kafka_dir={{ kafka_data_dir }}
+
+if [ ! -d "$kafka_dir" ]; then
+    echo "No /var/kafka directory found.  Unable to do anything."
+    exit 0
+fi
+
+size=`df -kh $kafka_dir | tail -1 | awk '{print $5}' | awk -F% '{print $1}'`
+
+if [ "$size" -gt "85" ]; then
+    echo "$kafka_dir > 85% usage.  Reducing kafka retention."
+    decrease_retention metrics
+    decrease_retention logs
+fi
+
+if [ "$size" -lt "25" ]; then
+    echo "$kafka_dir < 25% usage.  Resetting retention to default."
+    reset_retention metrics
+    reset_retention logs
+fi

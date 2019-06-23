@@ -1,0 +1,57 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: CEP-RGW | status | Check systemd service is running for apache2
+  become: yes
+  command: systemctl status apache2
+  register: rgw_apache_systemctl_status_result
+  ignore_errors: yes
+
+- name: CEP-RGW | status | Report status of apache2
+  fail:
+    msg: |
+      apache2 is not running.
+      systemctl status apache2 output:
+      {{ rgw_apache_systemctl_status_result.stdout }}
+      {{ rgw_apache_systemctl_status_result.stderr }}
+  when: rgw_apache_systemctl_status_result | failed
+
+- name: CEP-RGW | status | Check systemd service is running for radosgw
+  become: yes
+  command: systemctl status radosgw
+  register: rgw_systemctl_status_result
+  ignore_errors: yes
+
+- name: CEP-RGW | status | Report status of radosgw
+  fail:
+    msg: |
+      radosgw is not running.
+      systemctl status radosgw output:
+      {{ rgw_systemctl_status_result.stdout }}
+      {{ rgw_systemctl_status_result.stderr }}
+  when: rgw_systemctl_status_result | failed
+
+- name: CEP-RGW | status | Register ceph pools list
+  become: yes
+  command: ceph --cluster {{ ceph_cluster }} osd lspools
+  register: ceph_rgw_pool_result
+  run_once_per: verb_hosts.CEP_RGW
+
+- name: CEP-RGW | status | Fail if rados gateway default pools are not created
+  fail: msg="rados gateway default pools are not created"
+  when: '".rgw" not in ceph_rgw_pool_result.stdout'
+  run_once_per: verb_hosts.CEP_RGW

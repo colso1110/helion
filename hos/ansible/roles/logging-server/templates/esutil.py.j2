@@ -1,0 +1,641 @@
+#!/usr/bin/env python
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+import re
+import sys
+import json
+import time
+import logging
+import argparse
+import subprocess
+from datetime import datetime
+from elasticsearch import Elasticsearch as eslib
+from elasticsearch.helpers import reindex as eslib_reindex
+
+# Jinja2 template arguments
+j2args = type('Args', (), dict(
+    host = '{{ elasticsearch_http_host }}',
+    port = '{{ elasticsearch_http_port }}',
+    logstash_audit_logs_prefix = '{{ logstash_audit_logs_prefix }}',
+    logstash_operational_logs_prefix = '{{ logstash_operational_logs_prefix }}',
+    logfile = "{{ var_kronos_dir }}/esutil.log"
+))
+
+out = type('Out', (), dict(width=80))
+
+def print_title(msg):
+    """Print out a title message
+    """
+    print("{:->{}}".format("", out.width))
+    print(msg)
+    print("{:->{}}".format("", out.width))
+
+class LogRedirect(object):
+    """Redirect stdout/stderr to log files
+    """
+    def __init__(self, logger, level=logging.INFO):
+        """Instantiate class
+        """
+        self._level = level
+        self._logger = logger
+
+    def write(self, msg):
+        """Write out the given message
+        :msg: message to write to log file
+        """
+        for line in msg.rstrip().splitlines():
+            self._logger.log(self._level, line.rstrip())
+
+class Elasticsearch(object):
+    def __init__(self, host, port, logstash_audit_logs_prefix, logstash_operational_logs_prefix, nop=False, timeout=600):
+        """Initialize the class
+        :host: elasticsearch host to connect to
+        :port: elasticsearch host port to connect to
+        :timeout: time in sec to wait for operations such as ready or healthy
+        """
+        self._es = None
+        self._nop = nop
+        self._host = host
+        self._port = port
+        self._logstash_audit_logs_prefix = logstash_audit_logs_prefix
+        self._logstash_operational_logs_prefix = logstash_operational_logs_prefix
+        self._timeout = timeout
+
+        self._missing = "MISSING"
+        self._mismatch = "MISMATCH"
+
+    def client(self):
+        """Connect to elasticsearch if not already connected
+        :returns: elasticseach client
+        """
+        if not self._es:
+            self._es = eslib(hosts=[{'host': self._host, 'port': self._port}])
+
+        return self._es
+
+    def _curl(self, url=None, verb="GET", payload=None):
+        """Wrap a curl call in a useful way
+        :url: url to make GET call to
+        :verb: verb to use for REST call
+        :payload: payload to send
+        :returns: tuple(json response, http_code)
+        """
+        http_code = 500
+        response = "Failed to connect to server"
+
+        cmd = "curl -s -w '%{http_code}' " + "-X{} {}:{}".format(verb, self._host, self._port)
+        if url: cmd += "/{}".format(url)
+        if payload: cmd += " -d {}".format(payload)
+
+        try:
+            output = subprocess.check_output(cmd, shell=True).strip()
+            http_code = int(output[-3:])
+            try:
+                response = json.loads(output[:-3])
+            except Exception:
+                response = output[:-3].strip()
+        except Exception:
+            pass
+
+        return response, http_code
+
+    def version(self):
+        """Get the Elasticsearch version even when in unhealthy state
+        :returns: Elasticsearch version
+        """
+        version = None
+
+        response, http_code = self._curl()
+        if 'version' in response and 'number' in response['version']:
+            version = response['version']['number']
+
+        return version
+
+    def prime_shutdown(self):
+        """Disable shard allocation and perform synced flush
+        This will save I/O and increase shard recovery time
+        https://www.elastic.co/guide/en/elasticsearch/reference/current/restart-upgrade.html
+        """
+        if self.ready(wait=False):
+
+            # Disable shard allocation
+            self.client().cluster.put_settings({"persistent":{"cluster.routing.allocation.enable":"none"}})
+
+            # Perform a synced Flush
+            self._curl("_flush/synced", verb="POST")
+
+    def prime_start(self):
+        """Enable shard allocation
+        https://www.elastic.co/guide/en/elasticsearch/reference/current/restart-upgrade.html
+        """
+        success = False
+        wait_time = 0
+        while not success:
+            try:
+                self.client().cluster.put_settings({"persistent":{"cluster.routing.allocation.enable":"all"}})
+                success = True
+            except Exception:
+                if wait_time < self._timeout:
+                    print("Warning: Elasticsearch shard allocation call timed out!")
+                    wait_time += 5
+                    time.sleep(5)
+                else:
+                    raise
+
+    def not_ready(self, wait=True):
+        """Wait for the Elasticsearch API to not respond
+        :wait: False then don't wait
+        :returns: True if API is not ready
+        """
+        ready = True
+        wait_time = 0
+
+        while ready:
+            response, http_code = self._curl("_nodes/_local/name")
+            if http_code != 200:
+                ready = False
+            elif wait_time < self._timeout and wait:
+                print("Warning: Elasticsearch API is still responding!")
+                wait_time += 5
+                time.sleep(5)
+            else:
+                break
+
+        return not ready
+
+    def ready(self, wait=True):
+        """Wait for the Elasticsearch API to be ready
+        :wait: False then don't wait
+        :returns: True if API ready
+        """
+        ready = False
+        wait_time = 0
+
+        while not ready:
+            response, http_code = self._curl("_nodes/_local/name")
+            if http_code == 200:
+                ready = True
+            elif wait_time < self._timeout and wait:
+                print("Warning: Elasticsearch API is not ready!")
+                wait_time += 5
+                time.sleep(5)
+            else:
+                break
+
+        return ready
+
+    def clustered(self, wait=True):
+        """Wait for Elasticsearch to be clustered
+        :wait: False then don't wait for clustering
+        :returns: True if the cluster is formed
+        """
+        clustered = False
+        wait_time = 0
+
+        while not clustered:
+            response, http_code = self._curl("_cluster/health")
+            if http_code == 200:
+                clustered = True
+                time.sleep(5) # Ensure actually done
+            elif wait_time < self._timeout and wait:
+                print("Warning: Elasticsearch is not clustered!")
+                wait_time += 5
+                time.sleep(5)
+            else:
+                break
+
+        return clustered
+
+    def healthy(self, wait=True):
+        """Wait for the Elasticsearch health to be yellow or better
+        https://www.elastic.co/guide/en/elasticsearch/reference/current/restart-upgrade.html
+        :wait: False then don't wait
+        :returns: True if health is green or yellow
+        """
+        healthy = False
+        wait_time = 0
+
+        while not healthy:
+            response, http_code = self._curl("_cat/health")
+            if 'green' in response or 'yellow' in response:
+                healthy = True
+            elif wait_time < self._timeout and wait:
+                print("Warning: Elasticsearch is not healthy!")
+                wait_time += 5
+                time.sleep(5)
+            else:
+                break
+
+        return healthy
+
+    def reindex(self):
+        """Re-index data based on type
+        This will create separate indices for each type to avoid mapping conflicts when upgrading
+        """
+        # Check that there is enough available space to peform the reindexing
+        #-----------------------------------------------------------------------
+        result = self.client().nodes.stats(node_id='_local', metric='fs')
+        available_bytes = result['nodes'].itervalues().next()['fs']['total']['available_in_bytes']
+
+        result = self.client().cat.indices(local=True, bytes='b', h='store.size')
+        max_index_bytes = max([int(x.strip()) for x in result.split('\n') if x])
+
+        print("Disk space - Available: {} MB, Largest index: {} MB".format(available_bytes/1024/1024, max_index_bytes/1024/1023))
+        if not self._nop and available_bytes < max_index_bytes:
+            raise Exception("Error: There is not enough disk space available to perform the reindexing!")
+
+        # Start reindexing the indices
+        #-----------------------------------------------------------------------
+        indent = 2
+        print("Re-indexing indices into isolated namespaces")
+        indices = self.client().indices.get_aliases().keys()
+        for index in [x for x in indices if any(re.findall(r'logstash-20.*', x))]:
+            if any(self.check_index(index)):
+                date = re.findall(r'logstash-(.*)', index)[0]
+
+                print("{: >{}}Re-indexing ['{}']".format("", indent, index))
+
+                # Get all services by 'type' and old mapping
+                mappings = self.client().indices.get_mapping(index)[index]['mappings']
+                types = self.client().indices.get_field_mapping('type', index)[index]['mappings']
+                for _type in sorted([x for x in types if not x.startswith('_')]):
+
+                    # Create new index based off of '_type' and set shards to 1
+                    new_index = "logstash-operational-{}-{}".format(_type, date)
+                    print("{: >{}}Creating new index ['{}']".format("", indent+2, new_index))
+                    if not self._nop:
+                        config = {"mappings": {'_default_': mappings['_default_'], _type: mappings[_type]}}
+                        config["settings"] = {"number_of_shards": 1, "number_of_replicas": 1}
+                        res = self.client().indices.create(index=new_index, body=config)
+
+                        # Now reindex the matching data from the old index into the new index
+                        query = {"query": {"match": {"type": _type}}}
+                        eslib_reindex(self.client(), index, new_index, query)
+                        self.client().indices.refresh(new_index)
+
+                        # Compare resulting index with original
+                        hits = int(self.client().search(index, body=query)['hits']['total'])
+                        if hits == int(self.client().search(new_index, body=query)['hits']['total']):
+                            print("{: >{}}Successfully split out index ['{}']".format("", indent+2, new_index))
+                        else:
+                            raise Exception("Failed to split out index ['{}'] from ['{}']".format(new_index, index))
+
+                # Delete the old index
+                if not self._nop: self.client().indices.delete(index)
+            else:
+                print("{: >{}}No conficts found for ['{}']".format("", indent, index))
+
+    def migrate(self):
+        """Migrate data that has conflicting mappings
+        """
+        print("Creating new indices with correct mappings")
+
+        for index in self.client().indices.get_aliases().keys():
+
+            # Correct conflicts
+            #---------------------------------------------------------------
+            print("Correcting mapping conflicts for ['{}']".format(index))
+            conflicts = self.check_index(index)
+            mappings = self.client().indices.get_mapping(index)[index]
+
+            # Correct missing conflicts for freezer
+            if index == "freezer":
+                for k, v in conflicts.items():
+                    if v[0] == self._missing:
+                        item = mappings
+                        keys = k.split(":")
+                        for key in keys[:-1]:
+                            item = item[key]
+                        print("Adding missing '{}:{}' param to {}" .format(keys[-1], v[1], ":".join(keys[:-1])))
+                        item[keys[-1]] = v[1]
+
+            # Reindex/delete if required
+            #---------------------------------------------------------------
+            if not any(conflicts): print("No conflicts found for ['{}']".format(index))
+            if any(conflicts):
+                if index == "freezer":
+                    new_index = index + "b"
+                    print("Reindexing index ['{}']".format(index))
+                    self.clone_index(index, new_index, mappings)
+                    self.delete_index(index)
+                    self.clone_index(new_index, index)
+                    self.delete_index(new_index)
+                else:
+                    print("Deleting conflicting index ['{}']".format(index))
+                    self.delete_index(index)
+
+    def check(self):
+        """Check all indices looking for conflicting mappings
+        :returns: True if there are no conflicts else False
+        """
+        print("Checking indices for conflicting mappings")
+
+        indent = 2
+        indices = self.client().indices.get_aliases().keys()
+        for index in [x for x in indices if any(re.findall(r'logstash-20.*', x))]:
+            if any(self.check_index(index)):
+                print("{: >{}}Conflicts found for ['{}']".format("", indent, index))
+                return False
+            else:
+                print("{: >{}}No conflicts found for ['{}']".format("", indent, index))
+
+        return True
+
+    def delete_index(self, index):
+        """Delete the given index
+        :index: index to delete
+        """
+        self.client().indices.delete(index)
+
+    def clone_index(self, index, name, mappings=None):
+        """Create a new index based on the given index with optionally update mappings
+        :index: the index to clone
+        :name: the new name to give it
+        :mappings: new mappings to use if given
+        """
+        if not mappings: mappings = self.client().indices.get_mapping(index)[index]
+        self.client().indices.create(name, body=mappings)
+        eslib_reindex(self.client(), index, name)
+        self.client().indices.refresh()
+
+    def check_index(self, index):
+        """Check for conflicts for the given index
+        :index: index to check
+        :returns: dictionary of conflicts
+        """
+        indent=2
+        conflicts = {}
+        print("{: >{}}Evaluating mapping conflicts for ['{}']".format("", indent, index))
+
+        def _check_fields(fields1, fields2, check_conflict=False):
+            """Internal helper function"""
+            conflicts = {} # {field:code}
+            for name, data1 in fields1.items():
+
+                # Possible recursion required
+                if name in fields2:
+                    check = True if name != 'properties' else False
+                    data2 = fields2[name]
+
+                    # Recurse: base case not hit yet
+                    if type(data1) is dict and type(data2) is dict:
+                        for k, v in _check_fields(data1, data2, check).items():
+                            conflicts["{}:{}".format(name, k)] = v
+
+                    # Base case: conflict in param data types
+                    elif data1 != data2:
+                        conflicts[name] = (self._mismatch, data1, data2)
+
+                # Base case: param doesn't exist in both fields
+                elif check_conflict:
+                    conflicts[name] = (self._missing, data1, None)
+
+            return conflicts
+
+        mappings = self.client().indices.get_mapping(index)[index]
+        for mapping1, data1 in mappings['mappings'].items():
+            for mapping2, data2 in mappings['mappings'].items():
+                if mapping1 != mapping2:
+                    for k, v in _check_fields(data1, data2).items():
+                        mapping = mapping1
+                        if v[0] == self._missing: mapping = mapping2
+                        conflicts["mappings:{}:{}".format(mapping, k)] = v
+
+        for k, v in conflicts.items():
+            print("{: >{}}CONFLICT: {} {}".format("", indent+2, k, v))
+
+        return conflicts
+
+    def _add_mappings(self, index):
+        #Retrieve field data
+        success = True
+        try:
+            field_data = subprocess.check_output('curl -XGET "http://' + self._host + ':' + self._port + '/logstash-audit-*/_mapping/field/*?ignore_unavailable=false&allow_no_indices=false&include_defaults=true"', shell=True)
+
+            # Grab mappings from first logstash index
+            fields = {}
+            mappings = json.loads(field_data).itervalues().next()['mappings']
+            for mapping_key, mapping in mappings.iteritems():
+
+                # Grab fields except for _default_ ones being ignored
+                for field_key, field in mapping.iteritems():
+                    if field_key not in ("_type", "_all", "_boost", "_field_names", "_routing", "_size", "_timestamp", "_ttl", "_uid", "_version", "_parent"):
+
+                        # Add distinct fields with kibana sub-values
+                        if field_key not in fields:
+                            key = field_key.split('.')[-1] if field_key not in field["mapping"] else field_key
+                            field_data = field["mapping"][key]
+
+                            indexed = True if "index" in field_data and field_data["index"] != "no" else False
+                            analyzed = True if "index" in field_data and field_data["index"] == "analyzed" else False
+
+                            # Construct JSON field structure
+                            _field = {}
+                            _field['name'] = field_key
+                            _field['type'] = "string"
+                            _field['count'] = 0
+                            _field['scripted'] = False
+                            _field['indexed'] = indexed
+                            _field['analyzed'] = analyzed
+                            _field['doc_values'] = False
+                            fields[field_key] = _field
+        except:
+            pass
+
+        # Create the Kibana Index
+        subprocess.call('curl -XPOST "http://' + self._host + ':' + self._port + '/.kibana/index-pattern/' + index + '" -d \'{"title":"' + index + '","timeFieldName":"@timestamp"}\'', shell=True)
+
+        data = ""
+        for x in fields.itervalues():
+            data += "," + json.dumps(x, separators=(',',':')).replace("\"", "\\\"")
+        cmd = 'curl -XPOST "http://' + self._host + ':' + self._port + '/.kibana/index-pattern/' + index + '" -d \'{"title":"logstash-*","timeFieldName":"@timestamp","fields":"[' + data[1:] + ']"}\''
+        subprocess.call(cmd, shell=True)
+
+    def prime_kibana(self):
+        """Prime the kibana index such that is will be ready for
+        use out of the box rather than require a user to choose the
+        logstash index pattern.
+        """
+        print("Priming the .kibana index")
+
+        # Wait for kibana and logstash indexes to be created
+        #-----------------------------------------------------------------------
+        while True:
+            if not self.client().indices.exists("logstash-*") or not self.client().indices.exists('.kibana'):
+                print("Waiting for .kibana index and at least one logstash index to be created")
+                time.sleep(10)
+            else: break
+
+        # Add filter for audit, IF at least 1 audit document exists...
+        #-----------------------------------------------------------------------
+        audit_logs_found = self.client().count(index=self._logstash_audit_logs_prefix + "*")
+        count = 0
+        if audit_logs_found:
+            count = audit_logs_found['count']
+        if count > 0:
+            print('{} Audit logs found.  Adding logstash-audit-* filter to Kibana.'.format(count))
+            self.client().create(index='.kibana', doc_type='index-pattern', id=self._logstash_audit_logs_prefix + '*', body=
+                {'title':self._logstash_audit_logs_prefix + '*','timeFieldName':'@timestamp'})
+            self._add_mappings(self._logstash_audit_logs_prefix + "*")
+        else:
+            print('No audit logs found.  Not adding logstash-audit-* filter to Kibana.')
+
+        # Simply exit if .kibana config document already contains the defaultIndex
+        #-----------------------------------------------------------------------
+        confdoc = self.client().get(index='.kibana', doc_type='config', id='4.5.0')
+        if "_source" in confdoc and 'defaultIndex' in confdoc['_source'] and \
+                confdoc['_source']['defaultIndex'] == self._logstash_operational_logs_prefix + "*":
+            print('Kibana already primed for {}*'.format( self._logstash_operational_logs_prefix ) )
+            return
+
+        # Create .kibana index-pattern documents for logstash and audit with field mappings
+        #-----------------------------------------------------------------------
+        print('Creating .kibana index-pattern document with field mappings')
+        self.client().create(index='.kibana', doc_type='index-pattern', id=self._logstash_operational_logs_prefix + '*', body=
+            {'title':self._logstash_operational_logs_prefix + '*','timeFieldName':'@timestamp'})
+
+        # Update the .kibana config document with the correct defaultIndex
+        #-----------------------------------------------------------------------
+        print('Updating .kibana config document with correct defaultIndex={}*'.format(self._logstash_operational_logs_prefix) )
+        self.client().update(index='.kibana', doc_type='config', id='4.5.0', body=
+            {'doc': {'defaultIndex':self._logstash_operational_logs_prefix + '*'}})
+
+# Main entry point
+#-------------------------------------------------------------------------------
+if __name__ == '__main__':
+
+    # Example execution:
+    #---------------------------------------------------------------------------
+    # Migrate data: python esutil.py --migrate
+    # Wait for ready: python esutil.py --ready
+    # Wait for not ready: python esutil.py --not-ready
+    # Waif for healthy: python esutil.py --healthy
+
+    # Configure arguments
+    #---------------------------------------------------------------------------
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check", action="store_true", help="Check if there are any conflicting indicies")
+    parser.add_argument("--migrate", action="store_true", help="Reindex freezer and delete all other conflicting indicies")
+    parser.add_argument("--reindex", action="store_true", help="Reindex all conflicting indices to avoid losing data")
+
+    parser.add_argument("--ready", action="store_true", help="Wait for Elasticsearch's API to respond")
+    parser.add_argument("--not-ready", dest="not_ready", action="store_true", help="Wait for Elasticsearch's API to stop responding")
+    parser.add_argument("--healthy", action="store_true", help="Wait for Elasticsearch to be yellow or better")
+    parser.add_argument("--clustered", action="store_true", help="Check if Elasticsearch is clustered")
+
+    parser.add_argument("--prime-start", dest="prime_start", action="store_true", help="Ready Elasticsearch for operation")
+    parser.add_argument("--prime-shutdown", dest="prime_shutdown", action="store_true", help="Ready Elasticsearch for shutdown")
+    parser.add_argument("--prime-kibana", dest="prime_kibana", action="store_true", help="Ready kibana for use")
+
+    parser.add_argument("--no-wait", dest="no_wait", action="store_true", help="Don't wait in status checks")
+    parser.add_argument("--nop", action="store_true", help="Readonly, no action will be taken")
+    parser.add_argument("--host", default="localhost", help="Elasticsearch host to connect to")
+    parser.add_argument("--port", default=9200, help="Elasticsearch port to connect to")
+    parser.add_argument("--no-log", dest="no_log", action="store_true", help="Don't redirect output to log")
+    args = parser.parse_args()
+
+    # Configure logging
+    #---------------------------------------------------------------------------
+    if not args.no_log and j2args.host.find("elasticsearch_http_host") == -1:
+        args.host = j2args.host
+        args.port = int(j2args.port)
+        args.logstash_audit_logs_prefix = j2args.logstash_audit_logs_prefix
+        args.logstash_operational_logs_prefix = j2args.logstash_operational_logs_prefix
+
+        logging.basicConfig(
+            filename=j2args.logfile,
+            level=logging.DEBUG,
+            format='%(asctime)s[%(levelname)s:%(name)s] %(message)s',
+            datefmt='[%m/%d/%Y][%H:%M:%S]')
+        sys.stdout = LogRedirect(logging.getLogger('STDOUT'), logging.INFO)
+        sys.stderr = LogRedirect(logging.getLogger('STDERR'), logging.ERROR)
+
+        # Turn down logging for supporting modules
+        logging.getLogger('urllib3').setLevel(logging.WARNING)
+        logging.getLogger('elasticsearch').setLevel(logging.WARNING)
+
+    # Execute
+    #---------------------------------------------------------------------------
+    wait = False if args.no_wait else True
+    es = Elasticsearch(args.host, args.port, args.logstash_audit_logs_prefix, args.logstash_operational_logs_prefix, nop=args.nop)
+    if args.nop: print("Readonly: no action will be taken!")
+
+    if args.not_ready:
+        print_title("Waiting for Elasticsearch to stop responding...")
+        if es.not_ready(wait):
+            print("Success: Elasticsearch API stopped responding!")
+        else:
+            raise Exception("Error: Timed out while waiting for Elasticsearch to stop responding")
+
+    if args.ready:
+        print_title("Waiting for Elasticsearch to be ready...")
+        if es.ready(wait):
+            print("Success: Elasticsearch API is ready!")
+        else:
+            raise Exception("Error: Timed out while waiting for Elasticsearch to be ready")
+
+    if args.clustered:
+        print_title("Waiting for Elasticsearch to be clustered...")
+        if es.clustered(wait):
+            print("Success: Elasticsearch is clustered!")
+            print("Elasticsearch version {}".format(es.version()))
+        else:
+            raise Exception("Error: Timed out while waiting for Elasticsearch to be clustered")
+
+    if args.healthy:
+        print_title("Waiting for Elasticsearch to be healthy...")
+        if es.healthy(wait):
+            print("Success: Elasticsearch is healthy!")
+            print("Elasticsearch version {}".format(es.version()))
+        else:
+            raise Exception("Error: Timed out while waiting for Elasticsearch to be healthy")
+
+    try:
+        if args.prime_start:
+            print_title("Executing Elasticsearch prime start")
+            es.prime_start()
+            print("Elasticseach prime start completed successfully!")
+
+        if args.prime_shutdown:
+            print_title("Executing Elasticsearch prime shutdown")
+            es.prime_shutdown()
+            print("Elasticseach prime shutdown completed successfully!")
+
+        if args.prime_kibana:
+            print_title("Executing Elasticsearch prime kibana")
+            es.prime_kibana()
+            print("Elasticseach prime kibana completed successfully!")
+
+        if args.check:
+            print_title("Executing Elasticsearch conflict checking")
+            if es.check():
+                print("Success: Elasticsearch has no conflicting mappings!")
+            else:
+                raise Exception("Elasticsearch has conflicting mappings!")
+
+        if args.reindex:
+            print_title("Executing Elasticsearch reindexing")
+            es.reindex()
+            print("Success: Elasticsearch reindexing completed successfully!")
+
+        if args.migrate:
+            print_title("Executing Elasticsearch data migration")
+            es.migrate()
+            print("Success: Elasticsearch data migration completed successfully!")
+
+    except Exception:
+        print("Error: Elasticsearch operation failed!")
+        raise

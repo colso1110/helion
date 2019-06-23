@@ -1,0 +1,49 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: eon-common | _set_directories |
+    set service etc and venv directory - configure
+  set_fact:
+    eon_service_conf_dir: "{{ eon_component | config_dir(
+                              eon_install_package_result.version) }}/eon"
+    eon_service_bin_dir: "{{ eon_component |
+                            bin_dir(eon_install_package_result.version) }}"
+    eon_service_venv_share_dir: "{{ eon_component | share_dir(
+                                    eon_install_package_result.version) }}"
+    eon_logging_conf : "{{ eon_component | config_dir(
+                          eon_install_package_result.version)
+                        }}/eon/{{ eon_component }}-logging.conf"
+    eon_audit_conf : "{{ eon_component | config_dir(
+                        eon_install_package_result.version)
+                      }}/eon/{{ eon_component }}-audit-map.conf"
+    eon_log_file: "{{ eon_logs_dir }}/{{ eon_component }}.log"
+    eon_log_file_json: "{{ eon_logs_dir }}/{{ eon_component }}-json.log"
+  when: eon_install_package_result.version is defined
+
+- name: eon-common | _set_directories |
+    set service etc and venv directory - reconfigure
+  set_fact:
+    eon_service_conf_dir: "{{ eon_component | config_dir() }}/eon"
+    eon_service_bin_dir: "{{ eon_component | bin_dir() }}"
+    eon_service_venv_share_dir: "{{ eon_component | share_dir() }}"
+    eon_logging_conf : "{{ eon_component | config_dir()
+                        }}/eon/{{ eon_component }}-logging.conf"
+    eon_audit_conf : "{{ eon_component | config_dir()
+                      }}/eon/{{ eon_component }}-audit-map.conf"
+    eon_log_file: "{{ eon_logs_dir }}/{{ eon_component }}.log"
+    eon_log_file_json: "{{ eon_logs_dir }}/{{ eon_component }}-json.log"
+  when: eon_install_package_result.version is undefined

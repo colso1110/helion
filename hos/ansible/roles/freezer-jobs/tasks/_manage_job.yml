@@ -1,0 +1,66 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include_vars: roles/freezer-jobs/defaults/jobs.yml
+
+- include: _manage_single_job.yml
+  vars:
+    job_storage: swift
+    job_type: backup
+    job_description: "HLM Default: {{ job_name }} backup to Swift"
+    job_is_enabled: "{{ jobs[job_name]['enabled'] and jobs[job_name]['store_in_swift'] }}"
+  when: freezer_create_backup_jobs
+
+- include: _manage_single_job.yml
+  vars:
+    job_storage: swift
+    job_type: restore
+    job_description: "HLM Default: {{ job_name }} restore from Swift"
+    job_is_enabled: "{{ jobs[job_name]['enabled'] and jobs[job_name]['store_in_swift'] and jobs[job_name]['also_create_restore_job'] }}"
+  when: freezer_create_restore_jobs
+
+- include: _manage_single_job.yml
+  vars:
+    job_storage: ssh
+    job_type: backup
+    job_description: "HLM Default: {{ job_name }} backup to SSH"
+    job_is_enabled: "{{ jobs[job_name]['enabled'] and jobs[job_name]['store_in_ssh'] }}"
+  when: freezer_create_backup_jobs and freezer_ssh_ready
+
+- include: _manage_single_job.yml
+  vars:
+    job_storage: ssh
+    job_type: restore
+    job_description: "HLM Default: {{ job_name }} restore from SSH"
+    job_is_enabled: "{{ jobs[job_name]['enabled'] and jobs[job_name]['store_in_ssh'] and jobs[job_name]['also_create_restore_job'] }}"
+  when: freezer_create_restore_jobs and freezer_ssh_ready
+
+- include: _manage_single_job.yml
+  vars:
+    job_storage: local
+    job_type: backup
+    job_description: "HLM Default: {{ job_name }} backup to local"
+    job_is_enabled: "{{ jobs[job_name]['enabled'] and jobs[job_name]['store_in_local'] }}"
+  when: freezer_create_backup_jobs
+
+- include: _manage_single_job.yml
+  vars:
+    job_storage: local
+    job_type: restore
+    job_description: "HLM Default: {{ job_name }} restore from local"
+    job_is_enabled: "{{ jobs[job_name]['enabled'] and jobs[job_name]['store_in_local'] and jobs[job_name]['also_create_restore_job'] }}"
+  when: freezer_create_restore_jobs

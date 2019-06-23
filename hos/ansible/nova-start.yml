@@ -1,0 +1,86 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- hosts: NOV-CND
+  roles:
+    - NOV-CND
+  tasks:
+    - include: roles/NOV-CND/tasks/start.yml
+
+- hosts: NOV-SCH
+  roles:
+    - NOV-SCH
+  tasks:
+    - include: roles/NOV-SCH/tasks/start.yml
+
+- hosts: NOV-CAU
+  roles:
+    - NOV-CAU
+  tasks:
+    - include: roles/NOV-CAU/tasks/start.yml
+
+- hosts: NOV-VNC
+  roles:
+    - NOV-VNC
+  tasks:
+    - include: roles/NOV-VNC/tasks/start.yml
+
+- hosts: NOV-API
+  roles:
+    - NOV-API
+  tasks:
+    - include: roles/NOV-API/tasks/start.yml
+
+- hosts: NOV-CMP
+  roles:
+    - NOV-CMP
+  tasks:
+    - include: roles/NOV-CMP/tasks/start.yml
+
+- hosts: NOV-API:NOV-CAU:NOV-CMP:NOV-CND:NOV-SCH:NOV-VNC
+  tasks:
+    - include: roles/nova-common/tasks/_clear_persistent_facts.yml
+      when: hlm_notify_nova_restart_required is defined and
+            hlm_notify_nova_restart_required.changed
+
+- hosts: NOV-CMP-HYP
+  roles:
+    - NOV-CMP-HYP
+  tasks:
+    - include: roles/NOV-CMP-HYP/tasks/start.yml
+
+# When everything is started we start to monitor.
+# The list of hosts is created by the intersection of hosts with the monasca
+# agent and the hosts running Nova services.
+- hosts: NOV-API:NOV-CAU:NOV-CMP:NOV-CND:NOV-SCH:NOV-VNC:&MON-AGN
+  roles:
+    - nova-monasca
+  tasks:
+    - include: roles/nova-monasca/tasks/start.yml
+
+- hosts: MON-AGN:&NOV-KVM
+  roles:
+    - nova-monasca
+  tasks:
+    - include: roles/nova-monasca/tasks/_monitor_libvirt.yml
+
+# Run the vcenter detection plugin only on Nova ESX Compute Proxy
+- hosts: NOV-ESX:&MON-AGN
+  no_log: True
+  roles:
+    - role: nova-monasca
+  tasks:
+    - include: roles/nova-monasca/tasks/vcenter_check.yml

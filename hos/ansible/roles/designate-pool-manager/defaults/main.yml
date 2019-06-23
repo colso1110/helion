@@ -1,0 +1,57 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# This file will contain the default values for the designate-pool-manager service
+---
+designate_component: designate-pool-manager
+
+# packages listed here will be installed by designate-common | install
+designate_required_packages:
+  - libmysqlclient18
+
+# packages listed here will trigger a restart of the service when updated
+designate_pool_manager_restart_packages:
+  - libmysqlclient18
+
+# Rootwrap filters to install
+designate_rootwrap_filters:
+  - rootwrap.d/bind9.filters
+
+# Used exclusivly for powerdns-post-configure's designate-manage calls
+designate_pool_manager_etc_dir: "{{ designate_component | config_dir() }}"
+designate_pool_manager_conf_dir: "{{ designate_component | config_dir() }}/designate"
+designate_pool_manager_bin_dir: "{{ designate_component | bin_dir() }}"
+
+# pool-manager.conf
+## [service:pool_manager]
+designate_pool_id: 794ccc2c-d751-44fe-b57f-8894c9f5c842
+
+_designate_powerdns_database_ca_file: "/etc/ssl/certs/ca-certificates.crt"
+_designate_powerdns_database_ssl: "{% if ( 'FND_PDN' in verb_hosts ) and FND_PDN.consumes_FND_MDB.vips.private[0].use_tls %}?ssl_ca={{ _designate_powerdns_database_ca_file }}{% endif %}"
+
+## [pool_target:*]
+_designate_mdns_servers: "{{ DES_PMG | item('consumes_DES_MDN.members', default=DES_PMG.consumes_DES_MDN_EXT.members) }}"
+designate_pool_masters: "{% for mdns in _designate_mdns_servers.private -%}{{ mdns.ip_address }}:{{ mdns.port}}{% if not loop.last %}, {% endif %}{% endfor %}"
+designate_powerdns_database_connection: "{% if ( 'FND_PDN' in verb_hosts ) -%}mysql://{{ FND_PDN.consumes_FND_MDB.vars.accounts.powerdns.username }}:{{ FND_PDN.consumes_FND_MDB.vars.accounts.powerdns.password | urlencode }}@{{ FND_PDN.consumes_FND_MDB.vips.private[0].host }}/designate_pdns{{ _designate_powerdns_database_ssl }}{%-endif %}"
+
+## [pool_manager_cache:memcache]
+designate_pool_manager_memcached_servers: "{% for mem in DES_PMG.consumes_FND_MEM.members.private %}{{ mem.ip_address }}:{{ mem.port }}{% if not loop.last %},{% endif %}{% endfor -%}"
+
+## [coordination]
+designate_backend_url: "zookeeper://{% for node in DES_PMG.consumes_FND_ZOO.members.private %}{{ node.host }}:{{ node.port }}{% if not loop.last %},{% endif %}{% endfor %}"
+
+# Used for Bind RNDC Access - Pool Manager uses rndc to perform updates
+designate_rndc_key_file: "{{ designate_pool_manager_conf_dir }}/rndc.key"
+designate_rndc_key: "{% if ( 'FND_BND' in verb_hosts ) %}{{ FND_BND.vars.bind_rndc_key | b64encode }}{% endif %}"

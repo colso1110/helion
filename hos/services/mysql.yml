@@ -1,0 +1,118 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+    version: 2
+
+service-components:
+-   name: mysql
+    mnemonic: FND-MDB
+    service: foundation
+
+    advertise-member-list: true
+
+    multi-consumers:
+      default: block
+
+    relationship-vars-schema:
+      - name: accounts
+        vars:
+          - name: username
+          - name: password
+          - name: grants
+            default: []
+      - name: databases
+        vars:
+          - name: dbname
+          - name: character_set
+            default: "utf8"
+          - name: collation
+            default: "utf8_general_ci"
+
+    config-set:
+    -   name: mysql.cnf
+        ansible-vars:
+        -   name: mysql_root_user
+            value: root
+
+        -   name: mysql_root_pwd
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: mysql_cluster_name
+            value: '%random-string%'
+            properties:
+                max-length: 8
+                min-length: 8
+            immutable: 'True'
+
+        -   name: mysql_sst_user
+            value: sst_user
+
+        -   name: mysql_sst_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: mysql_clustercheck_user
+            value: clustercheckuser
+
+        -   name: mysql_clustercheck_pwd
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: mysql_clustercheck_port
+            value: '9500'
+
+    endpoints:
+    -   port: '3306'
+        has-vip: true
+        vip-options:
+         -  "option httpchk GET /"
+         -  "maxconn 10000"
+         -  "option redispatch"
+         -  "timeout client 90m"
+         -  "timeout connect 5000"
+         -  "timeout server 90m"
+        vip-check: "check port 9500 inter 12000 rise 3 fall 3"
+        vip-backup-mode: true
+        vip-tls-terminator: false
+        tls-terminator: false
+        roles:
+        - internal
+        - admin
+    -   port: '4567'
+        tls-terminator: false
+        roles:
+        - mysql_gcomms
+    -   port: '4568'
+        tls-terminator: false
+        roles:
+        - mysql_ist
+    -   port: '4444'
+        tls-terminator: false
+        roles:
+        - mysql_sst
+    -   port: '9500'
+        tls-terminator: false
+        roles:
+        - mysql_mysqlchk
+

@@ -1,0 +1,120 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# NOTE: os_network does not support creating an external network so using CLI.
+
+- name: neutron-common | provider_net_create | Include play specific variables
+  include_vars: "provider.yml"
+
+- name:  neutron-common | provider_net_create | Check whether provider networks are defined
+  set_fact:
+    provider_nets_exist: true
+  when: item.name != ''
+  with_items: "{{ provider_data }}"
+
+- name: neutron-common | provider_net_create | Get tenant id
+  command: openstack {{ openstack_cmd_args }} \
+    project show -f value -c id {{ neutron_admin_tenant_name }}
+  register: tenant_id_result
+  changed_when: False
+  environment:
+    OS_PASSWORD: "{{ neutron_admin_password }}"
+  when: provider_nets_exist is defined
+
+- name: neutron-common | provider_net_create | Set neutron_admin_tenant_id
+  set_fact:
+    neutron_admin_tenant_id: "{{ tenant_id_result.stdout }}"
+  when: provider_nets_exist is defined and
+        tenant_id_result | success
+
+- name: neutron-common | provider_net_create | List networks owned by neutron
+  include: _list_networks.yml ignore=true
+  when: provider_nets_exist is defined
+
+- name: neutron-common | provider_net_create | Create networks
+  include: _create_networks.yml ignore=true
+  when: provider_nets_exist is defined and
+        existing_nets_result | success and
+        item.name not in existing_nets_result.stdout
+
+- name: neutron-common | provider_net_create | Wait for neutron-server to start and then retry
+  pause: minutes=2
+  register: retry_neutron_commands
+  when: provider_nets_exist is defined and
+        existing_nets_result | failed
+
+- name: neutron-common | provider_net_create | Retry list networks owned by neutron
+  include: _list_networks.yml ignore=false
+  when: provider_nets_exist is defined and
+        retry_neutron_commands | success
+
+- name: neutron-common | provider_net_create | Retry create networks
+  include: _create_networks.yml ignore=false
+  when: provider_nets_exist is defined and
+        retry_neutron_commands | success and
+        item.name not in existing_nets_result.stdout
+
+- name: neutron-common | provider_net_create | List subnets owned by neutron
+  command:  neutron {{ neutron_cmd_args }} subnet-list -f csv -c name
+              --tenant-id {{ neutron_admin_tenant_id }}
+  register: existing_subnets_result
+  environment:
+    OS_PASSWORD: "{{ neutron_admin_password }}"
+  when: provider_nets_exist is defined
+
+- name: neutron-common | provider_net_create | Create subnets
+  command: neutron {{ neutron_cmd_args }} \
+    subnet-create \
+    {% if item.allocation_pools is defined %}
+    {% for pool in item.allocation_pools %}
+      --allocation-pool start={{ pool.start }},end={{ pool.end }} \
+    {% endfor %}
+    {% endif %}
+    {% if item.host_routes is defined %}
+    {% for route in item.host_routes %}
+      --host-route \
+      destination={{ route.destination }},nexthop={{ route.nexthop }} \
+    {% endfor %}
+    {% endif %}
+    {% if item.gateway_ip is defined %}
+      --gateway {{ item.gateway_ip }} \
+    {% endif %}
+    {% if item.enable_dhcp is defined and item.enable_dhcp %}
+      --enable-dhcp \
+    {% else %}
+      --disable-dhcp \
+    {% endif %}
+      --ip_version 4
+      --name {{ item.name }} \
+      {{ item.name }} \
+      {{ item.cidr }}
+  when: provider_nets_exist is defined and
+        item.name not in existing_subnets_result.stdout
+  with_items: "{{ provider_data }}"
+  environment:
+    OS_PASSWORD: "{{ neutron_admin_password }}"
+
+- name: neutron-common | provider_net_create | Update subnet to no-gateway
+  command:  neutron {{ neutron_cmd_args }}
+              subnet-update {{ item.name }} --no-gateway
+  when: provider_nets_exist is defined and
+        item.name not in existing_subnets_result.stdout and
+        item.no_gateway is defined and item.no_gateway
+  with_items: "{{ provider_data }}"
+  environment:
+    OS_PASSWORD: "{{ neutron_admin_password }}"
+

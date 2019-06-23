@@ -1,0 +1,139 @@
+{#
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+Listen {{ keystone_admin_listen_ip }}:{{ keystone_admin_port }}
+listen {{ keystone_public_listen_ip }}:{{ keystone_public_port }}
+
+
+<VirtualHost *:35357>
+
+    WSGIDaemonProcess keystone-admin processes={{ keystone_wsgi_admin_process_count }} threads=1 socket-timeout={{ keystone_wsgi_socket_timeout }} user={{ keystone_user }} group={{ keystone_group }} python-path={{ keystone_venv_dir }}:{{
+keystone_venv_dir }}/lib/python2.7/site-packages/ display-name={{ keystone_group }}-admin
+    WSGIProcessGroup keystone-admin
+    WSGIScriptAlias / /var/www/keystone/admin
+    WSGIApplicationGroup %{GLOBAL}
+
+    KeepAlive off
+
+    <IfVersion >= 2.4>
+      ErrorLogFormat "%{cu}t %M"
+    </IfVersion>
+
+    LogFormat "%h:%p %u %t \"%r\" %>s \"%{Referer}i\" \"%{User-Agent}i\" \"%{x-openstack-request-id}i\" %X took %D micro sec" log_format
+    LogFormat "%{X-Forwarded-For}i:%p %u %t \"%r\" %>s \"%{Referer}i\" \"%{User-Agent}i\" \"%{x-openstack-request-id}i\" %X took %D micro sec" log_format_proxy
+
+    SetEnvIf Request_URI "^" any_request=1
+    SetEnvIf X-Forwarded-For "^.*\..*\..*\..*" forwarded=1
+    # Identify load balance health check requests
+    SetEnvIf Request_Method "^LBCHK$" lb-ping=1
+    # Assuming all the monitoring pings from HAProxy are configured with the X-HAProxy-Ping header set to "true"
+    SetEnvIfNoCase X-HAProxy-Ping "true" proxy-ping=1
+
+    # turn off any_request if this forwarded or proxy-ping or lb-ping
+    SetEnvIf proxy-ping 1 !any_request
+    SetEnvIf forwarded 1 !any_request
+    SetEnvIf lb-ping 1 !any_request
+
+    # turn off forwarded if proxy-ping or lb-ping
+    SetEnvIf proxy-ping 1 !forwarded
+    SetEnvIf lb-ping 1 !forwarded
+
+    # separated log files
+    ErrorLog /var/log/keystone/keystone_modwsgi.log
+    CustomLog /var/log/keystone/keystone_access.log log_format env=any_request
+    CustomLog /var/log/keystone/keystone_access.log log_format_proxy env=forwarded
+    CustomLog /var/log/keystone/keystone_monitoring.log log_format_proxy env=proxy-ping
+    CustomLog /var/log/keystone/keystone_monitoring.log log_format env=lb-ping
+
+    # pass TLS attributes from haproxy
+    SetEnvIf X-SSL-Issuer "^(.*)$" SSL_CLIENT_I_DN=$0
+    SetEnvIf X-SSL-Issuer-CN "^(.*)$" SSL_CLIENT_I_DN_CN=$0
+    SetEnvIf X-SSL-Client-CN "^(.*)$" SSL_CLIENT_S_DN_CN=$0
+    SetEnvIf X-SSL-Client-O "^(.*)$" SSL_CLIENT_S_DN_O=$0
+
+</VirtualHost>
+
+<VirtualHost *:5000>
+    ServerName {{ keystone_public_endpoint }}
+
+    WSGIDaemonProcess keystone-main processes={{ keystone_wsgi_public_process_count }} threads=1 socket-timeout={{ keystone_wsgi_socket_timeout }} user={{ keystone_user }} group={{ keystone_group }} python-path={{ keystone_venv_dir }}:{{
+keystone_venv_dir }}/lib/python2.7/site-packages/ display-name={{ keystone_group }}-main
+    WSGIProcessGroup keystone-main
+    WSGIScriptAlias / /var/www/keystone/main
+    WSGIApplicationGroup %{GLOBAL}
+
+    KeepAlive off
+
+    <IfVersion >= 2.4>
+      ErrorLogFormat "%{cu}t %M"
+    </IfVersion>
+
+    LogFormat "%h:%p %u %t \"%r\" %>s \"%{Referer}i\" \"%{User-Agent}i\" \"%{x-openstack-request-id}i\" %X took %D micro sec" log_format
+    LogFormat "%{X-Forwarded-For}i:%p %u %t \"%r\" %>s \"%{Referer}i\" \"%{User-Agent}i\" \"%{x-openstack-request-id}i\" %X took %D micro sec" log_format_proxy
+
+    WSGIScriptAliasMatch ^(/v3/OS-FEDERATION/identity_providers/.*?/protocols/.*?/auth)$ /var/www/keystone/main/$1
+
+    <Location /Shibboleth.sso>
+      SetHandler shib
+    </Location>
+
+    <LocationMatch /v3/OS-FEDERATION/identity_providers/.*?/protocols/saml2/auth>
+      ShibRequestSetting requireSession 1
+      AuthType shibboleth
+      ShibRequireSession On
+      ShibExportAssertion Off
+      Require valid-user
+    </LocationMatch>
+
+    <Location /v3/auth/OS-FEDERATION/websso/saml2>
+      ShibRequestSetting requireSession 1
+      AuthType shibboleth
+      ShibRequireSession On
+      ShibExportAssertion Off
+      Require valid-user
+    </Location>
+
+    SetEnvIf Request_URI "^" any_request=1
+    SetEnvIf X-Forwarded-For "^.*\..*\..*\..*" forwarded=1
+    # Identify load balance health check requests
+    SetEnvIf Request_Method "^LBCHK$" lb-ping=1
+    # Assuming all the monitoring pings from HAProxy are configured with the X-HAProxy-Ping header set to "true"
+    SetEnvIfNoCase X-HAProxy-Ping "true" proxy-ping=1
+
+    # turn off any_request if this forwarded or proxy-ping or lb-ping
+    SetEnvIf proxy-ping 1 !any_request
+    SetEnvIf forwarded 1 !any_request
+    SetEnvIf lb-ping 1 !any_request
+
+    # turn off forwarded if proxy-ping or lb-ping
+    SetEnvIf proxy-ping 1 !forwarded
+    SetEnvIf lb-ping 1 !forwarded
+
+    # separated log files
+    ErrorLog /var/log/keystone/keystone_modwsgi.log
+    CustomLog /var/log/keystone/keystone_access.log log_format env=any_request
+    CustomLog /var/log/keystone/keystone_access.log log_format_proxy env=forwarded
+    CustomLog /var/log/keystone/keystone_monitoring.log log_format_proxy env=proxy-ping
+    CustomLog /var/log/keystone/keystone_monitoring.log log_format env=lb-ping
+
+    # pass TLS attributes from haproxy
+    SetEnvIf X-SSL-Issuer "^(.*)$" SSL_CLIENT_I_DN=$0
+    SetEnvIf X-SSL-Issuer-CN "^(.*)$" SSL_CLIENT_I_DN_CN=$0
+    SetEnvIf X-SSL-Client-CN "^(.*)$" SSL_CLIENT_S_DN_CN=$0
+    SetEnvIf X-SSL-Client-O "^(.*)$" SSL_CLIENT_S_DN_O=$0
+
+</VirtualHost>

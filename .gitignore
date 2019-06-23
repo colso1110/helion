@@ -1,0 +1,5 @@
+*.pyc
+my_cloud/info
+my_cloud/html
+change_credentials
+hos/ansible/ansible.cfg

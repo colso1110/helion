@@ -1,0 +1,113 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Restart or start the nova-consoleauth service
+---
+
+- name: NOV-CAU | start | Activate the latest installed version
+  become: yes
+  install_package:
+    name: nova
+    service: nova-consoleauth
+    activate: act_on
+    version: "{{ hlm_notify_nova_consoleauth_install_result.version }}"
+  when: not (hlm_notify_nova_consoleauth_install_result is not defined)
+
+- name: NOV-CAU | start | register persistent fact of activate
+  command: /bin/true
+  register: hlm_notify_nova_consoleauth_restart_required
+  when: hlm_notify_nova_consoleauth_install_result is defined and
+        hlm_notify_nova_consoleauth_install_result.changed
+
+- include: _read_run_location.yml
+
+# consoleauth_host_index specifies the index of the host where consoleauth
+# should be running.
+# we match the consoleauth_host_index with the index of the inventory_host
+- name: NOV-CAU | start | Restart nova-consoleauth service
+  become: yes
+  service:
+    name: nova-consoleauth
+    state: restarted
+  when:
+    ({{ consoleauth_host_index }} ==
+    {{ consoleauth_host_group.index(inventory_hostname) }}
+    ) and (hlm_notify_nova_restart_required.changed or
+    (hlm_notify_nova_consoleauth_restart_required is defined and
+    hlm_notify_nova_consoleauth_restart_required.changed))
+
+# ignore errors as nova-api will not be able to service this
+# request during deploy
+- name: NOV-CAU | start | Enable consoleauth service
+  shell: >
+    nova service-enable {{ host.my_dimensions.hostname }} nova-consoleauth
+  when:
+    ({{ consoleauth_host_index }} ==
+    {{ consoleauth_host_group.index(inventory_hostname) }})
+  ignore_errors: True
+  environment:
+    OS_USERNAME: "{{ keystone.nova_admin_user }}"
+    OS_PROJECT_NAME: "{{ keystone.service_tenant }}"
+    OS_PASSWORD: "{{ keystone.nova_admin_password }}"
+    OS_USER_DOMAIN_NAME: Default
+    OS_PROJECT_DOMAIN_NAME: Default
+    OS_AUTH_URL: "{{ keystone.url }}/v3"
+    OS_ENDPOINT_TYPE: internalURL
+
+- name: NOV-CAU | start | Ensure nova-consoleauth service started
+  become: yes
+  service:
+    name: nova-consoleauth
+    state: started
+  when:
+    ({{ consoleauth_host_index }} ==
+    {{ consoleauth_host_group.index(inventory_hostname) }})
+
+- name: NOV-CAU | start | Stop consoleauth where not needed
+  become: yes
+  service:
+    name: nova-consoleauth
+    state: stopped
+  when:
+    ({{ consoleauth_host_index }} !=
+    {{ consoleauth_host_group.index(inventory_hostname) }})
+
+# ignore errors as nova-api will not be able to service this
+# request during deploy
+- name: NOV-CAU | start | Disable consoleauth where not needed
+  shell: >
+    nova service-disable {{ host.my_dimensions.hostname }} nova-consoleauth
+      --reason "singleton running elsewhere"
+  when:
+    ({{ consoleauth_host_index }} !=
+    {{ consoleauth_host_group.index(inventory_hostname) }})
+  ignore_errors: True
+  environment:
+    OS_USERNAME: "{{ keystone.nova_admin_user }}"
+    OS_PROJECT_NAME: "{{ keystone.service_tenant }}"
+    OS_PASSWORD: "{{ keystone.nova_admin_password }}"
+    OS_USER_DOMAIN_NAME: Default
+    OS_PROJECT_DOMAIN_NAME: Default
+    OS_AUTH_URL: "{{ keystone.url }}/v3"
+    OS_ENDPOINT_TYPE: internalURL
+
+# write to deployer fact file where we started service
+- name: NOV-CAU | start | copy consoleauth_host_index to nova.fact on localhost
+  become: yes
+  delegate_to: localhost
+  copy:
+    dest: "{{ run_loc_file }}"
+    content: "{{ consoleauth_host_index }}"
+    mode: 0644

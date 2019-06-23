@@ -1,0 +1,54 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# This will remove all RabbitMQ components installed by this playbook.
+- hosts: FND-RMQ
+  max_fail_percentage: 0
+  roles:
+    - guard-cluster
+    - iptables
+    - rabbitmq
+  tasks:
+    # We want to ensure that all IP chains related to Rabbit
+    # are torn down at the end of this part of the remove process.
+    # However, the iptables-{add,delete} rules have an asymmetry:
+    # -add is idempotent (can be called multiple times), but
+    # -delete will flag an error if the named chain does not exist.
+    # (This design is to catch the maximal number of errors arising
+    # during the composition of multipler playbooks that may play
+    # with the firewall settings.)
+    # Therefore, to manage the remove situation where an attempt to
+    # upgrade a broken Rabbit installation has failed (potentially
+    # leaving a firewall rule in place), we unconditionally add
+    # the rules here so that we guarantee it is safe to attempt
+    # to remove them at the end of the tear-down process.
+    - include: roles/iptables/tasks/iptables-add.yml
+      vars:
+        iptables_chain: "{{ rabbitmq_iptables_chain }}"
+        iptables_ip_port: "{{ rabbitmq_bind_addresses }}"
+
+    - include: roles/rabbitmq/tasks/remove.yml
+
+    - include: roles/iptables/tasks/iptables-delete.yml
+      vars:
+        iptables_chain: "{{ rabbitmq_iptables_chain }}"
+        iptables_ip_port: "{{ rabbitmq_bind_addresses }}"
+
+    # Clear all persisted facts relating to RabbitMQ on the current.
+    - include: roles/rabbitmq/tasks/clear-persistant-facts.yml
+
+# Remove the RabbitMQ monasca setup.
+- include: rabbitmq-monasca-remove.yml

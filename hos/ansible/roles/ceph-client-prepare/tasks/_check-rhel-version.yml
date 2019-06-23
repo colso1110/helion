@@ -1,0 +1,59 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: ceph-client-prepare | _check-rhel-version |
+      Check if RHEL computes are present in deployment
+  set_fact: ceph_rhel_check=True
+  when: hostvars[item].ansible_os_family | lower == 'redhat'
+  with_items: groups['NOV-KVM'] | default([])
+  register: ceph_rhel_result
+  run_once: True
+
+- name: ceph-client-prepare | _check-rhel-version |
+      Set a fact indicating presence of RHEL compute(s)
+  set_fact: ceph_check_pkg=True
+  when: >
+    item.ansible_facts is defined and
+    item.ansible_facts.ceph_rhel_check is defined and
+    item.ansible_facts.ceph_rhel_check
+  with_items: ceph_rhel_result.results
+  run_once: True
+
+- name: ceph-client-prepare | _check-rhel-version |
+      Check the package available in third party yum repo on deployer
+  become: yes
+  shell: >
+    find {{ yum_thirdparty_dir }} -name "ceph-common-{{ ceph_version }}*.rpm"
+  delegate_to: localhost
+  register: ceph_find_pkg
+  ignore_errors: True
+  when: ceph_check_pkg is defined and ceph_check_pkg
+  run_once: True
+
+- name: ceph-client-prepare | _check-rhel-version |
+      Fail if Ceph client packages do not meet the version requirement
+  fail:
+    msg: >
+      Ceph client package for {{ ceph_release }} (version {{ ceph_version }})
+      is not available in the yum third party repository on deployer!
+      Please refer the documentation to ensure the availability of all the
+      necessary packages to enable the upgrade of Ceph to {{ ceph_release }}
+      release.
+  when: >
+    ceph_check_pkg is defined and ceph_check_pkg and
+    ceph_find_pkg.stdout_lines|length == 0 and
+    ansible_os_family | lower == 'redhat'

@@ -1,0 +1,133 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: ../../_CEP-CMN/tasks/configure.yml
+
+- include: _get_disks.yml
+
+- name: CEP-OSD | configure | Fetch the path of ceph-disk(firefly only)
+  become: yes
+  command: which ceph-disk
+  register: ceph_which_result
+  when: ceph_release == "firefly"
+
+- name: CEP-OSD | configure | Replace ceph-disk utility with private fix
+    (firefly only)
+  become: yes
+  copy:
+    src: ceph-disk
+    dest: "{{ ceph_which_result.stdout }}"
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0755
+  when: ceph_release == "firefly"
+
+- include: _disable_hpssacli.yml
+
+- include: _validate_disks.yml
+
+- name: CEP-OSD | configure | Remove the ceph udev rules to
+    disable auto activation of osd
+  become: yes
+  file: path=/lib/udev/rules.d/95-ceph-osd.rules state=absent
+
+- name: CEP-OSD | configure | Add root bucket
+  command: ceph --cluster {{ ceph_cluster }} osd crush add-bucket "{{ root_bucket }}" root
+  run_once: True
+
+- name: CEP-OSD | configure | Get list of hosts from crush map
+  shell: ceph --cluster {{ ceph_cluster }} osd tree | grep host | awk '{print $4}'
+  register: ceph_crush_host_result
+
+- name: CEP-OSD | configure | Add osd to crush map
+  command: >
+    ceph --cluster {{ ceph_cluster }} osd crush add-bucket
+    "{{ host.my_dimensions.hostname }}" host
+  when: host.my_dimensions.hostname not in ceph_crush_host_result.stdout_lines
+
+- name: CEP-OSD | configure | Place osd node under root folder
+  command: >
+    ceph --cluster {{ ceph_cluster }} osd crush move
+    "{{ host.my_dimensions.hostname }}" root="{{ root_bucket }}"
+  when: host.my_dimensions.hostname not in ceph_crush_host_result.stdout_lines
+
+- name: CEP-OSD | configure | Create bootstrap-osd user and keyring
+  become: yes
+  command: >
+    ceph --cluster {{ ceph_cluster }} auth get-or-create -o
+    "/var/lib/ceph/bootstrap-osd/{{ ceph_cluster }}.keyring"
+    client.bootstrap-osd mon 'allow profile osd, allow *'
+
+- name: CEP-OSD | configure | Copy service definition in /etc/systemd/system
+  become: yes
+  template:
+    src: ceph-osd@.service.j2
+    dest: /etc/systemd/system/ceph-osd@.service
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0644
+  when: ceph_release == "firefly" or ceph_release == "hammer"
+
+- name: CEP-OSD | configure | Create a separate systemd target for ceph osds
+  become: yes
+  copy:
+    src: ceph-osd.target
+    dest: /etc/systemd/system/ceph-osd.target
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0644
+  when: ceph_release == "firefly" or ceph_release == "hammer"
+
+- name: CEP-OSD | configure | Enable osd target to run on calling ceph.target
+  become: yes
+  command: systemctl enable ceph-osd.target
+  when: ceph_release == "firefly" or ceph_release == "hammer"
+
+- name: CEP-OSD | configure | Configure the osds in firefly
+  become: yes
+  osd_configure:
+    hostname: "{{ host.my_dimensions.hostname }}"
+    data_disk: "{{ item.key }}"
+    journal_disk: "{{ item.value }}"
+    fstype: "{{ fstype }}"
+    cluster_name: "{{ ceph_cluster }}"
+    cluster_uuid: "{{ fsid }}"
+    persist_mountpoint: "{{ persist_mountpoint }}"
+    zap_data_disk: "{{ zap_data_disk }}"
+    data_disk_poll_attempts: "{{ data_disk_poll_attempts }}"
+    data_disk_poll_interval: "{{ data_disk_poll_interval }}"
+    mark_init: none
+  with_dict: "{{ osd_disks }}"
+  when: ceph_release == "firefly"
+
+- name: CEP-OSD | configure | Configure the osds in hammer
+  become: yes
+  osd_configure:
+    hostname: "{{ host.my_dimensions.hostname }}"
+    data_disk: "{{ item.key }}"
+    journal_disk: "{{ item.value }}"
+    fstype: "{{ fstype }}"
+    cluster_name: "{{ ceph_cluster }}"
+    cluster_uuid: "{{ fsid }}"
+    persist_mountpoint: "{{ persist_mountpoint }}"
+    zap_data_disk: "{{ zap_data_disk }}"
+    data_disk_poll_attempts: "{{ data_disk_poll_attempts }}"
+    data_disk_poll_interval: "{{ data_disk_poll_interval }}"
+    mark_init: systemd
+  with_dict: "{{ osd_disks }}"
+  register: osd_configure_result
+  when: ceph_release == "hammer"

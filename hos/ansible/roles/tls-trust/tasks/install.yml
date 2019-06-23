@@ -1,0 +1,80 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: tls-trust | install | Set os-specific variables
+  include_vars: "{{ ansible_os_family | lower }}.yml"
+
+- name: tls-trust | install | Install ca-certificates on Debian
+  become: yes
+  apt:
+    name: "{{ item }}"
+    install_recommends: no
+    state: latest
+    force: yes
+  with_items:
+    - ca-certificates
+  when: ansible_os_family == "Debian"
+
+- name: tls-trust | install | Install ca-certificates on RedHat
+  become: yes
+  yum:
+    name: "{{ item }}"
+    state: latest
+  with_items:
+    - ca-certificates
+  when: ansible_os_family == "RedHat"
+
+- name: tls-trust | install | Create local cert directory
+  become: yes
+  file:
+    path: "{{ local_cert_directory }}"
+    state: directory
+    mode: 0755
+
+- name: tls-trust | install | Install ca certificates
+  become: yes
+  copy:
+    src: "{{ item }}"
+    dest: "{{ local_cert_directory }}/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: 0644
+  with_fileglob:
+    - "{{ tls_cacerts_dir }}/*.crt"
+  register: _tls_cacerts_copy_result
+
+- name: tls-trust | install | Update cacert store on Debian
+  become: yes
+  shell: /usr/sbin/update-ca-certificates --fresh
+  when: _tls_cacerts_copy_result.changed and ansible_os_family == "Debian"
+  register: hlm_notify_certs_updated
+
+- name: tls-trust | install | Update cacert store on RedHat
+  become: yes
+  shell: |
+    set -eu
+    update-ca-trust force-enable
+    update-ca-trust extract
+  when: _tls_cacerts_copy_result.changed and ansible_os_family == "RedHat"
+  register: hlm_notify_certs_updated
+
+- name: tls-trust | install | Make RedHat compatable with the certifi package
+  become: yes
+  file:
+    src: "/etc/ssl/certs/ca-bundle.trust.crt"
+    dest: "/etc/ssl/certs/ca-certificates.crt"
+    state: link
+  when: ansible_os_family == "RedHat"

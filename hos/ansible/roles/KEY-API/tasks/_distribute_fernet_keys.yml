@@ -1,0 +1,84 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: KEY-API | _distribute_fernet_keys | Distribute keys from keystone directory to /tmp
+  command: "rsync -a --delete {{ keystone_fernet_dir }}/ /tmp/fernet-keys/"
+  when: inventory_hostname == keystone_hosts[0]
+  become: yes
+  tags:
+    - keystone
+
+- name: KEY-API | _distribute_fernet_keys | Change ownership to allow pulling with rsync
+  file:
+    path: "/tmp/fernet-keys"
+    state: directory
+    owner: "{{ ansible_ssh_user }}"
+    recurse: yes
+    mode: 0700
+  when: inventory_hostname == keystone_hosts[0]
+  become: yes
+  tags:
+    - keystone
+
+- name: KEY-API | _distribute_fernet_keys | Synchronize the keys to tmp directory of deployer
+  synchronize:
+    src: "/tmp/fernet-keys/"
+    dest: "/tmp/fernet-keys"
+    archive: yes
+    mode: pull
+  when: inventory_hostname ==  keystone_hosts[0]
+  tags:
+    - keystone
+
+- name: KEY-API | _distribute_fernet_keys | Synchronize the keys from deployer to /tmp in other nodes
+  synchronize:
+    dest: "/tmp/fernet-keys"
+    src: "/tmp/fernet-keys/"
+    archive: yes
+  when: inventory_hostname !=  keystone_hosts[0]
+  tags:
+    - keystone
+
+- name: KEY-API | _distribute_fernet_keys | Change mode and ownership in /tmp directory
+  file:
+    path: "/tmp/fernet-keys"
+    state: directory
+    owner: "{{ keystone_user }}"
+    group: "{{ keystone_group }}"
+    recurse: yes
+    mode: 0700
+  when: inventory_hostname != keystone_hosts[0]
+  become: yes
+  tags:
+    - keystone
+
+- name: KEY-API | _distribute_fernet_keys | Distribute keys from /tmp to keystone directory
+  command: "rsync -a --delete /tmp/fernet-keys/ {{ keystone_fernet_dir }}"
+  when: inventory_hostname != keystone_hosts[0]
+  become: yes
+  tags:
+    - keystone
+
+- name: KEY-API | _distribute_fernet_keys | Remove the tmp directory from controller
+  file: path="/tmp/fernet-keys" state=absent
+  become: yes
+
+- name: KEY-API | _distribute_fernet_keys | Remove the tmp directory from deployer
+  file: path="/tmp/fernet-keys" state=absent
+  delegate_to: localhost
+  run_once: True
+  become: yes

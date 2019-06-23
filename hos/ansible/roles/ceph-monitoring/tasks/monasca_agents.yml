@@ -1,0 +1,84 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: ceph-monitoring | monasca_agents | Run ceph detection plugin
+  become: yes
+  monasca_agent_plugin: name="ceph"
+
+# Cron jobs for metrics related generic to ceph node like connectivity-status,
+# nic-speed etc.
+- name: ceph-monitoring | monasca_agents |
+        Set up cron jobs for generic ceph metrics
+  become: yes
+  template:
+    src: ceph-generic-cron.j2
+    dest: /etc/cron.d/ceph-generic-cron
+    owner: root
+    group: root
+    mode: 0644
+
+# Cron jobs for metrics related to ceph cluster entities like cluster-status,
+# monitor-quorum, overall osd-status etc.
+- name: ceph-monitoring | monasca_agents | Set up cron jobs for cluster metrics
+  become: yes
+  template:
+    src: ceph-cluster-cron.j2
+    dest: /etc/cron.d/ceph-cluster-cron
+    owner: root
+    group: root
+    mode: 0644
+  when: inventory_hostname in groups["CEP-MON"]
+
+# Cron jobs for metrics related to ceph osd entities like osd-node-ram,
+# osd-journal-ratio etc.
+- name: ceph-monitoring | monasca_agents | Set up cron jobs for OSD metrics
+  become: yes
+  template:
+    src: ceph-osd-cron.j2
+    dest: /etc/cron.d/ceph-osd-cron
+    owner: root
+    group: root
+    mode: 0644
+  when: inventory_hostname in groups["CEP-OSD"]
+
+# Cron jobs for metrics related to radosgw entities like radosgw-status etc.
+- name: ceph-monitoring | monasca_agents | Set up cron jobs for Radosgw metrics
+  become: yes
+  template:
+    src: ceph-radosgw-cron.j2
+    dest: /etc/cron.d/ceph-radosgw-cron
+    owner: root
+    group: root
+    mode: 0644
+  when: '"CEP-RGW" in groups and inventory_hostname in groups["CEP-RGW"]'
+
+- name: ceph-monitoring | monasca_agents | Run cephlm custom detection plugin
+  become: yes
+  monasca_agent_plugin:
+    name: "CephLMDetect"
+    # args should be a space separated list and can include:
+    #    metrics_files=<comma-separated (no spaces) list of files from
+    #                  which metrics will be read.
+    #    subcommands=<comma-separated (no spaces) list of subcommands with
+    #                which cephlm-probe will be run.
+    #    suppress_ok=<comma-separated (no spaces) list of subcommands for
+    #                which cephlm-probe will not report metrics with value
+    #                OK (0).
+    args:
+      subcommands: "{{ cephlm_check_subcommands | join(',') }}"
+      suppress_ok: "{{ cephlm_check_suppress_ok | join(',') }}"
+      metrics_files: "{{ cephlm_check_metrics_files | join(',') }}"

@@ -1,0 +1,190 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: KEYMGR-API | _configure_pkcs11_plugin |
+    barbican use pkcs11 plugin flag value
+  debug:
+    msg: "use_pkcs11_crypto_plugin = {{ use_pkcs11_crypto_plugin }}"
+  when: barbican_debug is defined
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin |
+    Configure secretstore to pkcs11 plugin if enabled
+  set_fact:
+    barbican_secretstore_plugins: "store_crypto"
+    barbican_enabled_crypto_plugins: "p11_crypto"
+  when: use_pkcs11_crypto_plugin
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin |
+    Configure pkcs11 settings to default if pkc11 plugin not enabled
+  set_fact:
+    barbican_pkcs11_session_password:
+    barbican_pkcs11_mkek_label:
+    barbican_pkcs11_hmac_label:
+    barbican_pkcs11_library_path:
+  when: use_pkcs11_crypto_plugin | bool == False
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin |
+    Set library path on controller when HPE pkcs11 connector flag is set
+  set_fact:
+    barbican_pkcs11_library_path:
+      "{{ barbican_pkcs11_hpe_connector_library_path }}"
+  when: barbican_pkcs11_provider_is_hpe_eskm | is_bool_true and
+    barbican_pkcs11_library_path | is_str_set == False
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin |
+    Install pkcs11 debian package on controller from third party repo
+  apt:
+    name: "{{ barbican_pkcs11_package_name }}"
+    state: "present"
+    force: yes
+  become: yes
+  when: barbican_pkcs11_package_name | is_str_set
+  register: hlm_notify_barbican_api_restart_required
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin |
+    Read stat for HPE connector base path on controller
+  stat:
+    path: "{{ barbican_pkcs11_hpe_connector_base_path }}"
+  become: yes
+  when: barbican_pkcs11_hpe_generate_conf | is_bool_true
+  register: barbican_pkcs11_hpe_connector_base_path_result
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin |
+    Check stat for HPE connector base path on controller
+  fail:
+    msg: "Missing HPE pkcs11 connector at path
+      '{{ barbican_pkcs11_hpe_connector_base_path }}'"
+  when: barbican_pkcs11_hpe_connector_base_path_result is defined and
+        barbican_pkcs11_hpe_connector_base_path_result.stat.exists == False
+  tags:
+    - barbican
+
+- include: _configure_pkcs11_plugin_certs.yml
+  when: barbican_pkcs11_plugin_conf is defined
+
+- name: KEYMGR-API | _configure_pkcs11_plugin |
+    Generate HPE PKCS11 connector conf file
+  shell: >
+    {{ barbican_pkcs11_hpe_connector_base_path }}/bin/controlencryption
+    --setserver={{ barbican_pkcs11_hpe_kmip_host }}
+    --port={{ barbican_pkcs11_hpe_kmip_port }}
+  args:
+    chdir: "{{ barbican_pkcs11_hpe_connector_base_path }}/bin"
+    executable: /bin/bash
+  become: yes
+  when: barbican_pkcs11_hpe_generate_conf | is_bool_true and
+        barbican_pkcs11_hpe_kmip_host | is_str_set and
+        barbican_pkcs11_hpe_kmip_port | is_str_set
+  register: hpe_pkcs11_generate_conf_result
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin |
+    Result for PKCS11 connector conf generation
+  debug:
+    msg: "hpe_pkcs11_generate_conf_result =
+      {{ hpe_pkcs11_generate_conf_result }}"
+  when: hpe_pkcs11_generate_conf_result is defined
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin |
+    Update pkcs11 conf values in generated config.conf file
+  lineinfile:
+    dest: "{{ barbican_pkcs11_hpe_connector_base_path }}/conf/config.conf"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.value }}"
+    state: "present"
+  become: yes
+  with_items:
+    - { regexp: "^sessionObjectCleanup=true",
+      value: "sessionObjectCleanup=false" }
+    - { regexp: "^requireSignVerify=true",
+      value: "requireSignVerify=false" }
+  when: hpe_pkcs11_generate_conf_result | success
+
+# In generate label ignore error case when provided mkek label already exists
+# to keep generation behavior idempotent
+- name: KEYMGR-API | _configure_pkcs11_plugin | Generate pkcs11 mkek label
+  command: >
+      {{ barbican_bin_dir }}/barbican-manage hsm gen_mkek
+      --library-path {{ barbican_pkcs11_library_path }}
+      --passphrase {{ barbican_pkcs11_session_password }}
+      --slot-id {{ barbican_pkcs11_slot_id }}
+      --label '{{ barbican_pkcs11_mkek_label }}'
+  become: yes
+  when: barbican_pkcs11_generate_labels | is_bool_true and
+        barbican_pkcs11_library_path | is_str_set and
+        barbican_pkcs11_session_password | is_str_set and
+        barbican_pkcs11_mkek_label | is_str_set
+  register: pkcs11_generate_mkek_label_result
+  failed_when: (pkcs11_generate_mkek_label_result | failed and
+    'already exists' not in pkcs11_generate_mkek_label_result.stdout)
+  run_once: True
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin |
+    Result for PKCS11 mkek label generation
+  debug:
+    msg: "pkcs11_generate_mkek_label_result =
+      {{ pkcs11_generate_mkek_label_result }}"
+  when: pkcs11_generate_mkek_label_result is defined
+  tags:
+    - barbican
+
+# In generate label ignore error case when provided hmac label already exists
+# to keep generation behavior idempotent
+- name: KEYMGR-API | _configure_pkcs11_plugin | Generate pkcs11 hmac label
+  command: >
+      {{ barbican_bin_dir }}/barbican-manage hsm gen_hmac
+      --library-path {{ barbican_pkcs11_library_path }}
+      --passphrase {{ barbican_pkcs11_session_password }}
+      --slot-id {{ barbican_pkcs11_slot_id }}
+      --label '{{ barbican_pkcs11_hmac_label }}'
+  become: yes
+  when: barbican_pkcs11_generate_labels | is_bool_true and
+        barbican_pkcs11_library_path | is_str_set and
+        barbican_pkcs11_session_password | is_str_set and
+        barbican_pkcs11_hmac_label | is_str_set
+  register: pkcs11_generate_hmac_label_result
+  failed_when: (pkcs11_generate_hmac_label_result | failed and
+    'already exists' not in pkcs11_generate_hmac_label_result.stdout)
+  run_once: True
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin |
+    Result for PKCS11 hmac label generation
+  debug:
+    msg: "pkcs11_generate_hmac_label_result =
+      {{ pkcs11_generate_hmac_label_result }}"
+  when: pkcs11_generate_hmac_label_result is defined
+  tags:
+    - barbican

@@ -1,0 +1,63 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+- include: _deploy_ssh_key.yml
+
+- include_vars: roles/freezer-jobs/defaults/jobs.yml
+
+- name: freezer-jobs | deployer_restore_helper | Create Directory
+  become: yes
+  file:
+    path: /root/deployer_restore_helper
+    owner: root
+    group: root
+    state: directory
+  when: freezer_ssh_ready
+
+- name: freezer-jobs | deployer_restore_helper | Copy restore files
+  become: yes
+  template:
+    src: deployer_restore.ini.j2
+    dest: "/root/deployer_restore_helper/{{ item['backup_name'] }}.ini"
+    owner: root
+    group: root
+    mode: 0640
+  with_items: jobs['deployer']['actions']
+  when: freezer_ssh_ready
+
+- name: freezer-jobs | deployer_restore_helper | Copy restore script
+  become: yes
+  template:
+    src: deployer_restore_script.sh.j2
+    dest: /root/deployer_restore_helper/deployer_restore_script.sh
+    owner: root
+    group: root
+    mode: 0740
+  when: freezer_ssh_ready
+
+- name: freezer-jobs | deployer_restore_helper | SSH credentials are setup
+  debug:
+    msg: "SSH restore script for the deployer has been deployed in \
+      /root/deployer_restore_helper/"
+  when: freezer_ssh_ready
+
+- name: freezer-jobs | deployer_restore_helper | SSH credentials are not setup
+  debug:
+    msg: "SSH credentials are not setup, therefore this script will only \
+      install the freezer-agent but won't prepare it for SSH restore. \
+      If needed, please fill in valid SSH credentials in \
+      helion/my_cloud/config/freezer/ssh_credentials.yml"
+  when: not freezer_ssh_ready

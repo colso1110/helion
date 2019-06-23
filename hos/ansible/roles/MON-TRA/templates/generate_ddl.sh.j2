@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+{#
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+SCRIPT_HOME=$(dirname $(readlink -f $BASH_SOURCE))
+pushd $SCRIPT_HOME
+
+{{ mon_tra_bin_dir }}/python ./generate_ddl.py -t pre_transform_spec -i {{ mon_tra_tools_dir }}//pre_transform_specs_template.sql -s {{ mon_tra_lib_dir }}/python2.7/site-packages/monasca_transform/data_driven_specs/pre_transform_specs/pre_transform_specs.json -o {{ mon_tra_pre_transform_specs_file }}
+{{ mon_tra_bin_dir }}/python ./generate_ddl.py -t transform_spec -i {{ mon_tra_tools_dir }}//transform_specs_template.sql -s {{ mon_tra_lib_dir }}/python2.7/site-packages/monasca_transform/data_driven_specs/transform_specs/transform_specs.json -o {{ mon_tra_transform_specs_file }}
+
+popd

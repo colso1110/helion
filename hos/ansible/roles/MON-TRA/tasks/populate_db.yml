@@ -1,0 +1,47 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: MON-TRA | populate_db | Generate ddl
+  become_user: "{{ mon_tra_service_user }}"
+  become: true
+  command: |
+    {{ mon_tra_tools_dir }}/generate_ddl.sh
+
+- name: MON-TRA | populate_db | MySQL client
+  become: yes
+  apt:
+    name: percona-xtradb-cluster-client-5.6
+    state: present
+
+- name: MON-TRA | populate_db | Populate transform_specs in db
+  run_once: true
+  no_log: true
+  become_user: "{{ mon_tra_service_user }}"
+  become: true
+  shell: >
+    mysql {{ "--ssl-ca=" + mon_tra_ca_file if mon_tra_db_use_ssl else "" }} -u
+    {{ mon_tra_mysql_user }} -p{{ mon_tra_mysql_password }} -h
+    {{ mon_tra_mysql_target_host }} < {{ mon_tra_transform_specs_file }}
+
+- name: MON-TRA | populate_db | Populate pre_transform_specs in db
+  run_once: true
+  no_log: true
+  become_user: "{{ mon_tra_service_user }}"
+  become: true
+  shell: >
+    mysql {{ "--ssl-ca=" + mon_tra_ca_file if mon_tra_db_use_ssl else "" }} -u
+    {{ mon_tra_mysql_user }} -p{{ mon_tra_mysql_password }} -h
+    {{ mon_tra_mysql_target_host }} < {{ mon_tra_pre_transform_specs_file }}

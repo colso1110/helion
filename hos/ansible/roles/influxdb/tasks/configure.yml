@@ -1,0 +1,71 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: Influxdb | install | Update config
+  template: src=influxdb.conf.j2 dest={{ influxdb_conf_dir }}/influxdb.conf
+  register: hlm_notify_influxdb_restart_required
+
+- name: Influxdb | install | Copy ssl key
+  copy:
+    dest: "{{influxdb_ssl_certificate}}"
+    src: "{{influxdb_ssl_certificate_src}}"
+    owner: influxdb
+    group: root
+    mode: 0440
+  when: influxdb_ssl_certificate_src is defined
+  register: hlm_notify_influxdb_restart_required
+
+- name: Influxdb | install | Create Influxdb Data Directory
+  file:
+    path: "{{ influxdb_data_dir }}"
+    state: directory
+    recurse: yes
+    owner: influxdb
+    group: influxdb
+    mode: 0750
+
+- name: Influxdb | install | Create Influxdb log dir
+  file:
+    path: "{{influxdb_log_dir}}"
+    state: directory
+    owner: root
+    group: influxdb
+    mode: 0775
+
+- name: Influxdb | install | Create Join Script if Influxdb Slave
+  template:
+    src: influxdb.j2
+    dest: /etc/default/influxdb
+    owner: root
+    group: root
+    mode: 0444
+  when: host.vars.member_id != influxdb_master.member_id
+
+- name: Influxdb | install | Detect if this is a systemd based system
+  command: cat /proc/1/comm
+  register: init
+
+- name: Influxdb | install | This is a systemd based system
+  set_fact: use_systemd=True
+  when: init.stdout == 'systemd'
+
+- name: Influxdb | install | This is not a systemd based system
+  set_fact: use_systemd=False
+  when: init.stdout != 'systemd'
+
+- name: Influxdb | install | Reload the systemd manager
+  command: systemctl daemon-reload
+  when: use_systemd

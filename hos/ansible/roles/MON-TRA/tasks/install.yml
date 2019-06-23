@@ -1,0 +1,133 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: MON-TRA | install | Setup group
+  become: true
+  group:
+    name: "{{ mon_tra_service_group }}"
+    system: yes
+
+- name: MON-TRA | install | Setup user
+  become: true
+  user:
+    name: "{{ mon_tra_service_user }}"
+    system: yes
+    group: "{{ mon_tra_service_group }}"
+    groups: "{{ mon_tra_spark_group_name }}"
+
+- name: MON-TRA | install | Create directories
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ mon_tra_service_user }}"
+    group: "{{ mon_tra_service_group }}"
+    mode: 0755
+  with_items:
+    - "{{ mon_tra_service_log_dir }}"
+    - "{{ mon_tra_service_dir }}"
+    - "{{ mon_tra_service_run_dir }}"
+    - "{{ mon_tra_tools_dir }}"
+
+- name: MON-TRA | install | Touch logfile
+  become: true
+  file:
+    path: "{{ mon_tra_service_log_dir }}/{{ mon_tra_service_log_filename }}"
+    state: touch
+    owner: "{{ mon_tra_service_user }}"
+    group: adm
+    mode: 0640
+
+- name: MON-TRA | install | Push zip generation script
+  become: true
+  template:
+    src: create_zip.py.j2
+    dest: "{{ mon_tra_tools_dir }}/create_zip.py"
+    owner: "{{ mon_tra_service_user }}"
+    group: "{{ mon_tra_service_group }}"
+    mode: 0755
+
+- name: MON-TRA | install | Push ddl generation script
+  become: true
+  template:
+    src: generate_ddl.sh.j2
+    dest: "{{ mon_tra_tools_dir }}/generate_ddl.sh"
+    owner: "{{ mon_tra_service_user }}"
+    group: "{{ mon_tra_service_group }}"
+    mode: 0755
+
+- name: MON-TRA | install | Push ddl generation python module and templates
+  become: true
+  copy:
+    src: "{{ item }}"
+    dest: "{{ mon_tra_tools_dir }}/{{ item }}"
+    owner: "{{ mon_tra_service_user }}"
+    group: "{{ mon_tra_service_group }}"
+    mode: 0755
+  with_items:
+    - "generate_ddl.py"
+    - "pre_transform_specs_template.sql"
+    - "transform_specs_template.sql"
+
+- name: MON-TRA | install | Create database root dir
+  become_user: "{{ mon_tra_service_user }}"
+  become: true
+  file:
+    path: "{{ mon_tra_database_root_dir }}"
+    state: directory
+    mode: 0755
+    recurse: yes
+
+- name: MON-TRA | install | Copy mysql schema to host
+  become_user: "{{ mon_tra_service_user }}"
+  become: true
+  copy:
+    dest: "{{ mon_tra_schema_file }}"
+    owner: "{{ mon_tra_service_user }}"
+    group: "{{ mon_tra_service_group }}"
+    mode: 0640
+    src: monasca-transform_mysql.sql
+  register: copy_result
+
+- name: MON-TRA | install | MySQL client
+  become: yes
+  apt:
+    name: percona-xtradb-cluster-client-5.6
+    state: present
+
+- name: MON-TRA | install | Apply mysql schema to db
+  run_once: true
+  no_log: true
+  become_user: "{{ mon_tra_service_user }}"
+  become: true
+  shell: >
+      mysql
+      {{ "--ssl-ca=" + mon_tra_ca_file if mon_tra_db_use_ssl else "" }} -u
+      {{ mon_tra_mysql_user }} -p{{ mon_tra_mysql_password }} -h
+      {{ mon_tra_mysql_target_host }} < {{ mon_tra_schema_file }}
+
+- name: MON-TRA | install | Update installed packager cache
+  become: yes
+  install_package:
+    cache: update
+
+- name: MON-TRA | install | Install the monasca-transform venv
+  become: true
+  install_package:
+    name: monasca_transform
+    service: monasca-transform
+    state: present

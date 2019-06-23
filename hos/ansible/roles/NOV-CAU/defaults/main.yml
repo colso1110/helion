@@ -1,0 +1,46 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# This file will contain the default values for the nova-consoleauth service
+---
+nova_component: nova-consoleauth
+
+# the filters nova-common will copy for this service
+nova_rootwrap_filters:
+  - rootwrap.d/consoleauth.filters
+
+# packages listed here will trigger a restart of the service when updated
+nova_consoleauth_restart_packages: []
+
+# host_index of where consoleauth service is running
+consoleauth_host_index: 0
+
+# host group
+consoleauth_host_group: "{{ groups[verb_hosts.NOV_CAU] }}"
+
+# facts file that stores nova_consoleauth run location
+run_loc_file: "{{ nova_facts_dir }}/nova_consoleauth_run_location_{{ host.my_dimensions.control_plane }}.fact"
+
+# CP variables - required for enabling disabling service
+keystone:
+  nova_admin_user: "{{ NOV_API.consumes_KEY_API.vars.keystone_nova_user }}"
+  nova_admin_password: "{{ NOV_API.consumes_KEY_API.vars.keystone_nova_password | quote }}"
+  service_tenant: "{{ KEY_API.vars.keystone_service_tenant }}"
+  url: "{{ NOV_API.consumes_KEY_API.vips.private[0].url }}"
+
+# the log files nova-common will create for this service
+nova_log_files:
+  - "{{ nova_log_file_location }}/nova-consoleauth.log"
+  - "{{ nova_log_file_location }}/nova-consoleauth-json.log"

@@ -1,0 +1,60 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: dcn-server-cms | _run_set_and_audit_cms | mkdir {{ dcn_upgrade_dir }}
+  become: yes
+  file:
+    path: "{{ dcn_upgrade_dir }}"
+    state: directory
+
+- name: dcn-server-cms | _run_set_and_audit_cms |
+    Unarchive nuage-openstack-upgrade tarball
+  become: yes
+  unarchive:
+    src: "{{ dcn_upgrade_archive }}"
+    dest: "{{ dcn_upgrade_dir }}"
+
+- name: dcn-server-cms | _run_set_and_audit_cms | run set_and_audit_cms.py
+  become: yes
+  shell: ". {{ neutron_bin_dir }}/activate; cd {{ dcn_upgrade_dir }} ; python set_and_audit_cms.py --neutron-config-file {{ neutron_conf_dir }}/neutron.conf --plugin-config-file {{ neutron_conf_dir }}/nuage_plugin.ini"
+  register: py_result
+  run_once_per: verb_hosts.NEU_SVR
+
+- name: dcn-server-cms | _run_set_and_audit_cms | Capture the result
+  become: yes
+  shell: grep "cms_id = " {{ neutron_conf_dir }}/nuage_plugin.ini | tail -1 | cut -d'=' -f 2
+  register: set_and_audit_cms
+  run_once_per: verb_hosts.NEU_SVR
+
+- name: dcn-server-cms | _run_set_and_audit_cms | Update {{ vsd_cms_id_ini_file }}
+  become: yes
+  shell: 'rm -f {{ vsd_cms_id_ini_file }} ; echo "cms_id={{ set_and_audit_cms.stdout|trim }}" > {{ vsd_cms_id_ini_file }}'
+  run_once_per: verb_hosts.NEU_SVR
+
+- name: dcn-server-cms | _run_set_and_audit_cms | Copy vsd_cms_id_ini_file to deployer
+  become: yes
+  fetch:
+    src: "{{ vsd_cms_id_ini_file }}"
+    dest: "/tmp/"
+    flat: yes
+  run_once_per: verb_hosts.NEU_SVR
+
+- name: dcn-server-cms | _run_set_and_audit_cms | Copy /tmp/vsd_cms_id.ini to nodes
+  become: yes
+  copy:
+    src: /tmp/vsd_cms_id.ini
+    dest: "{{ neutron_conf_dir }}/"

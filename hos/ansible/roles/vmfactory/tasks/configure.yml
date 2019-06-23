@@ -1,0 +1,86 @@
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+---
+
+- name: vmfactory | configure | Copy apparmor config files
+  become: yes
+  copy:
+    src: "{{ item.file }}"
+    dest: "/{{ item.file | replace('../../NOV-CMP-KVM/files/', '') }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode | default('a-rwx,u=rw,g=r,a=r') }}"
+  with_items:
+    - file: '../../NOV-CMP-KVM/files/etc/apparmor.d/abstractions/base'
+    - file: '../../NOV-CMP-KVM/files/etc/apparmor.d/abstractions/consoles'
+    - file: '../../NOV-CMP-KVM/files/etc/apparmor.d/abstractions/libvirt-qemu'
+    - file: '../../NOV-CMP-KVM/files/etc/apparmor.d/abstractions/nameservice'
+    - file: '../../NOV-CMP-KVM/files/etc/apparmor.d/usr.lib.libvirt.virt-aa-helper'
+    - file: '../../NOV-CMP-KVM/files/etc/apparmor.d/usr.sbin.libvirtd'
+  notify:
+    - reload vmf_apparmor
+    - restart vmf_libvirtd
+  when: vmf_deploy_apparmor | bool == True and ansible_os_family == 'Debian'
+  register: apply_apparmor_profile_result
+
+- name: vmfactory | configure | Create symlink for apparmor kvm profile
+  become: yes
+  file:
+    src: /etc/apparmor.d/libvirt/TEMPLATE.qemu
+    dest: /etc/apparmor.d/libvirt/TEMPLATE.kvm
+    owner: root
+    group: root
+    mode: 0644
+    force: yes
+    state: link
+  notify:
+    - reload vmf_apparmor
+    - restart vmf_libvirtd
+  when: vmf_deploy_apparmor | bool == True and ansible_os_family == 'Debian'
+  register: create_symlink_result
+
+- name: vmfactory | configure | update reload/restart file for 3rd party vms
+  become: yes
+  shell: |
+     df /var/run | grep -q tmpfs || exit 1
+     mkdir -p /var/run/hos
+     touch /var/run/hos/reload_apparmor
+     touch /var/run/hos/restart_libvirtd
+  when: (apply_apparmor_profile_result.changed or create_symlink_result.changed) and (vmf_third_party_vm_support | bool == True)
+
+- name: vmfactory | configure | Copy libvirtd config files
+  become: yes
+  copy:
+    src: "{{ item.file }}"
+    dest: "/{{ item.file }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode | default('0644') }}"
+  with_items:
+    - file: 'etc/libvirt/libvirtd.conf'
+      mode: '0755'
+  notify:
+    - restart vmf_libvirtd
+  when: vmf_configure_libvirt | bool == True
+  register: copy_libvirt_files_result
+
+- name: vmfactory | configure | update libvirt_restart file for 3rd party vms
+  become: yes
+  shell: |
+    df /var/run | grep -q tmpfs || exit 1
+    mkdir -p /var/run/hos
+    touch /var/run/hos/restart_libvirtd
+  when: copy_libvirt_files_result.changed and (vmf_third_party_vm_support | bool == True)
+
+

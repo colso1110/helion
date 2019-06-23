@@ -1,0 +1,146 @@
+#!/usr/bin/env python
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+import fcntl
+from sys import exit, path, stdout
+
+path.append('/opt/stack/service/monascaclient/venv/lib/python2.7/site-packages')
+path.append('/opt/stack/service/novaclient/venv/lib/python2.7/site-packages')
+
+from keystoneauth1.identity import v3
+from keystoneauth1 import session, exceptions as ksexceptions
+from monascaclient import client as mnclient
+import monascaclient.exc as mnexceptions
+from novaclient import client as nvclient, exceptions as nvexceptions
+from requests import exceptions as rqexceptions
+
+# Goes through all metrics in an alarm
+# Returns true if there is one VM that exists
+# Returns false if there are no existing VMs in the alarm
+def checkAlarm(existing_resource_ids, alarm):
+    for metric in alarm['metrics']:
+        resource_id = metric.get('dimensions').get('resource_id')
+        if resource_id is not None:
+            if resource_id in existing_resource_ids:
+                return True
+            try:
+                control_plane = metric.get('dimensions').get('control_plane')
+                # If the control plane defined in the metric no longer exists
+                # We can safely delete the alarm
+                if control_plane not in nova_clients:
+                    continue
+                nova_clients[control_plane].servers.get(resource_id)
+                existing_resource_ids.add(resource_id)
+                return True
+            except nvexceptions.NotFound:
+                pass
+            except ksexceptions.connection.ConnectFailure as e:
+                print ('Nova could not connect to Keystone. '
+                       'ConnectFailure message={}'.format(e.message))
+                exit (1)
+            except rqexceptions.ConnectionError as e:
+                print ('Nova is down. Exiting now '
+                       'with ConnectionError message={}'.format(e.message))
+                exit (1)
+    return False
+
+# Ensure only one instance is running
+# This lock will be deleted when the process exits
+pid_file = '/var/tmp/pid_vm_alarm_cleanup'
+fp = open(pid_file, 'w')
+try:
+    fcntl.lockf(fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except IOError:
+    print 'vm_alarm_cleanup was already running. Exiting now.'
+    exit(0)
+
+# Start a monasca client
+username = "{{ MON_API.consumes_KEY_API.vars.keystone_monasca_user }}"
+password = "{{ MON_API.consumes_KEY_API.vars.keystone_monasca_password }}"
+auth_url = "{{ KEY_API.advertises.vips.private[0].url }}/v3"
+monasca_URL =  "{{ MON_AGN.consumes_MON_API.vips.private[0].url }}/v2.0"
+project_name = "{{ KEY_API.vars.keystone_admin_tenant }}"
+project_domain_name = "{{ KEY_API.vars.keystone_default_domain }}"
+user_domain_name = "{{ KEY_API.vars.keystone_default_domain }}"
+endpoint_type = 'internalURL'
+monasca_version = '2_0'
+ks_kwargs = {'username': username,
+             'password': password,
+             'project_name': project_name,
+             'auth_url': auth_url}
+monasca_client = mnclient.Client(monasca_version, monasca_URL, **ks_kwargs)
+
+# Build a list of unique undetermined VM alarm IDs
+dimension_args = {'component': 'vm'}
+list_args = {'state' : 'UNDETERMINED',
+             'metric_dimensions' : dimension_args}
+try:
+    alarm_list = monasca_client.alarms.list(**list_args)
+except mnexceptions.KeystoneException as e:
+    print ('Keystone credentials invalid or could not communicate '
+           'with Keystone. KeystoneException message={}'.format(e.message))
+    exit (1)
+except mnexceptions.CommunicationError as e:
+    print ('Error communicating with monasca. '
+           'CommunicationError message={}'.format(e.message))
+    exit (1)
+except mnexceptions.HTTPInternalServerError as e:
+    print ('monasca alarm-list failed with HTTPInternalServerError '
+           'from the monasca-api, message={}'.format(e.message))
+    exit (1)
+except Exception as e:
+    print ('monasca alarm-list failed with Monascaclient Exception: '
+           '{}'.format(e.message))
+    exit (1)
+
+# Exit if no action is necessary
+if not alarm_list:
+    print 'Nothing to delete. Exiting now.'
+    exit(0)
+
+# Start a nova client for every region
+control_planes = {{ service_topology.services.nova.components['nova-compute']['control_planes'] }}
+auth_kwargs = v3.Password(auth_url=auth_url,
+                          username=username,
+                          password=password,
+                          project_name=project_name,
+                          user_domain_name=user_domain_name,
+                          project_domain_name=project_domain_name)
+sess = session.Session(auth=auth_kwargs)
+nova_clients = dict()
+for control_plane in control_planes:
+    region = control_planes[control_plane]['regions'][0]
+    nova_client = nvclient.Client('2.1',
+                                  endpoint_type=endpoint_type,
+                                  region_name=region,
+                                  session=sess)
+    nova_clients[control_plane] = nova_client
+
+existing_resource_ids = set()
+# Delete alarm IDs for VMs that no longer exist
+for alarm in alarm_list:
+    if not checkAlarm(existing_resource_ids, alarm):
+        # Delete alarm, only output status if run from command line (not cron)
+        if stdout.isatty():
+            print 'Deleting alarm {} for non-existent VM'.format(alarm['id'])
+        try:
+            delete_args = {'alarm_id': alarm['id']}
+            monasca_client.alarms.delete(**delete_args)
+        except mnexceptions.HTTPException as e:
+            print ('Failed to delete alarm. HTTPException '
+                   'message={}'.format(e.message))
+exit(0)

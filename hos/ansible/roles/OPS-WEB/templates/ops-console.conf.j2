@@ -1,0 +1,104 @@
+{#
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+from leia.hooks import RestHook
+import os
+
+# but can be empty string ('') if no proxy needed
+http_proxy = ''
+https_proxy = http_proxy
+no_proxy = 'localhost,127.0.0.1'
+
+env = '{{ opsconsole_install_env }}'
+
+# Pecan Application Configurations
+app = {
+    'root': 'leia.api.controllers.root.RootController',
+    'modules': ['leia'],
+    'hooks': [RestHook()],
+    # DebugMiddleware middleware is not usable in a multi-process environment
+    'debug': False,
+}
+
+logging = {
+    'root': {'level': '{{ ops_console_loglevel }}', 'handlers': ['file']},
+    'loggers': {
+        'leia': {'level': '{{ ops_console_loglevel }}', 'handlers': ['filewithtxn'], 'propagate': False},
+        'py.warnings': {'handlers': ['file']},
+        '__force_dict__': True
+    },
+
+    'handlers': {
+        'file': {
+            'level': '{{ ops_console_loglevel }}',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': '{{ ops_console_error_log }}',
+            'maxBytes': 1048576,
+            'backupCount': 5,
+            'formatter': 'simple',
+        },
+        'filewithtxn': {
+            'level': '{{ ops_console_loglevel }}',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': '{{ ops_console_error_log }}',
+            'maxBytes': 1048576,
+            'backupCount': 5,
+            'formatter': 'simpletxn',
+        },
+    },
+    'formatters': {
+        'simple': {
+            'format': ('%(asctime)s %(levelname)-5.5s [%(name)-30.30s]'
+                        '[%(threadName)-19.19s]            %(message).512s')
+        },
+        'simpletxn': {
+            'format': ('%(asctime)s %(levelname)-5.5s [%(name)-30.30s]'
+                        '[%(threadName)-19.19s] [%(txn_id)-8.8s] %(message).512s')
+        },
+    }
+
+}
+
+keystone = {
+    'private_url': '{{ keystone_private_url }}',
+    'cacert': '/etc/ssl/cos/cacert.pem',
+    'service_tenant': '{{ keystone_service_tenant }}',
+}
+
+db = {
+    'host': '{{ mysql.host }}',
+    'port': {{ mysql.port }},
+    'database': '{{ mysql.ops_db }}',
+    'user': '{{ mysql.ops_user }}',
+    'password': '{{ mysql.ops_password }}',
+    {% if mysql.use_ssl | bool %}
+    'ssl': {'ca': '{{ ca_file}}' },
+    {% endif %}
+}
+
+# TODO: change to_nice_json to to_nice_json(indent=4) when we use a version of
+#       ansible that supports it.
+services = {
+    '__force_dict__': True,
+    'nova': {{ service_topology.services.nova | 
+               default({}) | to_nice_json}},
+    'swift': {{ service_topology.services.swift | 
+                default({}) | to_nice_json}},
+    'monasca': {{ service_topology.services.monasca | 
+                  default({}) | to_nice_json}}
+}
+

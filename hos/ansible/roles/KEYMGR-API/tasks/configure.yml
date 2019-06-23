@@ -1,0 +1,169 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: KEYMGR-API | configure | echo remote user
+  debug:
+    msg: "ansible_ssh_user = {{ ansible_ssh_user }}"
+  when: barbican_debug is defined
+
+- name: KEYMGR-API | configure |
+    Set installed component specific directories path
+  include: ../../barbican-common/tasks/_set_directories.yml
+  vars:
+    install_package_result: "{{ barbican_api_install_result }}"
+
+- name: KEYMGR-API | configure  | set api config dir location
+  set_fact:
+    barbican_api_config_dir: "{{ barbican_conf_dir }}"
+
+- name: KEYMGR-API | configure  | Touch the log file
+  file:
+    path: "{{ item }}"
+    owner: "{{ barbican_user }}"
+    group: "{{ barbican_centralized_log_group }}"
+    mode: 0640
+    state: touch
+  become: yes
+  with_items:
+    - "/var/log/barbican/barbican.log"
+    - "/var/log/barbican/barbican-json.log"
+    - "/var/log/barbican/barbican-access.log"
+    - "/var/log/barbican/barbican-monitor.log"
+  tags:
+    - barbican
+
+# Configure and set all necessary variables used in templates.
+# This way template can detect changes from existing file content
+# and notify restart if changed. Do not change/set file content
+# later via crudini as that will always result in changes
+# and hence server restart.
+- name: KEYMGR-API | configure | Includes features configuration playbook
+  include: configure_features.yml
+
+- name: KEYMGR-API | configure  |
+    Copies policy, barbican.conf, paste ini, api logging, audit map, uwsgi
+    vassal files
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "{{ item.mode }}"
+  become: yes
+  become_user: "{{ barbican_user }}"
+  with_items:
+    - { src: "policy.json",
+      dest: "{{ barbican_conf_dir }}/policy.json", mode: "0400"}
+    - { src: "barbican.conf.j2",
+      dest: "{{ barbican_conf_dir }}/{{ barbican_api_conf_file }}",
+      mode: "0600"}
+    - { src: "barbican-api-paste.ini.j2",
+      dest: "{{ barbican_conf_dir }}/barbican-api-paste.ini", mode: "0600"}
+    - { src: "api-logging.conf.j2",
+      dest: "{{ barbican_conf_dir }}/api-logging.conf", mode: "0600"}
+    - { src: "api_audit_map.conf.j2",
+      dest: "{{ barbican_conf_dir }}/api_audit_map.conf", mode: "0400"}
+    - { src: "vassals_barbican-api.ini.j2",
+      dest: "{{ barbican_conf_dir }}/vassals/barbican-api.ini", mode: "0600"}
+  register: hlm_notify_barbican_api_restart_required
+  tags:
+    - barbican
+
+- name: KEYMGR-API | configure | notify api restart if changed
+  debug:
+    msg: "barbican api conf file(s) have changed so barbican-api
+          restart needed"
+  when:  hlm_notify_barbican_api_restart_required.changed
+
+- name: KEYMGR-API | configure  | Configure the barbican_api_server script
+  template:
+    src: "barbican_api_server"
+    dest: "{{ barbican_bin_dir }}/barbican_api_server"
+    mode: "u=rwx,g=rx,o=rx"
+  become: yes
+  register: hlm_notify_barbican_api_restart_required
+  tags:
+    - barbican
+
+- name: KEYMGR-API | configure | Create barbican conf symlinks
+  become: yes
+  file:
+    src: "{{ barbican_conf_dir }}/{{ item }}"
+    dest: "/etc/barbican/{{ item }}"
+    owner: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+    state: link
+  with_items:
+    - "{{ barbican_api_conf_file }}"
+    - barbican-api-paste.ini
+    - api_audit_map.conf
+    - api-logging.conf
+    - policy.json
+    - vassals/barbican-api.ini
+  tags:
+    - barbican
+
+- name: KEYMGR-API | configure | echo hlmuser_home
+  debug:
+    msg: "hlmuser_home = {{ hlmuser_home }}"
+
+- name: KEYMGR-API | configure  | Copy barbican client env file
+  template:
+    src: "{{ item }}"
+    dest: "{{ hlmuser_home }}"
+    owner: "{{ hlmuser }}"
+    group: "{{ hlmuser }}"
+    mode: "0600"
+  with_items:
+    - barbican.osrc
+  tags:
+    - barbican
+
+- name: KEYMGR-API | configure  | Copy barbican client env file to deployer
+  template:
+    src: "{{ item }}"
+    dest: "{{ hlmuser_home }}"
+    owner: "{{ hlmuser }}"
+    group: "{{ hlmuser }}"
+    mode: "0600"
+  delegate_to: localhost
+  with_items:
+    - barbican.osrc
+  tags:
+    - barbican
+
+- name: KEYMGR-API | configure |
+    Create/Upgrade Barbican database via barbican-manage command script
+  command: >
+    "{{ barbican_bin_dir }}/barbican-manage"
+    db upgrade {{ barbican_database_connection_string }}
+    --version "{{ barbican_db_version }}"
+  run_once: True
+  become: yes
+  become_user: "{{ barbican_user }}"
+  when: barbican_db_auto_create_enabled == False
+  tags:
+    - barbican
+
+- name: KEYMGR-API | configure | Create barbican-manage command symlink
+  become: yes
+  file:
+    src: "{{ barbican_bin_dir }}/{{ item }}"
+    dest: "/usr/bin/{{ item }}"
+    state: link
+  with_items:
+    - "barbican-manage"
+  tags:
+    - barbican

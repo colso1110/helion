@@ -1,0 +1,34 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: Get Vertica node name
+  command: /opt/vertica/bin/vsql -U dbadmin -w '{{ vertica_dbadmin_password | quote }}' -t -A -c "select NODE_NAME from CURRENT_SESSION;"
+  sudo_user: dbadmin
+  environment: "{{vertica_env}}"
+  register: vertica_node
+  no_log: True
+
+- name: Set vertica_node name
+  set_fact: vertica_node_name={{vertica_node.stdout}}
+
+- name: Place logrotate conf for vertica
+  template: src=vertica_logrotate.j2 dest=/opt/vertica/config/logrotate/{{ vertica_database_name }} owner=root group=root mode=0644
+
+- name: Place logrotate conf for vertica agent
+  template: src=agent_logrotate.j2 dest=/opt/vertica/config/logrotate/agent.logrotate owner=root group=root mode=0644
+
+- name: Remove admintools logrotate config as it fails due to permissions issues and logging handles rotating it
+  file: path=/opt/vertica/config/logrotate/admintool.logrotate state=absent

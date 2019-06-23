@@ -1,0 +1,87 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+  version: 2
+
+service-components:
+  - name: logging-server
+    mnemonic: LOG-SVR
+    service: logging
+
+    requires:
+      - name: logging-api
+        scope: host
+      - name: apache2
+        scope: host
+      - name: keystone-client
+        scope: host
+
+    # Add the VIP and member vars to group_vars stanza
+    advertises-to-services:
+      - service-name: LOG-NOP
+
+    config-set:
+      - name: ''
+        ansible-vars:
+          - name: logging_kibana_password
+            value: '%random-password%'
+            properties:
+              max-length: 12
+              min-length: 8
+
+    # Add dependency vars to group_vars stanza
+    consumes-services:
+      - service-name: FND-KFK
+      - service-name: FND-ZOO
+      - service-name: LOG-SVR
+      - service-name: KEY-API
+        relationship-vars:
+          - name: logging_monitor_user
+            value: logging_monitor
+          - name: logging_monitor_password
+            value: '%random-password%'
+            properties:
+              min-length: 8
+              max-length: 12
+          - name: logging_project
+            value: logging
+          - name: logging_domain
+            value: default
+
+    endpoints:
+
+      # Kibana VIP
+      - port: 5601
+        has-vip: true
+        vip-options:
+          - "option httpchk GET /elasticsearch/_cluster/health"
+          - "option redispatch"
+        roles:
+          - admin
+          - internal
+
+      # Elasticsearch API
+      - port: 9200
+        list-members: true
+        roles:
+          - elasticsearch_http
+
+      # Elasticsearch node traffic
+      - port: 9300
+        list-members: true
+        roles:
+          - elasticsearch_transport

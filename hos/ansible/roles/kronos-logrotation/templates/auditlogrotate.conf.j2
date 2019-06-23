@@ -1,0 +1,12 @@
+# if in the future we need more config files, use this directory:
+#include /etc/auditlogrotate.d
+
+/var/audit/**/*.log {
+    daily
+    compress
+    copytruncate
+    missingok
+    notifempty
+    rotate {{ logr_rotate }}
+}
+

@@ -1,0 +1,47 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Setup neutron-dhcp-agent specific configuration files.  Rootwrap
+# configuration files are setup by _configure_rootwrap.yml
+---
+- include: _write_conf.yml
+  src: "dhcp_agent.ini.j2"
+  dest: "dhcp_agent.ini"
+
+- name: neutron-common | _configure_dhcp_agent | Notify dhcp_agent on dhcp_agent.ini change
+  command: /bin/true
+  register: hlm_notify_neutron_dhcp_agent_restart_required
+  when: write_conf_result.changed
+
+- include: _write_conf.yml
+  src: "dhcp-agent-logging.conf.j2"
+  dest: "dhcp-agent-logging.conf"
+
+- name: neutron-common | _configure_dhcp_agent | Notify dhcp_agent on dhcp-agent-logging.conf change
+  command: /bin/true
+  register: hlm_notify_neutron_dhcp_agent_restart_required
+  when: write_conf_result.changed
+
+- name: neutron-common | _configure_dhcp_agent | copy dnsmasq-neutron.conf
+  become: yes
+  template:
+    src: "{{ item }}.j2"
+    dest: "{{ neutron_dnsmasq_conf_dir }}/{{ item }}"
+    owner: "{{ neutron_user }}"
+    group: "{{ neutron_group }}"
+    mode: 0640
+  with_items:
+    - "{{ neutron_dnsmasq_opts_file }}"
+  register: hlm_notify_neutron_dhcp_agent_restart_required

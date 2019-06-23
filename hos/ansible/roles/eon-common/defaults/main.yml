@@ -1,0 +1,67 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# HLM
+hlm_user : "{{ ansible_env['USER'] }}"
+hlm_user_home : "{{ ansible_env['HOME'] }}"
+
+# Defaults
+eon_user : eon
+eon_group : eon
+eon_log_group : adm
+eon_logs_dir : /var/log/eon
+protocol : http
+# flag set in configure playbooks to trigger services handlers to restart
+eon_restart_required: false
+eon_common: "eon"
+
+# RabbitMQ
+rabbit_userid : "{{ EON.consumes_FND_RMQ.vars.accounts.eon.username }}"
+rabbit_password : "{{ EON.consumes_FND_RMQ.vars.accounts.eon.password }}"
+_rabbit_hosts_list : "{{ EON_API.consumes_FND_RMQ.members.private }}"
+rabbit_hosts: "{% for x in _rabbit_hosts_list %}{{ x.host }}:{{ x.port }}{%if not loop.last %},{% endif %}{% endfor %}"
+rabbit_use_ssl: "{{ EON.consumes_FND_RMQ.members.private[0].use_tls }}"
+
+# Keystone
+eon_admin_tenant_name : "{{ KEY_API.vars.keystone_service_tenant }}"
+eon_admin_password : "{{ EON_API.consumes_KEY_API.vars.keystone_eon_password | quote }}"
+eon_admin_user : "{{ EON_API.consumes_KEY_API.vars.keystone_eon_user }}"
+keystone_auth_uri: "{{ EON_API.consumes_KEY_API.vips.private[0].url }}"
+keystone_identity_uri: "{{ EON_API.consumes_KEY_API.vips.private[0].url }}"
+eon_endpoint_type: internalURL
+eon_ca_certificates_file: /etc/ssl/certs/ca-certificates.crt
+
+
+eon_api_internal_port: "{{ host.bind.EON_API.internal.port }}"
+eon_api_internal_listen_ip: "{{ host.bind.EON_API.internal.ip_address }}"
+eon_api_internal_url: "http://{{ eon_api_internal_listen_ip }}:{{eon_api_internal_port }}/"
+
+eon_api_vip_url: "{{ EON_API.advertises.vips.private[0].url }}/"
+
+# esx network driver
+eon_noop_driver: "noop"
+network_driver_list: "{%- if eon_component == 'eon-api' -%}
+                          {{ EON_API | get_provided_data_values('esx_network_driver') }}
+                      {%- endif -%}
+                      {%- if eon_component == 'eon-conductor' -%}
+                          {{ EON_CND | get_provided_data_values('esx_network_driver') }}
+                      {%- endif -%}"
+eon_network_driver: "{%- if network_driver_list|length > 0 -%}
+                         {{ network_driver_list | last }}
+                     {%- else -%}
+                         {{ eon_noop_driver }}
+                     {%- endif -%}"

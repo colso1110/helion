@@ -1,0 +1,80 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: rabbitmq | remove | Forcfully stop RabbitMQ
+  become: yes
+  command: pkill -9 -u rabbitmq
+  register: _rabbitmq_remove_pkill_result
+  changed_when: _rabbitmq_remove_pkill_result | success
+  failed_when: _rabbitmq_remove_pkill_result.rc >= 2
+
+# Stop the RabbitMQ application including Erlang.
+- name: rabbitmq | remove | Notify systemd that RabbitMQ service is stopped
+  become: yes
+  service:
+    name: rabbitmq-server
+    enabled: no
+    state: stopped
+
+- name: rabbitmq | remove | Forcfully clear down all mnesia
+  become: yes
+  file:
+    path: "{{ rabbitmq_env.mnesia_base }}"
+    state: absent
+
+- name: rabbitmq | remove | Clean down any tls files
+  become: yes
+  file:
+    path: "{{ item.value }}"
+    state: absent
+  with_dict: rabbitmq_tls
+
+- name: rabbitmq | remove | Check rabbitmq-server.postrm exits
+  become: yes
+  stat:
+    path: /var/lib/dpkg/info/rabbitmq-server.postrm
+  register: _rabbitmq_remove_stat_result
+
+- name: rabbitmq | remove | Modify rabbitmq-server.postrm to allow mount points
+  become: yes
+  replace:
+    dest: /var/lib/dpkg/info/rabbitmq-server.postrm
+    regexp: '(\s+)rm -r (.*)\s*$'
+    replace: '\1rm -rf \2 || true'
+  when: _rabbitmq_remove_stat_result.stat.exists
+
+- name: rabbitmq | remove | Remove the RabbitMQ packages
+  become: yes
+  apt:
+    name: "{{ item.package }}"
+    force: yes
+    state: absent
+    purge: yes
+  register: _rabbitmq_remove_purge_result
+  when: item.upgrade != ""
+  with_items: rabbitmq_restart_packages[::-1]
+
+# https://github.com/ansible/ansible-modules-core/issues/965
+- name: rabbitmq | remove | apt-get autoremove packages
+  become: yes
+  command: apt-get -y autoremove
+  register: _rabbitmq_remove_autoremove_result
+  when: _rabbitmq_remove_purge_result.changed
+  changed_when: >
+    "The following packages will be REMOVED" in
+      _rabbitmq_remove_autoremove_result.stdout
+  tags:
+    - skip_ansible_lint

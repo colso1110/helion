@@ -1,0 +1,118 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Used primarily to pass pkcs11 client certificates from ansible control
+# machine to nodes running barbican service.
+
+- name: KEYMGR-API | _configure_pkcs11_plugin_certs |
+    Display variables related to PKCS11 plugin settings
+  debug: var=barbican_pkcs11_plugin_conf.client_cert_content
+  when: barbican_debug is defined
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin_certs  |
+    Identify client cert content from file if set
+  set_fact:
+    pkcs11_client_cert_content:
+      "{{ lookup('file', barbican_pkcs11_plugin_conf.client_cert_file_path) }}"
+  when: barbican_pkcs11_plugin_conf.client_cert_file_path | is_str_set
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin_certs  |
+    Read client cert content from variable when file content not provided
+  set_fact:
+    pkcs11_client_cert_content:
+      "{{ barbican_pkcs11_plugin_conf.client_cert_content }}"
+  when: pkcs11_client_cert_content is not defined
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin_certs  |
+    Identify client key content from file if set
+  set_fact:
+    pkcs11_client_key_content:
+      "{{ lookup('file', barbican_pkcs11_plugin_conf.client_key_file_path) }}"
+  when: barbican_pkcs11_plugin_conf.client_key_file_path | is_str_set
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin_certs  |
+    Read client key content from variable when file content not provided
+  set_fact:
+    pkcs11_client_key_content:
+      "{{ barbican_pkcs11_plugin_conf.client_key_content }}"
+  when: pkcs11_client_key_content is not defined
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin_certs  |
+    Identify client cacert content from file if set
+  set_fact:
+    pkcs11_client_cacert_content:
+      "{{ lookup('file',
+        barbican_pkcs11_plugin_conf.client_cacert_file_path) }}"
+  when: barbican_pkcs11_plugin_conf.client_cacert_file_path | is_str_set
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin_certs  |
+    Read client cacert content from variable when file content not provided
+  set_fact:
+    pkcs11_client_cacert_content:
+      "{{ barbican_pkcs11_plugin_conf.client_cacert_content }}"
+  when: pkcs11_client_cacert_content is not defined
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin_certs  |
+    Set certs path on controller when HPE pkcs11 connector flag is set
+  set_fact:
+    barbican_pkcs11_client_cert_path:
+      "{{ barbican_pkcs11_hpe_connector_client_cert_path }}"
+    barbican_pkcs11_client_key_path:
+      "{{ barbican_pkcs11_hpe_connector_client_key_path }}"
+    barbican_pkcs11_client_cacert_path:
+      "{{ barbican_pkcs11_hpe_connector_client_cacert_path }}"
+  when: barbican_pkcs11_provider_is_hpe_eskm | is_bool_true and
+    barbican_pkcs11_client_cert_path | is_str_set == False and
+    barbican_pkcs11_client_key_path | is_str_set == False and
+    barbican_pkcs11_client_cacert_path | is_str_set == False
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _configure_pkcs11_plugin_certs  |
+    Copy PKCS11 client certs file
+  copy:
+    content: "{{ item.content }}"
+    dest: "{{ item.dest }}"
+    owner: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+    mode: 0400
+  become: yes
+  with_items:
+    - { content: "{{ pkcs11_client_cert_content }}",
+          dest: "{{ barbican_pkcs11_client_cert_path }}" }
+    - { content: "{{ pkcs11_client_key_content }}",
+          dest: "{{ barbican_pkcs11_client_key_path }}" }
+    - { content: "{{ pkcs11_client_cacert_content }}",
+          dest: "{{ barbican_pkcs11_client_cacert_path }}"}
+  no_log: True
+  register: hlm_notify_barbican_api_restart_required
+  tags:
+    - barbican

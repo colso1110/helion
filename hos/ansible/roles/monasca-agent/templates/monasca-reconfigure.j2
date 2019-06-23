@@ -1,0 +1,36 @@
+#!/bin/sh
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+'{{monasca_virtualenv_dir}}/bin/monasca-setup' \
+    -u '{{monasca_agent_user}}' \
+    -p '{{monasca_agent_password}}' \
+    --ca_file '{{system_cacert_file}}' \
+    {% if monasca_agent_service is defined %} -s '{{monasca_agent_service}}' {% endif %} \
+    --keystone_url '{{keystone_url}}' \
+    --project_name '{{monasca_agent_project}}' \
+    {% if monasca_api_url is defined %} --monasca_url '{{monasca_api_url}}' {% endif %} \
+    {% if monasca_agent_dimensions is defined %} --dimensions '{{monasca_agent_dimensions}}' {% endif %} \
+    {% if monasca_agent_check_frequency is defined %} --check_frequency '{{monasca_agent_check_frequency}}' {% endif %} \
+    {% if monasca_agent_detection_args is defined %} -a '{{monasca_agent_detection_args}}' {% endif %} \
+    {% if monasca_agent_system_only %} --system_only {% endif %} \
+    {% if monasca_log_level is defined %} --log_level '{{monasca_log_level}}' {% endif %} \
+    --plugin_collect_time_warn={{ monasca_agent_collect_time_warn | int }} \
+    --num_collector_threads={{ monasca_agent_num_collector_threads }} \
+    --max_measurement_buffer_size={{ monasca_agent_max_measurement_buffer_size }} \
+    --backlog_send_rate={{ monasca_agent_backlog_send_rate }} \
+    --max_buffer_size={{ monasca_agent_max_buffer_size }} \
+    --overwrite

@@ -1,0 +1,37 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: CEP-RGW | keystone_change_pwd | Get a domain scoped token
+  keystone_v3:
+    action: "token_get"
+    endpoint: "{{ rgw_keystone.admin_endpoint }}"
+    login_username: "{{ rgw_keystone.admin_user }}"
+    login_password: "{{ rgw_keystone.admin_password }}"
+    login_user_domain_name: "{{ rgw_keystone.default_domain }}"
+    login_domain_name: "{{ rgw_keystone.default_domain }}"
+  run_once: true
+  register: rgw_domain_scoped_token_result
+
+- name: CEP-RGW | keystone_change_pwd | Update radosgw user password
+  keystone_v3:
+    action: "reset_password_by_admin"
+    user_name: "{{ rgw_keystone.rgw_admin_user }}"
+    user_domain_name: "{{ rgw_keystone.default_domain }}"
+    user_password: "{{ rgw_keystone.rgw_admin_password }}"
+    login_token: "{{ rgw_domain_scoped_token_result.result }}"
+    endpoint: "{{ rgw_keystone.admin_endpoint }}"
+  run_once: true

@@ -1,0 +1,59 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Confidential computer software. Valid license from HPE required for
+# possession, use or copying. Consistent with FAR 12.211 and 12.212,
+# Commercial Computer Software, Computer Software Documentation, and
+# Technical Data for Commercial Items are licensed to the U.S.
+# Government under vendor's standard commercial license.
+#
+---
+product:
+    version: 2
+
+services:
+-   name: barbican
+    mnemonic: KEYMGR
+    service-class: security
+    description: "Key Management"
+
+    consumes-services:
+    -   service-name: FND-RMQ
+        relationship-vars:
+        -   name: accounts
+            vars:
+                barbican:
+                -   name: username
+                    value: rmq_barbican_user
+                -   name: password
+                    value: '%random-password%'
+                    properties:
+                        max-length: 12
+                        min-length: 8
+                        key-name: rmq_barbican_password
+
+    -   service-name: FND-MDB
+        relationship-vars:
+        -   name: accounts
+            vars:
+                barbican:
+                -   name: username
+                    alias: mysql_barbican_user
+                    value: barbican
+                -   name: password
+                    alias: mysql_barbican_password
+                    value: '%random-password%'
+                    properties:
+                        max-length: 12
+                        min-length: 8
+                        key-name: mysql_barbican_password
+                -   name: grants
+                    value:
+                        - priv: .*:ALL,GRANT
+                          dbname: barbican
+        -   name: databases
+            vars:
+                barbican:
+                -   name: dbname
+                    value: barbican
+

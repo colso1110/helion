@@ -1,0 +1,51 @@
+{#
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+import logging
+
+import monasca_setup.agent_config
+import monasca_setup.detection
+
+log = logging.getLogger(__name__)
+
+class DirectoryDetectLogging(monasca_setup.detection.Plugin):
+    """Detect service log file directory sizes.
+    """
+
+    def _detect(self):
+        """Run detection, always set self.available True
+        """
+        self.available = True
+
+    def build_config(self):
+        """Build the config as a Plugins object and return.
+        """
+        log.info("\tEnabling the directory plugin to get the metrics for each service's log file directory.")
+        config = monasca_setup.agent_config.Plugins()
+        config['directory'] = {'init_config': None, 'instances': [
+{% for service in monitoring_directory_output_result.result %}
+                    {'directory': '{{ service.directory }}',
+                     'dimensions': {
+                         'service': '{{ service.name }}'
+                     }
+                    },
+{% endfor %}
+                ]}
+        return config
+
+    def dependencies_installed(self):
+        return True

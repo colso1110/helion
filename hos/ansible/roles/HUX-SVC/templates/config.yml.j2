@@ -1,0 +1,39 @@
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+port: "{{ hux_svc_port }}"
+logsDir: "{{ hux_svc_process_logs_dir }}"
+archiveDir: "{{ hux_svc_process_archive_dir }}"
+bindAddress: "{{ hux_svc_bind_address }}"
+homePath: "/home/{{ hux_svc_os_user }}"
+
+# TODO refactor to use camelCasing
+keystone_config:
+  auth_url: "{{ keystone.auth_url }}"
+  project_name: "{{ keystone.project_name }}"
+  project_domain_name: "{{ keystone.project_domain_name }}"
+  user_domain_name: "{{ keystone.user_domain_name }}"
+  username: "{{ keystone.username }}"
+  password: "{{ keystone.password }}"
+  ca_cert_file: "{{ keystone.ca_cert_file }}"
+
+logger:
+  console:
+    level: "{{ hux_svc_default_log_level }}"
+  file:
+    filename: "{{ hux_svc_log_dir }}/service.log"
+    level: info
+    colorize: false
+    json: true

@@ -1,0 +1,54 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# This file will contain the default values for designate
+---
+
+designate_system_group: designate
+designate_system_user: designate
+designate_system_createhome: false
+designate_system_shell: /bin/false
+
+designate_state_root_dir: /
+designate_system_home_folder: "{{ designate_state_root_dir }}/var/lib/designate"
+designate_lock_file_location: "{{ designate_state_root_dir }}/var/lib/designate"
+designate_log_file_location: "{{ designate_state_root_dir }}/var/log/designate"
+
+# designate.conf
+## [DEFAULT]
+### General
+designate_state_path: "{{ designate_state_root_dir }}/var/lib/designate"
+designate_lock_path: "{{ designate_state_root_dir }}/var/lib/designate"
+designate_rootwrap_config: "{{ designate_service_conf_dir }}/rootwrap.conf"
+
+### Logging
+designate_log_dir: "{{ designate_state_root_dir }}/var/log/designate"
+
+## [oslo_messaging_rabbit]
+### RabbitMQ
+rabbit:
+  hosts: "{% for x in DES_CEN.consumes_FND_RMQ.members.private %}{{ x.host }}:{{ x.port }}{%if not loop.last %},{% endif %}{% endfor %}"
+  rmq_service_user: "{{ DES.consumes_FND_RMQ.vars.accounts.designate.username }}"
+  rmq_service_password: "{{ DES.consumes_FND_RMQ.vars.accounts.designate.password }}"
+  rmq_use_ssl: "{{ DES.consumes_FND_RMQ.members.private[0].use_tls }}"
+
+## [oslo_policy]
+designate_policy_file: "{{ designate_service_conf_dir }}/policy.json"
+
+_designate_database_ca_file: "/etc/ssl/certs/ca-certificates.crt"
+_designate_database_ssl: "{% if DES_CEN.consumes_FND_MDB.vips.private[0].use_tls %}?ssl_ca={{ _designate_database_ca_file }}{% endif %}"
+
+## [storage:sqlalchemy]
+designate_database_connection: "mysql://{{ DES_CEN.consumes_FND_MDB.vars.accounts.designate.username }}:{{ DES_CEN.consumes_FND_MDB.vars.accounts.designate.password | urlencode }}@{{ DES_CEN.consumes_FND_MDB.vips.private[0].host }}/designate{{ _designate_database_ssl }}"

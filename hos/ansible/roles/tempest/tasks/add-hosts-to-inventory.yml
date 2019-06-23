@@ -1,0 +1,77 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: tempest | add-hosts-to-inventory | Setup workers for region by service
+  add_host:
+    name: tempest_{{ item.region }}
+    groups: tempest_all,
+            tempest_regions,
+            tempest_{{ item.region }}
+
+    ansible_ssh_host: "{{ ansible_ssh_host }}"
+
+    KEY_API: "{{ KEY_API }}" # noqa
+    TPS_TST: "{{ TPS_TST }}" # noqa
+
+    tempest_worker:
+      config_filename: tempest_{{ item.region }}.conf
+      config_parts_dir: >
+        {{ tempest_run.resource_dir }}/{{ item.region }}/.part_configs
+      log_filename: tempest_{{ item.region }}.log
+      subunit_filename: "{{ subunit_prefix }}_{{ item.region }}.subunit"
+      region_name: "{{ item.region }}"
+      resource_dir: "{{ tempest_run.resource_dir }}/{{ item.region }}"
+      services: "{{ item.services }}"
+      services_by_region: "{{ item.services }}"
+      testr_log_filename: testr_results_{{ item.region }}.log
+  with_items: "{{ cp_tempest_test_plans.by_region }}"
+  when: tempest_test_axis in ["region", "all"]
+  run_once: true
+
+- name: tempest | add-hosts-to-inventory | control_plane for region by service
+  add_host:
+    name: tempest_{{ item.control_plane }}-{{ item.region }}
+    groups: tempest_all,
+            tempest_control_planes,
+            tempest_{{ item.control_plane }}-{{ item.region }}
+
+    ansible_ssh_host: "{{ ansible_ssh_host }}"
+
+    KEY_API: "{{ KEY_API }}" # noqa
+    TPS_TST: "{{ TPS_TST }}" # noqa
+
+    tempest_worker:
+      config_filename: tempest_{{ item.control_plane }}-{{ item.region }}.conf
+      config_parts_dir: >
+        {{ tempest_run.resource_dir }}/{{
+            item.control_plane }}-{{ item.region }}/.config_parts
+      log_filename: tempest_{{ item.control_plane }}-{{ item.region }}.log
+      subunit_filename: >
+        {{ subunit_prefix }}_{{ item.control_plane }}-{{ item.region }}.subunit
+      region_name: "{{ item.region }}"
+      resource_dir: >
+        {{ tempest_run.resource_dir }}/{{
+        item.control_plane }}-{{ item.region }}
+      services: "{{ item.services }}"
+      services_by_region: >
+        {{ ((cp_tempest_test_plans.by_region |
+            group_by_key('region'))[item.region] |
+            first).services }}
+      testr_log_filename: >
+        testr_results_{{ item.control_plane }}-{{ item.region }}.log
+  with_items: "{{ cp_tempest_test_plans.by_control_plane }}"
+  when: tempest_test_axis in ["control_plane", "all"]
+  run_once: true

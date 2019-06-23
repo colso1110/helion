@@ -1,0 +1,73 @@
+{#
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+# Include all tempest tests by default
++tempest\..*
+
+# Exclude 4 known Keystone v3 failures:
+-tempest\.api\.identity\.admin\.v3\.test_list_users.UsersV3TestJSON\.test_list_users
+-tempest\.api\.identity\.admin\.v3\.test_list_users.UsersV3TestJSON\.test_list_users_with_name
+-tempest\.api\.identity\.admin\.v3\.test_users.UsersV3TestJSON\.test_update_user_password
+-tempest\.api\.identity\.admin\.v3\.test_groups\.GroupsV3TestJSON\.test_list_groups
+
+# HQA-781 Disable glance test that require sharing as per GLAN-1977
+-tempest\.api\.image\.v2\.test_images_member\.ImagesMemberTest\.test_get_image_member
+-tempest\.api\.image\.v2\.test_images_member\.ImagesMemberTest\.test_image_share_accept
+-tempest\.api\.image\.v2\.test_images_member\.ImagesMemberTest\.test_image_share_reject
+-tempest\.api\.image\.v2\.test_images_member\.ImagesMemberTest\.test_remove_image_member
+-tempest\.api\.image\.v1\.test_image_members_negative\.ImageMembersNegativeTest\.test_add_member_with_non_existing_image
+-tempest\.api\.image\.v1\.test_image_members_negative\.ImageMembersNegativeTest\.test_delete_member_with_non_existing_image
+-tempest\.api\.image\.v2\.test_images_member_negative\.ImagesMemberNegativeTest\.test_image_share_invalid_status
+-tempest\.api\.image\.v2\.test_images_member_negative\.ImagesMemberNegativeTest\.test_image_share_owner_cannot_accept
+
+# DNSAAS-1102 Enable basic DNS/Designate tests
++designate_tempest_plugin\.tests\.api\.v2\.test_zones\..*
++designate_tempest_plugin\.tests\.api\.v2\.test_recordset\..*
+
+# Tests under investigation
+-tempest\.api\.compute\.admin\.test_migrations\.MigrationsAdminTest\.test_list_migrations_in_flavor_resize_situation
+-tempest\.api\.compute\.admin\.test_migrations\.MigrationsAdminTest\.test_resize_server_revert_deleted_flavor
+-tempest\.api\.compute\.admin\.test_servers_negative\.ServersAdminNegativeTestJSON\.test_migrate_non_existent_server
+-tempest\.api\.compute\.admin\.test_servers_negative\.ServersAdminNegativeTestJSON\.test_migrate_server_invalid_state
+-tempest\.api\.compute\.admin\.test_servers_on_multinodes\.ServersOnMultiNodesTest\.test_create_servers_on_same_host
+-tempest\.api\.compute\.certificates\.test_certificates\.CertificatesV2TestJSON\.test_create_root_certificate
+-tempest\.api\.compute\.certificates\.test_certificates\.CertificatesV2TestJSON\.test_get_root_certificate
+-tempest\.api\.compute\.servers\.test_delete_server\.DeleteServersTestJSON\.test_delete_server_while_in_verify_resize_state
+-tempest\.api\.compute\.servers\.test_server_actions\.ServerActionsTestJSON\.test_resize_server_confirm
+-tempest\.api\.compute\.servers\.test_server_actions\.ServerActionsTestJSON\.test_resize_server_confirm_from_stopped
+-tempest\.api\.compute\.servers\.test_server_actions\.ServerActionsTestJSON\.test_resize_server_revert
+-tempest\.api\.compute\.servers\.test_servers_negative\.ServersNegativeTestJSON\.test_resize_nonexistent_server
+-tempest\.api\.compute\.servers\.test_servers_negative\.ServersNegativeTestJSON\.test_resize_server_with_non_existent_flavor
+-tempest\.api\.compute\.test_versions\.TestVersions\.test_get_version_details
+-tempest\.api\.image\.v1\.test_image_members_negative\.ImageMembersNegativeTest\.test_add_member_with_non_existing_image
+-tempest\.api\.image\.v1\.test_image_members_negative\.ImageMembersNegativeTest\.test_delete_member_with_non_existing_image
+-tempest\.api\.image\.v1\.test_image_members_negative\.ImageMembersNegativeTest\.test_delete_member_with_non_existing_tenant
+-tempest\.api\.image\.v1\.test_images\.CreateRegisterImagesTest\.test_register_http_image
+-tempest\.api\.image\.v1\.test_images\.CreateRegisterImagesTest\.test_register_remote_image
+-tempest\.api\.image\.v2\.test_images_member_negative\.ImagesMemberNegativeTest\.test_image_share_invalid_status
+-tempest\.api\.image\.v2\.test_images_member_negative\.ImagesMemberNegativeTest\.test_image_share_owner_cannot_accept
+-tempest\.api\.network\.admin\.test_l3_agent_scheduler\.L3AgentSchedulerTestJSON\.test_add_list_remove_router_on_l3_agent
+-tempest\.api\.object_storage\.test_container_staticweb\.StaticWebTest\.test_web_index
+-tempest\.api\.object_storage\.test_container_staticweb\.StaticWebTest\.test_web_listing_css
+-tempest\.scenario\.test_encrypted_cinder_volumes\.TestEncryptedCinderVolumes\.test_encrypted_cinder_volumes_cryptsetup
+-tempest\.scenario\.test_encrypted_cinder_volumes\.TestEncryptedCinderVolumes\.test_encrypted_cinder_volumes_luks
+-tempest\.scenario\.test_network_advanced_server_ops\.TestNetworkAdvancedServerOps\.test_server_connectivity_resize
+-tempest\.scenario\.test_network_v6\.TestGettingAddress\.test_dhcp6_stateless_from_os
+-tempest\.scenario\.test_security_groups_basic_ops\.TestSecurityGroupsBasicOps\.test_cross_tenant_traffic
+-tempest\.scenario\.test_security_groups_basic_ops\.TestSecurityGroupsBasicOps\.test_port_update_new_security_group
+-tempest\.scenario\.test_server_advanced_ops\.TestServerAdvancedOps\.test_resize_volume_backed_server_confirm
+

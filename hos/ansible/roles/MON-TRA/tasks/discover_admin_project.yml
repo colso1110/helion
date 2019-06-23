@@ -1,0 +1,45 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: MON-TRA | discover_admin_project | Get a domain scoped token
+  no_log: True
+  keystone_v3:
+    endpoint: "{{ mon_tra_keystone_url }}"
+    login_username: "{{ mon_tra_keystone_admin }}"
+    login_password: "{{ mon_tra_keystone_admin_password }}"
+    login_user_domain_name: "{{ mon_tra_keystone_default_domain_name }}"
+    login_domain_name: "{{ mon_tra_keystone_default_domain_name }}"
+    action: "token_get"
+  register: mon_tra_domain_scoped_token_result
+  run_once: True
+
+# retrieve the admin project details from keystone so that the lazy init
+# of the mon_tra_admin_project_id variable can be fulfilled
+- name: MON-TRA | discover_admin_project | Get admin project details
+  no_log: True
+  keystone_v3:
+    endpoint: "{{ mon_tra_keystone_url }}"
+    login_token: "{{ mon_tra_domain_scoped_token_result.result }}"
+    project_name: "{{ mon_tra_keystone_admin_project }}"
+    project_domain_name: "{{ mon_tra_keystone_default_domain_name }}"
+    action: find_project
+  run_once: True
+  register: mon_tra_project_result
+  failed_when: >
+    mon_tra_project_result.result is undefined or
+    mon_tra_project_result.result.id is undefined
+

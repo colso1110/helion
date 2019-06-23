@@ -1,0 +1,51 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+eon_component: "eon-conductor"
+ip_catalog_json: "/opt/stack/service/eon-conductor/etc/eon/ip_catalog.json"
+tmp_ip_catalog_json: "/tmp/ip_catalog.json"
+old_ip_catalog_json: "/var/run/eon-conductor/ip_catalog.json"
+
+# Database
+eon_sql_ca_file: "/etc/ssl/certs/ca-certificates.crt"
+eon_sql_ssl: "{% if EON_CND.consumes_FND_MDB.vips.private[0].use_tls %}?ssl_ca={{ eon_sql_ca_file }}{% endif %}"
+eon_sql_connection: "mysql+pymysql://{{ EON_CND.consumes_FND_MDB.vars.accounts.eon.username }}:{{ EON_CND.consumes_FND_MDB.vars.accounts.eon.password | urlencode }}@{{ EON_CND.consumes_FND_MDB.vips.private[0].host }}/{{ EON_CND.consumes_FND_MDB.vars.databases.eon.dbname }}{{ eon_sql_ssl }}"
+
+# Neutron
+neutron_admin_auth_url: "{{ EON_CND.consumes_KEY_API.vips.private[0].url }}/v3"
+neutron_admin_tenant_name: "{{ KEY_API.vars.keystone_service_tenant }}"
+neutron_admin_password: "{% if NEU_SVR is defined %}{{ NEU_SVR.consumes_KEY_API.vars.keystone_neutron_password | quote }}{% endif %}"
+neutron_admin_username: "{% if NEU_SVR is defined %}{{ NEU_SVR.consumes_KEY_API.vars.keystone_neutron_user }}{% endif %}"
+neutron_url: "{% if NEU_SVR is defined %}{{ NEU_SVR.advertises.vips.private[0].url }}{% endif %}"
+neutron_endpoint_type: "internalURL"
+
+# Nova
+nova_admin_auth_url: "{{ EON_CND.consumes_KEY_API.vips.private[0].url }}/v3"
+nova_admin_tenant_name: "{{ KEY_API.vars.keystone_service_tenant }}"
+nova_admin_username: "{% if NOV_API is defined %}{{ NOV_API.consumes_KEY_API.vars.keystone_nova_user }}{% endif %}"
+nova_admin_password: "{% if NOV_API is defined %}{{ NOV_API.consumes_KEY_API.vars.keystone_nova_password | quote }}{% endif %}"
+nova_url: "{% if NOV_API is defined %}{{ NOV_API.advertises.vips.private[0].url }}{% endif %}"
+nova_endpoint_type: "internalURL"
+
+# hlm-ux-service
+eon_hux_service_url: "{% if EON_CND.consumes_HUX_SVC is defined %}{{ EON_CND.consumes_HUX_SVC.vips.private[0].url }}{% endif %}"
+
+# For oneview notifier
+eon_ov_notifier_topic: "{% if EON_ONEVIEW is defined %}eon.oneview.notifications{% endif %}"
+
+eon_encrypt_file: eon-encrypt
+eon_encrypt_path: /usr/bin/eon-encrypt

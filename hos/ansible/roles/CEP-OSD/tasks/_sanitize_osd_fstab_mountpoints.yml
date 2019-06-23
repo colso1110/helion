@@ -1,0 +1,43 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: _get_disks.yml
+
+- name: CEP-OSD | _sanitize_osd_fstab_mountpoints | Get partitioned data disk
+  become: yes
+  shell: "ceph-disk list | grep 'ceph data' |
+    grep {{ item }} | awk '{print $1}'"
+  with_items: >
+    "{{
+    osd_disks.keys() }}"
+  register: ceph_data_disks_result
+
+- name: CEP-OSD | _sanitize_osd_fstab_mountpoints |
+    Get uuid for partitioned data disk
+  become: yes
+  shell: "blkid {{ item.stdout }} | awk '{print $2}'"
+  with_items: "{{ ceph_data_disks_result.results }}"
+  register: ceph_data_disk_uuids_result
+
+- name: CEP-OSD | _sanitize_osd_fstab_mountpoints |
+    Update /etc/fstab with uuid and nofail for partitioned data disks
+  become: yes
+  replace:
+    dest: /etc/fstab
+    regexp: '^{{ item.key }} (.*) defaults,noatime(.*)'
+    replace: '{{ item.value }} \1 defaults,nofail,noatime\2'
+  with_dict: "{{ ceph_data_disk_uuids_result.results | osd_disk_uuid }}"

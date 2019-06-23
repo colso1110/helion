@@ -1,0 +1,70 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+##
+## For running openstack or neutron command
+##
+common_cmd_args: >
+  --os-username {{ neutron_admin_user }}
+  --os-project-name {{ neutron_admin_tenant_name }}
+  --os-user-domain-name Default
+  --os-project-domain-name Default
+  --os-auth-url {{ neutron_auth_url }}
+  --os-region-name {{ neutron_api.public_region }}
+
+##
+## For running openstack command
+##
+openstack_cmd_args: >
+  {{ common_cmd_args }}
+  --os-interface internal
+
+##
+## For running neutron command
+##
+neutron_cmd_args: >
+  {{ common_cmd_args }}
+  --os-endpoint-type internalURL
+
+##
+## Needed for provider_net_create
+##
+## The provider_data comes from the config processor output and is a mechanism
+## to provide for a general config object.  In the case of neutron, data
+## included with neutron_provider_networks will be specifications for
+## networks that need to be created to allow HOS services to access
+## service VMs from the control plane.
+##
+## The provider_net_create expects an item to have a dict with at least
+## a name key.  The following will guarantee such.
+##
+empty_data: ['name':'']
+
+provider_data: "
+  {%- if config_data is defined -%}
+    {%- if config_data.NEU is defined -%}
+      {%- if config_data.NEU.neutron_provider_networks is defined -%}
+        {{ config_data.NEU.neutron_provider_networks }}
+      {%- else -%}
+        {{empty_data}}
+      {%- endif -%}
+    {%- else -%}
+      {{empty_data}}
+    {%- endif -%}
+  {%- else -%}
+    {{empty_data}}
+  {%- endif -%}"

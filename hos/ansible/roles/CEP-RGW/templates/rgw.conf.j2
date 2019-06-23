@@ -1,0 +1,25 @@
+Listen {{ ceph_rgw_hostname }}:8079
+FastCgiExternalServer /var/www/s3gw.fcgi -socket {{ rgw_socket_path }}/radosgw.sock
+    <VirtualHost *:8079>
+        ServerName {{ ceph_rgw_hostname }}
+        ServerAdmin {{ radosgw_admin_email }}
+        DocumentRoot /var/www
+        RewriteEngine On
+        RewriteRule ^/([a-zA-Z0-9-_.]*)([/]?.*) /s3gw.fcgi?page=$1&params=$2&%{QUERY_STRING} [E=HTTP_AUTHORIZATION:%{HTTP:Authorization},L]
+
+        <IfModule mod_fastcgi.c>
+                <Directory /var/www>
+                        Options +ExecCGI
+                        AllowOverride All
+                        SetHandler fastcgi-script
+                        Order allow,deny
+                        Allow from all
+                        AuthBasicAuthoritative Off
+                </Directory>
+        </IfModule>
+
+        AllowEncodedSlashes On
+        ErrorLog /var/log/apache2/error.log
+        CustomLog /var/log/apache2/access.log combined
+        ServerSignature Off
+    </VirtualHost>

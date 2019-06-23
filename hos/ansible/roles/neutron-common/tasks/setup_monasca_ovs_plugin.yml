@@ -1,0 +1,43 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: neutron-common | setup_monasca_ovs_plugin | Include play specific variables
+  include_vars: "monasca_ovs_configuration.yml"
+
+- name: neutron-common | setup_monasca_ovs_plugin | Create monasca ovs.yaml from template
+  become: yes
+  template:
+    dest: "{{ monasca_conf_dir }}/agent/conf.d/ovs.yaml"
+    src: monasca_ovs_plugin.yaml.j2
+    owner: mon-agent
+    group: mon-agent
+    mode: 0640
+  register: hlm_notify_monasca_agent_restart_required
+  when: monasca_agent_ovs_plugin_enabled
+
+- name: neutron-common | setup_monasca_ovs_plugin | Remove ovs.yaml if not enabled
+  become: yes
+  file:
+    path: "{{ monasca_conf_dir }}/agent/conf.d/ovs.yaml"
+    state: absent
+  register: hlm_notify_monasca_agent_restart_required
+  when: not monasca_agent_ovs_plugin_enabled
+
+- name: neutron-common | setup_monasca_ovs_plugin | Restart monasca agent service
+  become: yes
+  service: name=monasca-agent state=restarted enabled=yes
+  when: hlm_notify_monasca_agent_restart_required is defined and
+        hlm_notify_monasca_agent_restart_required.changed

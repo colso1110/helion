@@ -1,0 +1,61 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- include: ./_read_volume_run_location.yml
+- include: ./_read_backend_assignment.yml
+
+- name: _CND-CMN | migrate_confirmation | Build user backend assignment text
+  set_fact: formatted_output="{{ cinder_backend_assignment | to_nice_json }}"
+  when: >
+      (config_data is defined and
+       config_data.CND is defined and
+       cinder_backend_assignment is defined)
+
+- name: _CND-CMN | migrate_confirmation | Confirm hostname for migrate
+  pause:
+    prompt: >-
+      Cinder volume and backup services will be migrated to the
+      {{ groups[verb_hosts.CND_VOL][cinder_volume_host_index|int] }} host.
+      Press enter to continue or control+c then a to abort
+  when: >
+      (config_data is not defined) or
+      (config_data is defined and config_data.CND is not defined)
+  delegate_to: localhost
+
+- name: _CND-CMN | migrate_confirmation | Confirm user defined input model migration selection
+  pause:
+    prompt: >-
+      Cinder volume and backup services running on hosts matching the supplied
+      limit pattern will be migrated as follows
+      {{ formatted_output }}
+      Press enter to continue or control+c then a to abort
+  when: >
+      (config_data is defined and
+       config_data.CND is defined and
+       cinder_backend_assignment is defined)
+  delegate_to: localhost
+
+- name: _CND-CMN | migrate_confirmation | Confirm default input model migration selection
+  pause:
+    prompt: >-
+      Cinder volume and backup services running on hosts matching the supplied
+      limit pattern will be migrated based on the configuration specified in cinder_config.yml.
+      Press enter to continue or control+c then a to abort
+  when: >
+      (config_data is defined and
+       config_data.CND is defined and
+       cinder_backend_assignment is not defined)
+  delegate_to: localhost

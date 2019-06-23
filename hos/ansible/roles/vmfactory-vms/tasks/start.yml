@@ -1,0 +1,130 @@
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+---
+- name: vmfactory-vms | start | show vms to be started
+  debug:
+    msg: Starting VM {{ item.vm }}
+  with_items: vmf_vms_to_start
+
+- name: vmfactory-vms | start | create tmp dir
+  command: mktemp -dt hlm.XXXXXXXX
+  register: vmf_start_vms_mktemp_result
+
+- name: vmfactory-vms | start | define tmp dir fact
+  set_fact:
+    vmf_start_tmp_dir: "{{ vmf_start_vms_mktemp_result.stdout }}"
+
+- name: vmfactory-vms | start | create portgroup XML files for vms
+  template:
+    src: portgroups.xml.j2
+    dest: "{{ vmf_start_tmp_dir }}/portgroups.{{ item.1.name }}.xml"
+    mode: 0644
+  with_subelements:
+    - vmf_vms_to_start
+    - net_bridge_info
+
+# TODO this whole section needs to be made idempotent, but that's not
+# trivial because we need to check not only that the network exists,
+# but that its current definition matches the current host_vars one.
+# Tracked in Jira as HLM-3844.
+
+# determine current state of target VMs as we only want to modify
+# network definitions if associated VMs are shutdown or not defined.
+- name: vmfactory-vms | start | determine current state for each VM
+  become: yes
+  virt:
+    name: "{{ item.vm }}"
+    command: status
+    uri: qemu:///system
+  with_items: vmf_vms_to_start
+  register: vmf_start_vms_status_result
+  failed_when: False
+
+# we use a filter here to generate an explicit vmname to status
+# mapping as a workaround for ansible 1.9.x's issues regarding
+# support for (a) indexed fields in with_subsemlements operations
+# and (b) set_fact combined with with_items only yeilding result
+# of last item's operation.
+- name: vmfactory-vms | start | generate vm status map
+  set_fact:
+    _vmf_start_vm_status_map: "{{ vmf_start_vms_status_result | virt_status_map }}"
+
+# only destroy existing network definitions if the associated VMs
+# don't exist or are shutdown.
+- name: vmfactory-vms | start | destroy existing libvirt networks
+  become: yes
+  shell: |
+    virsh net-destroy {{ item.1.name }}
+    virsh net-undefine {{ item.1.name }}
+  with_subelements:
+    - vmf_vms_to_start
+    - net_bridge_info
+  failed_when: false
+  when: ((item.0.vm not in _vmf_start_vm_status_map) or
+         (_vmf_start_vm_status_map[item.0.vm] == "shutdown"))
+
+# only redefine and start networks if the associated VMs
+# don't exist or are shutdown.
+- name: vmfactory-vms | start | create new libvirt networks
+  become: yes
+  shell: |
+    set -e
+    virsh net-define {{ vmf_start_tmp_dir }}/portgroups.{{ item.1.name }}.xml
+    virsh net-start {{ item.1.name }}
+    virsh net-autostart {{ item.1.name }}
+  with_subelements:
+    - vmf_vms_to_start
+    - net_bridge_info
+  when: ((item.0.vm not in _vmf_start_vm_status_map) or
+         (_vmf_start_vm_status_map[item.0.vm] == "shutdown"))
+
+- name: vmfactory-vms | start | start the vms
+  become: yes
+  virt:
+    name: "{{ item.vm }}"
+    state: running
+    uri: qemu:///system
+  with_items: vmf_vms_to_start
+
+- name: vmfactory-vms | start | wait for vms to bootup
+  delegate_to: localhost
+  wait_for:
+    host: "{{ item.address | ipaddr('address') }}"
+    port: 22
+    search_regex: OpenSSH
+    delay: "{{ vmf_start_delay }}"
+    timeout: "{{ vmf_start_timeout }}"
+  with_items: vmf_vms_to_start
+
+- name: vmfactory-vms | start | set vms to autostart
+  become: yes
+  command: virsh autostart "{{ item.vm }}"
+  with_items: vmf_vms_to_start
+
+# The following searches OVS 'base-bridges' for ports "vnetxyx",
+# these are assumed to be creatd by libvirt and will have thier MTU
+# set to that required for the bridge.
+- name: vmfactory-vms | start | set the MTU for livbirt created network ports
+  become: yes
+  shell: |
+    ovs-vsctl list-ports {{ item.1.bridge_name }} | egrep  '^vnet[[:digit:]]+' | xargs -n1 -I vnetdev ip link set vnetdev mtu {{ item.1.bridge_mtu }}
+  with_subelements:
+    - vmf_vms_to_start
+    - net_bridge_info
+  when: item.1.bridge_mtu is defined
+
+- name: vmfactory-vms | start | remove tmp dir
+  file:
+    state: absent
+    path: "{{ vmf_start_tmp_dir }}"

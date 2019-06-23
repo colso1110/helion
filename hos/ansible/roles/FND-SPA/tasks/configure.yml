@@ -1,0 +1,138 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: FND-SPA | configure | Link current version
+  become: yes
+  file:
+    path: "{{ spark_current_dir }}"
+    state: link
+    src: "{{ spark_versioned_dir }}"
+
+- name: FND-SPA | configure | Link spark commands into /usr/bin
+  become: yes
+  file:
+    path: /usr/bin/{{ item }}
+    state: link
+    src: "{{ spark_current_dir }}/bin/{{ item }}"
+  with_items:
+    - spark-submit
+    - spark-class
+    - spark-shell
+    - spark-sql
+
+- name: FND-SPA | configure | Link spark libs
+  become: yes
+  file:
+    path: "{{ spark_lib_jars_location }}/{{ spark_streaming_kafka_jar }}"
+    state: link
+    src: "{{ spark_lib_jars_location }}/{{ spark_streaming_kafka_version_jar }}"
+
+- name: FND-SPA | configure | Set up spark-env
+  become: yes
+  template:
+    src: spark-env.sh.j2
+    dest: /etc/spark/conf/spark-env.sh
+    owner: root
+    group: root
+    mode: 0644
+
+- name: FND-SPA | configure | Set up spark-worker-env
+  become: yes
+  template:
+    src: spark-worker-env.sh.j2
+    dest: /etc/spark/conf/spark-worker-env.sh
+    owner: root
+    group: root
+    mode: 0644
+
+- name: FND-SPA | configure | Set up spark-defaults
+  become: yes
+  template:
+    src: spark-defaults.conf.j2
+    dest: /etc/spark/conf/spark-defaults.conf
+    mode: 0644
+
+- name: FND-SPA | configure | Link config version
+  become: yes
+  file:
+    path: "{{ spark_current_dir }}/conf/{{ item }}"
+    state: link
+    src: "{{ spark_conf_dir }}/{{ item }}"
+  with_items:
+    - "spark-env.sh"
+    - "spark-worker-env.sh"
+    - "spark-defaults.conf"
+
+- name: FND-SPA | configure | Create spark-master start script
+  become: yes
+  template:
+    dest: "{{ spark_init_dir }}/start-spark-master.sh"
+    owner: root
+    group: root
+    mode: 0755
+    src: start-spark-master.sh.j2
+
+- name: FND-SPA | configure | Create spark-worker start script
+  become: yes
+  template:
+    dest: "{{ spark_init_dir }}/start-spark-worker.sh"
+    owner: root
+    group: root
+    mode: 0755
+    src: start-spark-worker.sh.j2
+
+- name: FND-SPA | configure | Create spark-master systemd config
+  become: yes
+  template:
+    src: spark-master.service.j2
+    dest: "{{ spark_master_systemd_service }}"
+    owner: root
+    group: root
+    mode: 0644
+
+- name: FND-SPA | configure | Create spark-worker systemd config
+  become: yes
+  template:
+    src: spark-worker.service.j2
+    dest: "{{ spark_worker_systemd_service }}"
+    owner: root
+    group: root
+    mode: 0644
+
+# See: http://www.freedesktop.org/software/systemd/man/tmpfiles.d.html
+- name: FND-SPA | configure | Create spark-master.conf
+  become: yes
+  template:
+    src: spark-master.conf.j2
+    dest: "/usr/lib/tmpfiles.d/spark-master.conf"
+    owner: root
+    group: root
+    mode: 0644
+
+- name: FND-SPA | configure | Create spark-worker.conf
+  become: yes
+  template:
+    src: spark-worker.conf.j2
+    dest: "/usr/lib/tmpfiles.d/spark-worker.conf"
+    owner: root
+    group: root
+    mode: 0644
+
+- name: FND-SPA | configure | Reload systemctl
+  become: yes
+  ignore_errors: True
+  command: /bin/systemctl daemon-reload
+

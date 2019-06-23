@@ -1,0 +1,44 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: ceph-client-prepare | _create-symlink | Create symlink for
+    client keyrings from keyring prefixed with ceph to keyring prefixed
+    with ceph_cluster name
+  become: yes
+  file:
+    src: "/etc/ceph/ceph.client.{{ item }}.keyring"
+    dest: "/etc/ceph/{{ ceph_cluster }}.client.{{ item }}.keyring"
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0644
+    state: link
+  when: ceph_cluster != 'ceph'
+  with_items: ceph_pool_user_list
+
+# Workaround: Create symlink from {{ ceph_cluster }}.conf to ceph.conf
+# for OpenStack Mitaka Cinder backup to work with customized ceph cluster name
+- name: ceph-client-prepare | _create-symlink | Create symlink from
+    /etc/ceph/{{ ceph_cluster }}.conf to /etc/ceph/ceph.conf
+  become: yes
+  file:
+    src: "/etc/ceph/{{ ceph_cluster }}.conf"
+    dest: "/etc/ceph/ceph.conf"
+    owner: "{{ ceph_user }}"
+    group: "{{ ceph_group }}"
+    mode: 0644
+    state: link
+  when: consumer == 'cinder-backup' and ceph_cluster != 'ceph'

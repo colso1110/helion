@@ -1,0 +1,36 @@
+#!/bin/bash
+# (c) Copyright 2015 Hewlett Packard Enterprise Development LP
+# A simple script triggered by keepalived when VIPs are moved
+# around. When VIPs are moved to this node, explicit route for
+# each VIP is added - this assures that any connection to VIP
+# will use by default local-ipv4 as source address. Without this
+# explicit route VIP address is used which causes issues when VIP
+# moved to another node.
+#
+# When VIP is moved from this node, this explicit route is removed
+# to allow proper routing from this node to new VIP node.
+
+set -eu
+
+logger "Started $0 $@"
+PATH="$PATH:/bin:/sbin"
+
+TYPE=$1
+NAME=$2
+STATE=$3
+
+if [ "$STATE" = "MASTER" ]; then
+    while read -r VIP_NAME VIP_IP SERVER_IP; do
+        if [ "$VIP_NAME" = "$NAME" ]; then
+            logger "adding explicit route for $VIP_IP"
+            ip ro replace local $VIP_IP dev lo src $SERVER_IP
+        fi
+    done < /etc/keepalived/virtual_ips
+else
+    while read -r VIP_NAME VIP_IP SERVER_IP; do
+        if [ "$VIP_NAME" = "$NAME" ]; then
+            logger "removing explicit route for $VIP_IP"
+            ip ro del local $VIP_IP
+        fi
+    done < /etc/keepalived/virtual_ips
+fi

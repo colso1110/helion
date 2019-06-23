@@ -1,0 +1,230 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: ceph-monitoring | monasca_alarms |
+        Setup default email notification method
+  monasca_notification_method:
+    name: "Default Email"
+    type: "EMAIL"
+    address: "root@localhost"
+    keystone_url: "{{ ceph_keystone.admin_url }}"
+    keystone_user: "{{ ceph_keystone.admin_user }}"
+    keystone_password: "{{ ceph_keystone.admin_password | quote }}"
+    keystone_project: "{{ ceph_keystone.admin_project }}"
+    monasca_api_url: "{{ ceph_monasca.alarm_definition_api_url }}"
+    overwrite: false
+  register: default_notification_result
+  run_once: true
+
+- name: ceph-monitoring | monasca_alarms |
+        Create monasca alarm definitions for monasca check failures
+  become: yes
+  run_once: true
+  monasca_alarm_definition:
+    name: "{{ item.name }}"
+    description: "{{ item.description }}"
+    severity: "{{ item.severity }}"
+    expression: "{{ item.expression }}"
+    match_by: "{{ item.match_by }}"
+    keystone_url: "{{ ceph_keystone.admin_url }}"
+    keystone_user: "{{ ceph_keystone.admin_user }}"
+    keystone_password: "{{ ceph_keystone.admin_password | quote }}"
+    keystone_project: "{{ ceph_keystone.admin_project }}"
+    monasca_api_url: "{{ ceph_monasca.alarm_definition_api_url }}"
+    ok_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    undetermined_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    alarm_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+  with_items:
+    # The probe check helps to identify the errors during the execution of low
+    # level system commands, that contribute to the monitored parameters
+    - { name: "Cephlm probe check",
+        description: "Alarms if cephlm-probe cannot execute a monitoring task",
+        severity: "HIGH",
+        expression: "cephlm.probe.failure > 1",
+        match_by: []}
+
+    # The monitor check helps to identify the errors during the execution of
+    # cephlm check plugin module, which collects the metrics from various probe
+    # runs
+    - { name: "Cephlm monitor check",
+        description: "Alarms if monasca cephlm check plugin fails to run",
+        severity: "HIGH",
+        expression: "cephlm.cephlm_check > 1",
+        match_by: []}
+
+- name: ceph-monitoring | monasca_alarms |
+        Create monasca alarm definitions for cluster specific metrics
+  become: yes
+  run_once: true
+  monasca_alarm_definition:
+    name: "{{ item.name }}"
+    description: "{{ item.description }}"
+    severity: "{{ item.severity }}"
+    expression: "{{ item.expression }}"
+    match_by: "{{ item.match_by }}"
+    keystone_url: "{{ ceph_keystone.admin_url }}"
+    keystone_user: "{{ ceph_keystone.admin_user }}"
+    keystone_password: "{{ ceph_keystone.admin_password | quote }}"
+    keystone_project: "{{ ceph_keystone.admin_project }}"
+    monasca_api_url: "{{ ceph_monasca.alarm_definition_api_url }}"
+    ok_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    undetermined_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    alarm_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+  with_items:
+    - { name: "Degraded Ceph cluster alert",
+        description: "Alarms if ceph cluster status is not ok",
+        severity: "HIGH",
+        expression: "cephlm.cluster.status > 0",
+        match_by: []}
+
+    - { name: "Broken Ceph cluster alert",
+        description: "Alarms if ceph cluster is unusable",
+        severity: "CRITICAL",
+        expression: "cephlm.cluster.status > 1",
+        match_by: []}
+
+    - { name: "OSD failure alert",
+        description: "Alarms if any of the OSDs are down",
+        severity: "HIGH",
+        expression: "cephlm.osd.down_count > 0",
+        match_by: []}
+
+    - { name: "All OSD failure alert",
+        description: "Alarms if all the OSDs are down",
+        severity: "CRITICAL",
+        expression: "cephlm.osd.up_count < 1",
+        match_by: []}
+
+    - { name: "Unutilized active OSD alert",
+        description: "Alarms if any OSDs are up but not part of the cluster",
+        severity: "LOW",
+        expression: "cephlm.osd.up_out_count > 0",
+        match_by: []}
+
+    - { name: "Degraded RGW availability alert",
+        description: "Alarms if any of the Rados gateways is not reachable",
+        severity: "HIGH",
+        expression: "cephlm.radosgw.status > 0",
+        match_by: []}
+
+    - { name: "Broken RGW availability alert",
+        description: "Alarms if all the Rados gateways are not reachable",
+        severity: "CRITICAL",
+        expression: "avg(cephlm.radosgw.status) >= 2",
+        match_by: []}
+
+    - { name: "Degraded Ceph monitor connectivity alert",
+        description: "Alarms if any of the Monitors is not reachable",
+        severity: "MEDIUM",
+        expression: "cephlm.connectivity.status > 0",
+        match_by: ["hostname"]}
+
+    - { name: "Broken Ceph monitor connectivity alert",
+        description: "Alarms if all the Monitors are not reachable",
+        severity: "CRITICAL",
+        expression: "cephlm.connectivity.status > 1",
+        match_by: ["hostname"]}
+
+    - { name: "Degraded Ceph monitor quorum alert",
+        description: "Alarms if any of the Monitors are not in quorum",
+        severity: "MEDIUM",
+        expression: "cephlm.monitor.quorum > 0",
+        match_by: []}
+
+    - { name: "Broken Ceph monitor quorum alert",
+        description: "Alarms if all the Monitors are not in quorum",
+        severity: "CRITICAL",
+        expression: "cephlm.monitor.quorum > 1",
+        match_by: []}
+
+    - { name: "Lower threshold (75% filled) Ceph Cluster capacity alert",
+        description: "Alarms if the used capacity of the ceph cluster exceeds
+                      {{ near_full_cap_perc }}% of the total capacity",
+        severity: "HIGH",
+        expression: "cephlm.capacity.perc_utilization > {{ near_full_cap_perc }}",
+        match_by: []}
+
+    - { name: "High threshold (85% filled) Ceph Cluster capacity alert",
+        description: "Alarms if the used capacity of the ceph cluster exceeds
+                      {{ full_cap_perc }}% of the total capacity",
+        severity: "CRITICAL",
+        expression: "cephlm.capacity.perc_utilization > {{ full_cap_perc }}",
+        match_by: []}
+
+- name: ceph-monitoring | monasca_alarms |
+        Create monasca alarm definitions for scale and performance metrics
+  become: yes
+  run_once: true
+  monasca_alarm_definition:
+    name: "{{ item.name }}"
+    description: "{{ item.description }}"
+    severity: "{{ item.severity }}"
+    expression: "{{ item.expression }}"
+    match_by: "{{ item.match_by }}"
+    keystone_url: "{{ ceph_keystone.admin_url }}"
+    keystone_user: "{{ ceph_keystone.admin_user }}"
+    keystone_password: "{{ ceph_keystone.admin_password | quote }}"
+    keystone_project: "{{ ceph_keystone.admin_project }}"
+    monasca_api_url: "{{ ceph_monasca.alarm_definition_api_url }}"
+    ok_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    undetermined_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    alarm_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+  with_items:
+    - { name: "Recommended OSD-Journal disk ratio alert",
+        description: "Alarms if recommended ratio of
+                      OSD to journal disk is not adhered",
+        severity: "LOW",
+        # The osd_journal_ratio metric value will be 0 or 1 depending on
+        # whether the recommended ratio is adhered or NOT adhered respectively
+        expression: "cephlm.osd.osd_journal_ratio > 0",
+        match_by: ["hostname"]}
+
+    - { name: "Recommended OSD memory alert",
+        description: "Alarms if recommended memory configuration
+                      for OSD nodes is not met",
+        severity: "LOW",
+        # The osd_node_ram metric value will be 0 or 1 depending on whether
+        # the recommended configuration is met or NOT met respectively
+        expression: "cephlm.perfscale.osd_node_ram > 0",
+        match_by: ["hostname"]}
+
+    - { name: "Recommended Ceph Public network NIC speed",
+        description: "Alarms if recommended ceph public network nic speed
+                      is not met",
+        severity: "LOW",
+        # The nic_speed_public metric value will be 0 or 1 depending on whether
+        # the recommended speed is met or NOT met respectively
+        expression: "cephlm.perfscale.nic_speed_public > 0",
+        match_by: ["hostname"]}
+
+    - { name: "Recommended Ceph Private network NIC speed",
+        description: "Alarms if recommended ceph private network nic speed
+                      is not met",
+        severity: "LOW",
+        # The nic_speed_private metric value will be 0 or 1 depending on
+        # whether the recommended speed is met or NOT met respectively
+        expression: "cephlm.perfscale.nic_speed_private > 0",
+        match_by: ["hostname"]}

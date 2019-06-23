@@ -1,0 +1,88 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+product:
+    version: 2
+
+service-components:
+-   name: windriver-consumer
+    mnemonic: WND-CNS
+    service: windriver
+    hidden: true
+
+    config-set:
+    -   name: wr_conf
+        ansible-vars:
+        -   name: wr_nova_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: wr_neutron_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: wr_sysinv_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: wr_patching_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: wr_heat_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: wr_heat_admin_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: wr_ceilometer_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+    consumes-services:
+    - service-name: GLA-API
+      relationship-vars:
+       -   name: keystone_glance_user
+           value: glance
+
+    - service-name: CND-API
+      relationship-vars:
+        -   name: keystone_cinder_user
+            value: cinder
+
+    - service-name: KEY-API
+      relationship-vars:
+        -   name: keystone_admin_tenant
+            value: admin
+        -   name: keystone_admin_user
+            value: admin
+        -   name: keystone_admin_pwd
+            value: '%random-password%'

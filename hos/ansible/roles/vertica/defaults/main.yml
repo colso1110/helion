@@ -1,0 +1,41 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+vertica_home_dir: /var/vertica
+vertica_catalog_dir: "{{ vertica_home_dir }}/catalog"
+vertica_data_dir: "{{ vertica_home_dir }}/data"
+skip_install: False
+rebuild: False
+run_mode: Deploy
+vertica_env: {LC_ALL: en_US.UTF-8, LANG: en_US.UTF-8}
+vertica_database_name: mon
+vertica_use_apt: False
+vertica_client_port: 5433
+monasca_wait_for_period: 90
+# daily|weekly|monthly
+vertica_logrotate_period: weekly
+vertica_logrotate_retention: 5
+vertica_logrotate_min_size: 500
+vertica_start_timeout: "20m"
+
+vertica_nodes: "{{ FND_VDB.members.private }}"
+vertica_ips: "{% for node in vertica_nodes %}{{ node.host }}{% if not loop.last %},{% endif %}{% endfor %}"
+vertica_group: "{{groups['FND-VDB']}}"
+vertica_license_passphrase: 5keD3Av9GLXEM24rGjXt
+vertica_dbadmin_password: "{{ FND_VDB.vars.dbadmin_user_password }}"
+vertica_ip_address: "{{ host.bind.FND_VDB.internal.ip_address }}"
+
+stop_cluster: True

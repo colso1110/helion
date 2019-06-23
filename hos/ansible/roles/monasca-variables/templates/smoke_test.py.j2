@@ -1,0 +1,151 @@
+#!/usr/bin/env python
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+import datetime
+import logging
+from sys import exit, path, stdout
+path.append('/opt/stack/service/monascaclient/venv/lib/python2.7/site-packages')
+from monascaclient import client as mnclient
+import monascaclient.exc as mnexceptions
+
+username = "{{ MON_API.consumes_KEY_API.vars.keystone_monasca_user }}"
+password = "{{ MON_API.consumes_KEY_API.vars.keystone_monasca_password }}"
+auth_url = "{{ KEY_API.advertises.vips.private[0].url }}/v3"
+monasca_url = "{{ MON_AGN.consumes_MON_API.vips.private[0].url }}/v2.0"
+project_name = "{{ KEY_API.vars.keystone_admin_tenant }}"
+metric_name = "cpu.idle_perc"
+monasca_version = "2_0"
+ks_kwargs = {'username': username,
+             'password': password,
+             'project_name': project_name,
+             'auth_url': auth_url}
+monasca_client = mnclient.Client(monasca_version, monasca_url, **ks_kwargs)
+
+# console logger
+logger = logging.getLogger(__name__)
+handler = logging.StreamHandler()
+handler.setLevel(logging.INFO)
+formatter = logging.Formatter("%(levelname)s - %(message)s")
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+
+def determine_hostname():
+    with open("/etc/monasca/agent/agent.yaml") as fp:
+        for line in fp:
+            if 'hostname:' in line:
+                hostname = line.split(':')[1].strip()
+                return hostname
+    return None
+
+
+def test_measurement(hostname):
+    hour_ago = datetime.datetime.utcnow() - datetime.timedelta(hours=1)
+    hour_ago_str = hour_ago.strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
+    try:
+        dimensions = {'hostname': hostname}
+        list_args = {}
+        list_args['name'] = metric_name
+        list_args['start_time'] = hour_ago_str
+        list_args['dimensions'] = dimensions
+        measurement_list = monasca_client.metrics.list_measurements(**list_args)
+        if len(measurement_list) == 0:
+            logger.error('test_measurement measurement-list failed for metric name: {} hostname: {} '
+                         'start_time: {}'.format(metric_name, dimensions['hostname'], hour_ago_str))
+            return False
+    except mnexceptions.KeystoneException as e:
+        logger.exception('test_measurement failed with KeystoneException, message={}'.format(e.message))
+        return False
+    except mnexceptions.CommunicationError as e:
+        logger.exception('test_measurement failed with CommunicationError, message={}'.format(e.message))
+        return False
+    except mnexceptions.HTTPInternalServerError as e:
+        logger.exception('test_measurement failed with HTTPInternalServerError '
+                         'from the monasca-api, message={}'.format(e.message))
+        return False
+    except Exception as e:
+        logger.exception('test_measurement failed with Monascaclient Exception: {}'.format(e.message))
+        return False
+    return True
+
+
+def test_metric(hostname):
+    try:
+        dimensions = {'hostname': hostname}
+        list_args = {}
+        list_args['name'] = metric_name
+        list_args['dimensions'] = dimensions
+        metric_list = monasca_client.metrics.list(**list_args)
+        if len(metric_list) == 0:
+            logger.error('test_metric metric-list failed for metric name: {} hostname: '
+                         '{}'.format(metric_name, dimensions['hostname']))
+            return False
+    except mnexceptions.KeystoneException as e:
+        logger.exception('test_metric failed with KeystoneException, message={}'.format(e.message))
+        return False
+    except mnexceptions.CommunicationError as e:
+        logger.exception('test_metric failed with CommunicationError, message={}'.format(e.message))
+        return False
+    except mnexceptions.HTTPInternalServerError as e:
+        logger.exception('test_metric failed with HTTPInternalServerError '
+                         'from the monasca-api, message={}'.format(e.message))
+        return False
+    except Exception as e:
+        logger.exception('test_metric failed with Monascaclient Exception: {}'.format(e.message))
+        return False
+    return True
+
+
+def test_alarm(hostname):
+    try:
+        dimensions = {'hostname': hostname}
+        list_args = {}
+        list_args['metric_name'] = "host_alive_status"
+        list_args['metric_dimensions'] = dimensions
+        alarm_list = monasca_client.alarms.list(**list_args)
+        if len(alarm_list) == 0:
+            logger.error('test_alarm alarm-list failed for metric name: {} hostname: '
+                         '{}'.format(list_args['metric_name'], dimensions['hostname']))
+            return False
+    except mnexceptions.KeystoneException as e:
+        logger.exception('test_alarm failed with KeystoneException, message={}'.format(e.message))
+        return False
+    except mnexceptions.CommunicationError as e:
+        logger.exception('test_alarm failed with CommunicationError, message={}'.format(e.message))
+        return False
+    except mnexceptions.HTTPInternalServerError as e:
+        logger.exception('test_alarm failed with HTTPInternalServerError '
+                         'from the monasca-api, message={}'.format(e.message))
+        return False
+    except Exception as e:
+        logger.exception('test_alarm failed with Monascaclient Exception: {}'.format(e.message))
+        return False
+    return True
+
+hostname = determine_hostname()
+if not hostname:
+    logger.error('Did not determine hostname')
+    exit(1)
+
+if not test_metric(hostname):
+    exit(1)
+if not test_measurement(hostname):
+    exit(1)
+if not test_alarm(hostname):
+    exit(1)
+logger.info("OK")
+exit(0)

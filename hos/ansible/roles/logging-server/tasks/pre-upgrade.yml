@@ -1,0 +1,65 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: logging-server | pre-upgrade | Install Elasticsearch util script
+  become: yes
+  template:
+    src: "esutil.py.j2"
+    dest: "{{ opt_kronos_dir }}/esutil.py"
+    mode: 0644
+
+- name: logging-server | pre-upgrade | Stop Logstash
+  become: yes
+  service:
+    name: logstash
+    state: stopped
+
+- name: logging-server | pre-upgrade | Check Elasticsearch readiness
+  become: yes
+  shell: >-
+    python {{ opt_kronos_dir }}/esutil.py
+    --ready --clustered --healthy --no-wait
+  run_once: true
+
+- name: logging-server | pre-upgrade | Check for mapping conflicts
+  become: yes
+  shell: python {{ opt_kronos_dir }}/esutil.py --check
+  when: >-
+    elasticsearch_resolve_conflicts is not defined
+    and elasticsearch_delete_conflicts is not defined
+  register: elasticsearch_check_result
+  ignore_errors: true
+  run_once: true
+
+- name: logging-server | pre-upgrade | Need to migrate Elasticsearch indices
+  become: yes
+  fail:
+    msg: >-
+      Conflicting mappings were found in the Elasticsearch indices.  To correct
+      this issue you can either, re-run upgrade and include the variable
+      elasticsearch_delete_conflicts=True to simply delete any conflicts or to
+      preserve all data run the separate playbook
+      kronos-elasticsearch-migrate.yml note though that this operation may take
+      a significate amount of time to complete depending on the number and size
+      of your indices (e.g. days).
+  when: elasticsearch_check_result | failed
+  run_once: true
+
+- name: logging-server | pre-upgrade | Reindex all indices
+  become: yes
+  shell: python {{ opt_kronos_dir }}/esutil.py --reindex
+  when: elasticsearch_resolve_conflicts is defined
+  run_once: true

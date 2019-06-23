@@ -1,0 +1,104 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: iptables | iptables-add | Add iptables chain
+  become: yes
+  iptables_update:
+    command: >
+      --new-chain {{ iptables_chain }}
+    lock_path: "{{ iptables_lock_path }}"
+    lock_name: "{{ iptables_lock_name }}"
+    lock_timeout: "{{ iptables_lock_timeout }}"
+    synchronized_prefix: "{{ iptables_synchronized_prefix }}"
+    os_family: "{{ ansible_os_family }}"
+  register: _iptables_add_chain_result
+  failed_when: >
+    (_iptables_add_chain_result | failed) and
+    _iptables_add_chain_result.stderr !=
+        "iptables: Chain already exists."
+
+- name: iptables | iptables-add | Check if iptables chain is present on INPUT
+  become: yes
+  iptables_update:
+    command: >
+      --check INPUT
+      --jump {{ iptables_chain }}
+    lock_path: "{{ iptables_lock_path }}"
+    lock_name: "{{ iptables_lock_name }}"
+    lock_timeout: "{{ iptables_lock_timeout }}"
+    synchronized_prefix: "{{ iptables_synchronized_prefix }}"
+    os_family: "{{ ansible_os_family }}"
+  register: _iptables_add_chain_result
+  changed_when: false
+  failed_when: >
+    (_iptables_add_chain_result | failed) and
+    _iptables_add_chain_result.stderr !=
+        "iptables: No chain/target/match by that name."
+
+# Note: This is an insert to make the chain higher precedence than all others.
+- name: iptables | iptables-add | Add iptables chain to INPUT at top of table
+  become: yes
+  iptables_update:
+    command: >
+      --insert INPUT
+      --jump {{ iptables_chain }}
+    lock_path: "{{ iptables_lock_path }}"
+    lock_name: "{{ iptables_lock_name }}"
+    lock_timeout: "{{ iptables_lock_timeout }}"
+    synchronized_prefix: "{{ iptables_synchronized_prefix }}"
+    os_family: "{{ ansible_os_family }}"
+  when: (_iptables_add_chain_result | failed)
+
+- name: iptables | iptables-add | Check if iptables rules are already applied
+  become: yes
+  iptables_update:
+    command: >
+      --check {{ iptables_chain }}
+      --destination {{ item.ip }}/32
+      --protocol tcp
+      --match tcp
+      --dport {{ item.port }}
+      --jump REJECT
+    lock_path: "{{ iptables_lock_path }}"
+    lock_name: "{{ iptables_lock_name }}"
+    lock_timeout: "{{ iptables_lock_timeout }}"
+    synchronized_prefix: "{{ iptables_synchronized_prefix }}"
+    os_family: "{{ ansible_os_family }}"
+  register: _iptables_add_rule_result
+  with_items: iptables_ip_port
+  changed_when: false
+  failed_when: >
+    (_iptables_add_rule_result | failed) and
+    _iptables_add_rule_result.stderr !=
+        "iptables: No chain/target/match by that name."
+
+- name: iptables | iptables-add | Reject incoming messages on ports
+  become: yes
+  iptables_update:
+    command: >
+      --insert {{ iptables_chain }}
+      --destination {{ item.item.ip }}/32
+      --protocol tcp
+      --match tcp
+      --dport {{ item.item.port }}
+      --jump REJECT
+    lock_path: "{{ iptables_lock_path }}"
+    lock_name: "{{ iptables_lock_name }}"
+    lock_timeout: "{{ iptables_lock_timeout }}"
+    synchronized_prefix: "{{ iptables_synchronized_prefix }}"
+    os_family: "{{ ansible_os_family }}"
+  when: (item | failed)
+  with_items: _iptables_add_rule_result.results

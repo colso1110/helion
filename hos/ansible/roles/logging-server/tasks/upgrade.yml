@@ -1,0 +1,260 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Determine if elasticsearch should be upgraded
+#------------------------------------------------------------------------------
+- name: logging-server | upgrade | Get Elasticsearch current version
+  become: yes
+  shell: >-
+    dpkg -l | grep " elasticsearch " | sed "s/.*\([0-9]\.[0-9]\.[0-9]\).*/\1/"
+  register: elasticsearch_ver_result
+
+- name: logging-server | upgrade | Set Elasticsearch upgrade fact
+  become: yes
+  set_fact:
+    upgrade_elasticsearch: true
+  when: elasticsearch_ver_result.stdout == '1.6.2'
+
+# Tweak ELK stack unit files to avoid Kibana and Logstash restarting
+#------------------------------------------------------------------------------
+- name: logging-server | upgrade | Set Kibana/Logstash to not restart
+  become: yes
+  lineinfile:
+    dest: "{{ item }}"
+    state: absent
+    regexp: 'BindsTo=.*'
+  with_items:
+    - /etc/systemd/system/kibana.service
+    - /etc/systemd/system/logstash.service
+  when: upgrade_elasticsearch is defined
+
+- name: logging-server | upgrade | Set Elasticsearch to not restart others
+  become: yes
+  lineinfile:
+    dest: /etc/systemd/system/elasticsearch.service
+    state: absent
+    regexp: 'Wants=.*'
+  when: upgrade_elasticsearch is defined
+
+- name: logging-server | upgrade | Reload systemd to pick up changes
+  become: yes
+  command: systemctl daemon-reload
+  when: upgrade_elasticsearch is defined
+
+# Prepare ELK stack for upgrade
+#------------------------------------------------------------------------------
+- include: stop-logstash.yml
+  when: upgrade_elasticsearch is defined
+
+- include: stop-kibana.yml
+  when: upgrade_elasticsearch is defined
+
+- name: logging-server | upgrade | Wait for Elasticsearch readiness
+  become: yes
+  shell: python {{ opt_kronos_dir }}/esutil.py --ready --clustered --healthy
+  run_once: true
+
+- name: logging-server | upgrade | Migrate Elasticsearch data or delete it
+  become: yes
+  shell: python {{ opt_kronos_dir }}/esutil.py --migrate
+  when: upgrade_elasticsearch is defined
+  run_once: true
+
+- include: stop-elasticsearch.yml
+  when: upgrade_elasticsearch is defined
+
+- name: logging-server | upgrade | Wipe deprecated Elasticsearch plugins
+  become: yes
+  file:
+    path: "{{ elasticsearch_plugin_dir }}/*"
+    state: absent
+  when: upgrade_elasticsearch is defined
+
+# Clean up old Kibana version
+#------------------------------------------------------------------------------
+- name: logging-server | upgrade | Get current version of Kibana
+  become: yes
+  shell: >-
+    cat /opt/kibana/README.txt | grep "Kibana [0-9].[0-9]" |
+    sed "s/Kibana \([0-9]\.[0-9]\.[0-9]\).*/\1/"
+  register: kibana_ver_result
+
+# Need to be careful about deleting this directory as the new version installs
+# to the same location so if upgrade is run more than once we'll wipe the new
+# version
+- name: logging-server | upgrade | Wipe deprecated Kibana tarball version
+  become: yes
+  file:
+    path: "/opt/kibana"
+    state: absent
+  when: kibana_ver_result.stdout == "4.1.1"
+
+# Remove old prime script
+#------------------------------------------------------------------------------
+- name: logging-server | upgrade | Wipe old prime kibana script
+  become: yes
+  file:
+    path: "/opt/kronos/prime_kibana.py"
+    state: absent
+
+# Remove deprecated rabbit functionality
+#------------------------------------------------------------------------------
+- name: logging-server | upgrade | Wipe cron job for prime rabbit script
+  become: yes
+  cron:
+    name: "Prime Rabbit"
+    state: absent
+
+- name: logging-server | upgrade | Wipe prime rabbit script
+  become: yes
+  file:
+    path: "/opt/kronos/prime_rabbit.py"
+    state: absent
+
+
+# Set logfile groups to adm
+#------------------------------------------------------------------------------
+- name: logging-server | upgrade | Get list of logfiles to set group to adm
+  become: yes
+  register: path_files_result
+  ignore_errors: yes
+  shell: >-
+    ls
+    /var/log/barbican/barbican.log*
+    /var/log/barbican/barbican-worker.log*
+    /var/log/barbican/barbican-json.log*
+    /var/log/barbican/barbican-worker-json.log*
+    /var/log/barbican/barbican-access.log*
+    /var/log/barbican/barbican-monitor.log*
+    /var/log/freezer-api/freezer-api.log*
+    /var/log/ironic/ironic-api.log*
+    /var/log/ironic/ironic-api-json.log*
+    /var/log/ironic/ironic-conductor.log*
+    /var/log/ironic/ironic-conductor-json.log*
+    /var/log/ironic/ironic_ipxe_access.log*
+    /var/log/ironic/ironic_ipxe_error.log*
+    /var/log/keystone/keystone.log*
+    /var/log/keystone/keystone-json.log*
+    2>/dev/null
+
+# NOTE: Those that are commented out are not yet adm in the current version...
+# /var/log/ceilometer/ceilometer.log*
+# /var/log/ceilometer/ceilometer-api.log*
+# /var/log/ceilometer/ceilometer-expirer.log*
+# /var/log/ceilometer/ceilometer-polling.log*
+# /var/log/ceilometer/ceilometer-collector.log*
+# /var/log/ceilometer/ceilometer-preparation.log*
+# /var/log/ceilometer/ceilometer-agent-central.log*
+# /var/log/ceilometer/ceilometer-agent-compute.log*
+# /var/log/ceilometer/ceilometer-alarm-notifier.log*
+# /var/log/ceilometer/ceilometer-alarm-evaluator.log*
+# /var/log/ceilometer/ceilometer-agent-notification.log*
+# /var/log/ceilometer/ceilometer-json.log*
+# /var/log/ceilometer/ceilometer-api-json.log*
+# /var/log/ceilometer/ceilometer-expirer-json.log*
+# /var/log/ceilometer/ceilometer-polling-json.log*
+# /var/log/ceilometer/ceilometer-collector-json.log*
+# /var/log/ceilometer/ceilometer-preparation-json.log*
+# /var/log/ceilometer/ceilometer-agent-central-json.log*
+# /var/log/ceilometer/ceilometer-agent-compute-json.log*
+# /var/log/ceilometer/ceilometer-alarm-notifier-json.log*
+# /var/log/ceilometer/ceilometer-alarm-evaluator-json.log*
+# /var/log/ceilometer/ceilometer-agent-notification-json.log*
+# /var/log/configuration_processor/errors.log*
+# /var/log/configuration_processor/output.log*
+# /var/log/designate/designate-api.log*
+# /var/log/designate/designate-mdns.log*
+# /var/log/designate/designate-central.log*
+# /var/log/designate/designate-pool-manager.log*
+# /var/log/designate/designate-zone-manager.log*
+# /var/log/designate/designate-api-json.log*
+# /var/log/designate/designate-mdns-json.log*
+# /var/log/designate/designate-central-json.log*
+# /var/log/designate/designate-pool-manager-json.log*
+# /var/log/designate/designate-zone-manager-json.log*
+# /var/log/eon/eon-api.log*
+# /var/log/eon/eon-api-json.log*
+# /var/log/eon/eon-conductor.log*
+# /var/log/eon/eon-conductor-json.log*
+# /var/log/heat/heat-api.log*
+# /var/log/heat/heat-engine.log*
+# /var/log/heat/heat-api-json.log*
+# /var/log/heat/heat-engine-json.log*
+# /var/log/heat/heat-api-cfn-json.log*
+# /var/log/heat/heat-api-cloudwatch-json.log*
+# /var/log/heat/heat-api-cfn.log*
+# /var/log/heat/heat-api-cloudwatch.log*
+# /var/log/hlm-ux-services/service.log*
+# /var/log/horizon/horizon-json.log*
+# /var/log/horizon/management/management.log*
+# /var/log/horizon/management/management-json.log*
+# /var/log/logstash/logstash.log*
+# /var/log/neutron/neutron-dhcp-agent.log*
+# /var/log/neutron/neutron-dhcp-agent-json.log*
+# /var/log/neutron/neutron-l3-agent.log*
+# /var/log/neutron/neutron-l3-agent-json.log*
+# /var/log/neutron/infoblox-ipam-agent.log*
+# /var/log/neutron/infoblox-ipam-agent-json.log*
+# /var/log/neutron/neutron-l2gateway-agent.log*
+# /var/log/neutron/neutron-l2gateway-agent-json.log*
+# /var/log/neutron/neutron-lbaas-agent.log*
+# /var/log/neutron/neutron-lbaas-agent-json.log*
+# /var/log/neutron/neutron-metadata-agent.log*
+# /var/log/neutron/neutron-metadata-agent-json.log*
+# /var/log/neutron/neutron-openvswitch-agent.log*
+# /var/log/neutron/neutron-openvswitch-agent-json.log*
+# /var/log/neutron/ovsvapp-agent/ovsvapp_agent.log*
+# /var/log/neutron/ovsvapp-agent/ovsvapp_agent-json.log*
+# /var/log/neutron/neutron-server.log*
+# /var/log/neutron/neutron-server-json.log*
+# /var/log/neutron/neutron-vpn-agent.log*
+# /var/log/neutron/neutron-vpn-agent-json.log*
+# /var/log/nova/nova-api.log*
+# /var/log/nova/nova-api-json.log*
+# /var/log/nova/nova-cert.log*
+# /var/log/nova/nova-cert-json.log*
+# /var/log/nova/nova-consoleauth.log*
+# /var/log/nova/nova-consoleauth-json.log*
+# /var/log/nova/nova-conductor.log*
+# /var/log/nova/nova-conductor-json.log*
+# /var/log/nova/nova-scheduler.log*
+# /var/log/nova/nova-scheduler-json.log*
+# /var/log/nova/nova-novncproxy.log*
+# /var/log/nova/nova-novncproxy-json.log*
+# /var/log/nova/nova-baremetal-deploy-helper.log*
+# /var/log/nova/nova-baremetal-deploy-helper-json.log*
+# /var/log/nova/nova-compute.log*
+# /var/log/nova/nova-compute-json.log*
+# /var/log/octavia/octavia-api.log*
+# /var/log/octavia/octavia-worker.log*
+# /var/log/octavia/octavia-housekeeping.log*
+# /var/log/octavia/octavia-health-manager.log*
+# /var/log/octavia/octavia-api-json.log*
+# /var/log/octavia/octavia-worker-json.log*
+# /var/log/octavia/octavia-housekeeping-json.log*
+# /var/log/octavia/octavia-health-manager-json.log*
+# /var/log/ops-console/access.log*
+# /var/log/ops-console/error.log*
+
+- name: logging-server | upgrade | Set logfile groups to adm
+  become: yes
+  file:
+    state: file
+    path: "{{ item }}"
+    group: adm
+  ignore_errors: yes
+  with_items: path_files_result.stdout_lines

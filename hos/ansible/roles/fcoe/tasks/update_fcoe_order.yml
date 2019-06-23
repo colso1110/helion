@@ -1,0 +1,53 @@
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Update the FCOE device ordering if needed and request a manual reboot of
+# the system if required.
+---
+
+- name: fcoe | update_fcoe_order | Set os-specific variables
+  include_vars: "{{ ansible_os_family | lower }}.yml"
+
+- name: fcoe | update_fcoe_order | Update FCOE device ordering
+  become: yes
+  update_fcoe_udev:
+    update: True
+    prefix: /
+  register: ufu_update_result
+  when: host.fcoe_interfaces | length > 0
+  ignore_errors: True
+
+- name: fcoe | update_fcoe_order | Handle ordering check exceptions
+  fail:
+    msg: |
+      Unknown error while checking FCOE device ordering:
+      stdout={{ ufu_update_result.stdout }}
+      stderr={{ ufu_update_result.stderr }}
+  when: ((host.fcoe_interfaces | length > 0) and
+         (ufu_update_result.rc == 256))
+
+- name: fcoe | update_fcoe_order | Rebuild the initramfs
+  become: yes
+  command: "{{ initramfs_update_command }}"
+  when: ((host.fcoe_interfaces | length > 0) and
+         ((ufu_update_result | changed) or (ufu_update_result.rc == 2)))
+
+- name: fcoe | update_fcoe_order | FCOE devices re-ordered.
+  fail:
+    msg: |
+      The system FCOE device ordering has been updated and a manual reboot
+      is required for the changes to take effect.
+      Please manually reboot the system before continuing.
+  when: ((host.fcoe_interfaces | length > 0) and
+         ((ufu_update_result | changed) or (ufu_update_result.rc == 2)))

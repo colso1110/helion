@@ -1,0 +1,40 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: "{{ service_name }} | Check vertica service status"
+  command: /etc/init.d/{{service_name}} status
+  register: status_result
+  ignore_errors: yes
+  changed_when: false
+
+- name: "{{ service_name }} | Report vertica service failure"
+  fail:
+    msg: |
+      {{service_name}} is not running.
+  when: status_result | failed
+
+- name: vertica | status | Check database status
+  sudo_user: dbadmin
+  command: /opt/vertica/bin/admintools -t view_cluster -d {{vertica_database_name}}
+  register: running_result
+  run_once_per: verb_hosts.FND_VDB
+  ignore_errors: yes
+
+- name: vertica | status | Ensure all nodes database nodes are UP
+  fail:
+    msg: "All nodes on Vertica Database are not UP\n{{ running_result.stdout }}"
+  run_once_per: verb_hosts.FND_VDB
+  when: running_result.stdout.find("ALL") == -1 or running_result.stdout.find("UP") == -1

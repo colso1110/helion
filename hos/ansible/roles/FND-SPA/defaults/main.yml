@@ -1,0 +1,94 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+spark_component_name: spark
+spark_hosts: "{{ FND_SPA.members.master }}"
+spark_group_name: "{{ verb_hosts.FND_SPA }}"
+spark_local_hostname: >
+  {{ (spark_hosts |
+      selectattr('hlm_ansible_host','equalto', inventory_hostname) |
+      first).host }}
+spark_ver: 1.6.1
+spark_hadoop_ver: 2.6
+spark_tarball_name: spark-{{ spark_ver }}-bin-hadoop{{ spark_hadoop_ver }}.tgz
+spark_streaming_kafka_version_jar: spark-streaming-kafka_2.10-{{ spark_ver }}.jar
+spark_streaming_kafka_jar: spark-streaming-kafka.jar
+spark_root_dir: "{{ spark_component_name | bin_dir() }}/.."
+spark_venv_lib_dir: "{{ spark_component_name | jar_dir() }}"
+spark_libs:
+  - ["kafka_2.10-0.8.1.1.jar", "kafka_2.10-0.8.1.1/libs"]
+  - ["scala-library-2.10.1.jar", "kafka_2.10-0.8.1.1/libs"]
+  - ["metrics-core-2.2.0.jar", "kafka_2.10-0.8.1.1/libs"]
+  - ["{{ spark_streaming_kafka_version_jar }}", ""]
+  - ["drizzle-jdbc-1.3.jar", ""]
+spark_current_dir: "{{ spark_root_dir }}/current"
+spark_versioned_dir: "{{ spark_root_dir }}/spark-{{ spark_ver }}-bin-hadoop{{ spark_hadoop_ver }}"
+spark_lib_jars_location: "{{ spark_versioned_dir }}/lib"
+spark_local_dir: /var/spark
+spark_run_dir: /var/run/spark
+spark_worker_directory: "{{ spark_run_dir }}/work"
+spark_conf_dir: /etc/spark/conf
+spark_init_dir: /etc/spark/init
+spark_log_dir: /var/log/spark
+spark_tools_dir: "{{ spark_versioned_dir }}/tools"
+spark_master_log_file: "{{ spark_log_dir }}/{{ spark_component_name }}-master.log"
+spark_worker_log_file: "{{ spark_log_dir }}/{{ spark_component_name }}-worker.log"
+spark_event_log_directory: "{{ spark_log_dir }}/events"
+spark_group: spark
+spark_user: spark
+# spark configuration properties
+spark_executor_cores: 1
+spark_executor_memory: 512m
+spark_cores_max: 3
+spark_driver_memory: 512m
+spark_python_worker_memory: 16m
+spark_worker_memory: 512m
+spark_worker_cores: 1
+spark_daemon_x_ms: 16m
+spark_daemon_x_mx: 16m
+spark_daemon_max_perm_size: 32m
+spark_sql_shuffle_partitions: 32
+spark_worker_cleanup_enabled: true
+spark_cleaner_ttl: 900
+spark_master_port: "{{ host.bind.FND_SPA.master.port }}"
+spark_worker_port: "{{ host.bind.FND_SPA.worker.port }}"
+spark_master_webui_port: "{{ host.bind.FND_SPA.master_web_ui.port }}"
+spark_worker_webui_port: "{{ host.bind.FND_SPA.worker_web_ui.port }}"
+spark_blockmanager_port: "{{ host.bind.FND_SPA.block_manager.port }}"
+spark_broadcast_port: "{{ host.bind.FND_SPA.broadcast.port }}"
+spark_driver_port: "{{ host.bind.FND_SPA.driver.port }}"
+spark_executor_port: "{{ host.bind.FND_SPA.executor.port }}"
+spark_fileserver_port: "{{ host.bind.FND_SPA.fileserver.port }}"
+spark_masters: "{% for node in FND_SPA.members.master %}{{ node.host }}:{{ node.port }}{% if not loop.last %},{% endif %}{% endfor %}"
+
+# zookeeper
+spark_zookeeper_nodes: "{{ FND_SPA.consumes_FND_ZOO.members.private }}"
+spark_zookeeper_hosts: "{% for node in spark_zookeeper_nodes %}{{ node.host }}:{{ node.port }}{% if not loop.last %},{% endif %}{% endfor %}"
+
+spark_init: systemd
+# upstart
+spark_master_upstart_conf: /etc/init/spark-master.conf
+spark_worker_upstart_conf: /etc/init/spark-worker.conf
+
+# systemd
+spark_master_systemd_service: /etc/systemd/system/spark-master.service
+spark_worker_systemd_service: /etc/systemd/system/spark-worker.service
+
+
+# monitoring
+spark_agent_detection_plugin_dir: "{{ monasca_agent_detection_plugin_dir }}"
+
+

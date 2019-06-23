@@ -1,0 +1,36 @@
+{#
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+#!/bin/sh
+#
+# rc.local
+#
+
+# set the number of hugepages on a node
+if mkdir /dev/shm/hugepage-service; then
+  echo "Creating node-specific huge pages."
+  {% for item in numa_huge_pages %}
+    nodedir='/sys/devices/system/node/node{{ item.numa_node }}'
+    hugepages='hugepages/hugepages-{{ item.size_in_k }}kB/nr_hugepages'
+    old_page_count=`cat $nodedir/$hugepages`
+    new_page_count=$((old_page_count + {{ item.count}}))
+    echo $new_page_count > $nodedir/$hugepages
+  {% endfor %}
+  exit 0
+fi
+echo "Service has been run previously. Do nothing."
+exit 0

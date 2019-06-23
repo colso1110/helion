@@ -1,0 +1,49 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#- name: osconfig | setup-yum | check yum package installed or not
+#  become: yes
+#  file:
+#    path: "/etc/apt/sources.list"
+#    state: absent
+#  register: _apt_source_list_result
+#  when: deployer_apt_repo_present
+# 1. Check RHEL_##.iso is mounted / else throw an error
+# 2. Update local yum repo to point to locallay mounted RHEL_##.iso
+# 3. Based on other dependented build mechanism
+#    (through yum mirror at deployer or bundled with venv build
+#    through external venv mechanism ) write a task
+#    to install those.
+---
+- name: osconfig | setup-yum | Configure the extras yum repo on RHEL nodes
+  become: yes
+  template:
+    src: "hos_yum.repo.j2"
+    dest: "/etc/yum.repos.d/hos_yum.repo"
+
+- name: osconfig | setup-yum | Get symlink source
+  delegate_to: localhost
+  stat:
+    path: "{{ yum_thirdparty_dir }}/latest"
+  register: latest_source_result
+  when: thirdparty_yum_repo_present
+
+- name: osconfig | setup-yum | Configure the thirdparty yum repo on RHEL nodes
+  become: yes
+  template:
+    src: "tp_yum.repo.j2"
+    dest: "/etc/yum.repos.d/tp_yum.repo"
+    mode: 0644
+  when: thirdparty_yum_repo_present

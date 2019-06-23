@@ -1,0 +1,36 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# NOTE: Construct URL the same way as HOS V2.1 to avoid upgrade issues
+- name: cinder-monitor | monasca_api_alarms | Construct VIP URL for Active check
+  set_fact:
+    _cinder_vip_url: "{{ item.url }}"
+  with_items:
+    - url: "{{ CND_API | item ('advertises.vips.private[0].protocol') }}:\
+          //{{ CND_API | item ('advertises.vips.private[0].host') }}:\
+          {{ CND_API | item ('advertises.vips.private[0].port') }}/"
+
+# NOTE: Admin endpoint may not be accessible from internal nodes
+#       in the long term.
+- name: cinder-monitor | monasca_api_alarms | Active check against Cinder VIP
+  monasca_agent_plugin:
+    name: "httpcheck"
+    args: >-
+      use_keystone=False
+      match_pattern=.*versions.*CURRENT.*
+      url={{ _cinder_vip_url }}
+      dimensions=service:block-storage,component:cinder-api,vip:internal

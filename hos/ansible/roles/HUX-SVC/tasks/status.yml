@@ -1,0 +1,47 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Conditionally run status check
+# to support 2.x > 3.x upgrades
+# NOTE: hlm_pre_upgrade_check is injected as part of the hlm-pre-upgrade-status
+#       playbook in hlm-upgrade which directly calls hlm-status
+# hux_svc_perform_upgrade_check is injected by hlm-ux-services-upgrade playbook
+- name: HUX-SVC | status | Check service definition exists
+  become: yes
+  stat: path="{{ hux_svc_systemd_path }}"
+  register: stat_check_result
+  when: hux_svc_perform_upgrade_check or (hlm_pre_upgrade_check is defined)
+
+- name: HUX-SVC | status | Get service status
+  become: yes
+  command: systemctl status "{{ hux_svc_service }}"
+  ignore_errors: yes
+  register: systemctl_status_result
+
+# NOTE: if stat_check_result exists, then this is
+# either a pre-upgrade status check or an upgrade status check
+- name: HUX-SVC | status | Report of service status
+  become: yes
+  fail:
+    msg: |
+      {{ hux_svc_service }} is not running.
+      systemctl status {{ hux_svc_service }} output:
+      {{ systemctl_status_result.stdout }}
+      {{ systemctl_status_result.stderr }}
+  when: systemctl_status_result.rc != 0
+        and (stat_check_result is not defined or
+        stat_check_result.stat.exists)

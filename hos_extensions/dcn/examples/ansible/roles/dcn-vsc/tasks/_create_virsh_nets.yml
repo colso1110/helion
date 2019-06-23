@@ -1,0 +1,73 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: dcn-vsc | _create_virsh_nets |
+        Copy the network definition files to the target machine
+  become: yes
+  template:
+    src: "{{ playbook_dir }}/roles/dcn-vsc/templates/{{ item }}.j2"
+    dest: /tmp/{{ item }}
+    owner: root
+    group: root
+    mode: 0644
+  with_items:
+    - vsc_dcm_vnet.xml
+    - vsc_tul_vnet.xml
+
+- name: dcn-vsc | _create_virsh_nets |
+        Check if the dcm virtual network is already created
+  become: yes
+  command: virsh net-info {{ vsc_dcm_virsh_net }}
+  register: dcm_vnet_exists_result
+  ignore_errors: true
+
+- name: dcn-vsc | _create_virsh_nets | Create the dcm virtual network
+  become: yes
+  command: virsh net-define /tmp/vsc_dcm_vnet.xml
+  when: dcm_vnet_exists_result|failed
+
+- name: dcn-vsc | _create_virsh_nets | Start the dcm virtual network
+  become: yes
+  command: virsh net-start {{ vsc_dcm_virsh_net }}
+  when: dcm_vnet_exists_result|failed
+
+- name: dcn-vsc | _create_virsh_nets | Autostart the dcm virtual network
+  become: yes
+  command: virsh net-autostart {{ vsc_dcm_virsh_net }}
+  when: dcm_vnet_exists_result|failed
+
+- name: dcn-vsc | _create_virsh_nets |
+        Check if the tul virtual network is already created
+  become: yes
+  command: virsh net-info {{ vsc_tul_virsh_net }}
+  register: tul_vnet_exists_result
+  ignore_errors: true
+
+- name: dcn-vsc | _create_virsh_nets | Create the tul virtual network
+  become: yes
+  command: virsh net-define /tmp/vsc_tul_vnet.xml
+  when: tul_vnet_exists_result|failed
+
+- name: dcn-vsc | _create_virsh_nets | Start the tul virtual network
+  become: yes
+  command: virsh net-start {{ vsc_tul_virsh_net }}
+  when: tul_vnet_exists_result|failed
+
+- name: dcn-vsc | _create_virsh_nets | Autostart the tul virtual network
+  become: yes
+  command: virsh net-autostart {{ vsc_tul_virsh_net }}
+  when: tul_vnet_exists_result|failed

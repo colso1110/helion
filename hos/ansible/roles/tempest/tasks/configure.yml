@@ -1,0 +1,95 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Configure Tempest on the target node
+
+- name: tempest | configure | Add group Tempest group
+  become: yes
+  group:
+    name: "{{ tempest_group }}"
+
+- name: tempest | configure | Add user Tempest user
+  become: yes
+  user:
+    name: "{{ tempest_user }}"
+    group: "{{ tempest_group }}"
+    home: "{{ tempest_run.dir }}"
+    createhome: no
+    shell: /bin/bash
+
+- name: tempest | configure | Create tempest_run folders
+  become: yes
+  file:
+    path: "{{ item.value }}"
+    owner: "{{ tempest_user }}"
+    group: "{{ tempest_group }}"
+    state: directory
+    mode: 0755
+  with_dict: tempest_run
+
+- name: tempest | configure | Create venv symlink for advanced testing
+  become: yes
+  file:
+    src: "{{ tempest_install_dir }}"
+    dest: "{{ tempest_run.dir }}/venv"
+    owner: "{{ tempest_user }}"
+    group: "{{ tempest_group }}"
+    state: link
+
+- name: tempest | configure | Create testr config file
+  become: yes
+  copy:
+    src: .testr.conf
+    dest: "{{ tempest_run.dir }}/.testr.conf"
+    owner: "{{ tempest_user }}"
+    group: "{{ tempest_group }}"
+    mode: 0644
+
+- name: tempest | configure | Deploy tests2skip.py
+  become: yes
+  copy:
+    src: tests2skip.py
+    dest: "{{ tempest_run.bin_dir }}/tests2skip.py"
+    owner: "{{ tempest_user }}"
+    group: "{{ tempest_group }}"
+    mode: 0644
+
+- name: tempest | configure | Deploy run_filters
+  become: yes
+  copy:
+    src: run_filters
+    dest: "{{ tempest_run.dir }}"
+    owner: "{{ tempest_user }}"
+    group: "{{ tempest_group }}"
+    mode: 0644
+
+- name: tempest | configure | Deploy helion-tempest script to run tests
+  become: yes
+  template:
+    src: helion-tempest.sh.j2
+    dest: "{{ tempest_run.bin_dir }}/helion-tempest.sh"
+    owner: "{{ tempest_user }}"
+    group: "{{ tempest_group }}"
+    mode: 0755
+
+- name: tempest | configure | Deploy generate-subunit script for Tempest run
+  become: yes
+  template:
+    src: generate-subunit.sh.j2
+    dest: "{{ tempest_run.bin_dir }}/generate-subunit.sh"
+    owner: "{{ tempest_user }}"
+    group: "{{ tempest_group }}"
+    mode: 0755

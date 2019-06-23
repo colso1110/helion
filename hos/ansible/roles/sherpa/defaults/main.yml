@@ -1,0 +1,102 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+sherpa_user: sherpa
+sherpa_group: sherpa
+
+sherpa_host: "{{ host.vars.my_network_name }}"
+sherpa_host_ip: "{{ host.vars.my_hostname_address }}"
+sherpa_port: 21131
+
+sherpa_log_dir: /var/log/sherpa
+sherpa_lib_dir: /var/lib/sherpa
+sherpa_cache_dir: /var/cache/sherpa
+
+# etc dirs and files
+sherpa_conf_dir: /etc/sherpa
+sherpa_cert_dir: "{{ sherpa_conf_dir }}/.gnupg"
+sherpa_conf_file: "{{ sherpa_conf_dir }}/sherpa.conf"
+sherpa_id_file: "{{ sherpa_conf_dir }}/sherpa_id.py"
+sherpa_secret_file: "{{ sherpa_conf_dir }}/.secret.json"
+
+# venv dirs and files
+# sherpa_venv_dir: "{{ VENV.SERVICE_DIR }}/sherpa/venv"
+sherpa_venv_dir: "{{ 'sherpa' | venv_dir }}"
+sherpa_site_dir: "{{ sherpa_venv_dir }}/lib/python2.7/site-packages"
+
+sherpa_data_dir: "{{ sherpa_lib_dir }}/data"
+sherpa_template_dir: "{{ sherpa_lib_dir }}/templates"
+sherpa_ext_dir: "{{ sherpa_lib_dir }}/ext"
+sherpa_import_dir: "{{ sherpa_lib_dir }}/import"
+sherpa_sig_dir: "{{ sherpa_lib_dir }}/signature"
+sherpa_ssh_dir: "{{ sherpa_lib_dir }}/.ssh"
+
+sherpa_log_file: "{{ sherpa_log_dir }}/sherpa.log"
+sherpa_jsonlog_file: "{{ sherpa_log_dir }}/sherpa-json.log"
+sherpa_access_log_file: "{{ sherpa_log_dir }}/access.log"
+
+# sherpa conf
+sherpa_max_concurrent_jobs: 2
+sherpa_os_version: 20010100
+sherpa_os_type: 20021
+sherpa_categories: [10254]
+sherpa_hdp_categories: [10383]
+sherpa_active_storage: mysql
+
+# apache conf
+sherpa_processes: 1
+sherpa_threads: 1
+
+# proxies
+# Example proxy server: http://proxy.abc.com:8080
+sherpa_http_proxy: ""
+sherpa_https_proxy: "{{ sherpa_http_proxy }}"
+sherpa_no_proxy: "localhost, 127.0.0.1"
+
+sherpa_db_url: "mysql://{{ mysql.sherpa_admin_user }}:{{ mysql.sherpa_admin_password | urlencode }}@{{ mysql.host }}/sherpa"
+
+sherpa_vhost_enabled: /etc/apache2/sites-enabled/sherpa.conf
+sherpa_vhost_available: /etc/apache2/sites-available/sherpa.conf
+sherpa_pkg: /opt/stack/service/sherpa
+
+mysql:
+  host: >
+    {{ SHP_API | item('consumes_FND_MDB.vips.private[0].host',
+        default=( SHP_API | item('consumes_FND_MDB.vips.public[0].host') )) }}
+  login_password: "{{ FND_MDB.vars.mysql_service_pwd | quote }}"
+  login_user: "{{ FND_MDB.vars.mysql_service_user }}"
+  sherpa_admin_user: '
+    {%- if SHP_API is defined -%}
+      {%- if SHP_API.consumes_FND_MDB is defined -%}
+        "{{ SHP_API.consumes_FND_MDB.vars.accounts.sherpa_api.username }}"
+      {%- endif -%}
+    {%- endif -%}'
+  sherpa_admin_password: "{{ SHP_API.consumes_FND_MDB.vars.accounts.sherpa_api.password | quote }}"
+
+sherpa_login_endpoint_v3: '
+  {%- if SHP_API is defined -%}
+    {%- if SHP_API.consumes_KEY_API is defined -%}
+      "{{ SHP_API.consumes_KEY_API.vips.private[0].url }}/v3"
+    {%- endif -%}
+  {%- endif -%}'
+
+keystone:
+  token: "{{ KEY_API.vars.keystone_admin_token | quote }}"
+  admin_user: "{{ KEY_API.vars.keystone_admin_user }}"
+  admin_password: "{{ KEY_API.vars.keystone_admin_pwd | quote }}"
+  default_domain_name: "{{ KEY_API.vars.keystone_default_domain }}"
+

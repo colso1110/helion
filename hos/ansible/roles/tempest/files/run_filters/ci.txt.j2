@@ -1,0 +1,131 @@
+{#
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+{% if (tempest_testable.keystone | bool) %}
+# Keystone test
+
+# Keystone V3 API Test
+# HLM-4384 only run a minimal set of v3 tests
++tempest\.api\.identity\.admin\.v3\.test_domains\.
+
+# Exclude 4 known failures:
+tempest\.api\.identity\.admin\.v3\.test_list_users.UsersV3TestJSON\.test_list_users
+tempest\.api\.identity\.admin\.v3\.test_list_users.UsersV3TestJSON\.test_list_users_with_name
+tempest\.api\.identity\.admin\.v3\.test_users.UsersV3TestJSON\.test_update_user_password
+tempest\.api\.identity\.admin\.v3\.test_groups\.GroupsV3TestJSON\.test_list_groups
+{% endif %}
+
+{% if (tempest_testable.nova | bool) %}
+# Nova tests
+
+# DEVQA-418: Add Nova smoke tests
++tempest\.api\.compute\.flavors\.test_flavors\.FlavorsV2TestJSON\.test_list_flavors
+-tempest\.api\.compute\.flavors\.test_flavors\.FlavorsV2TestJSON\.test_list_flavors_.*
++tempest\.api\.compute\.servers\.test_attach_interfaces\.AttachInterfacesTestJSON\.test_add_remove_fixed_ip
+-tempest\.api\.compute\.servers\.test_attach_interfaces\.AttachInterfacesTestJSON\.test_add_remove_fixed_ip_.*
++tempest\.api\.compute\.servers\.test_create_server\.ServersTestJSON\.test_list_servers
+-tempest\.api\.compute\.servers\.test_create_server\.ServersTestJSON\.test_list_servers_.*
++tempest\.api\.compute\.servers\.test_server_addresses\.ServerAddressesTestJSON\.test_list_server_addresses
+-tempest\.api\.compute\.servers\.test_server_addresses\.ServerAddressesTestJSON\.test_list_server_addresses_.*
+
+{% if (tempest_available.ironic | bool) %}
+# For Ironic disable the following tests (will not work on VM's).
+-tempest\.api\.compute\.servers\.test_create_server\.ServersTestJSON\.test_list_servers
+-tempest\.api\.compute\.servers\.test_server_actions\.ServerActionsTestJSON\.test_reboot_server_hard
+-tempest\.api\.compute\.servers\.test_server_addresses\.ServerAddressesTestJSON\.test_list_server_addresses
+{% endif %}
+
+{% if (tempest_available.cinder | bool) %}
+# Only volume test if cinder is available.
++tempest\.api\.compute\.volumes\.test_volumes_list\.VolumesTestJSON\.test_volume_list
+-tempest\.api\.compute\.volumes\.test_volumes_list\.VolumesTestJSON\.test_volume_list_.*
+
+# Volume + Compute + ssh verification
++tempest\.api\.volume\.test_volumes_actions\.VolumesV2ActionsTest\.test_attach_detach_volume_to_instance
+
+{% endif %}
+{% endif %}
+
+{% if (tempest_testable.swift | bool) %}
+# Swift tests
+
++tempest\.api\.object_storage\.test_healthcheck.*
++tempest\.api\.object_storage\.test_container_services\.ContainerTest\.test_delete_container
+#+tempest\.api\.object_storage\.test_account_services\.AccountTest\.test_list_containers
+{% endif %}
+
+{% if (tempest_testable.glance | bool) %}
+# Glance tests
+
+# DEVQA-420: Image or glance testing
++tempest\.api\.image\.v1\.test_images\.CreateRegisterImagesTest\.test_register_image_with_min_ram
++tempest\.api\.image\.v2\.test_images\.BasicOperationsImagesTest\.test_update_image
+{% endif %}
+
+{% if (tempest_testable.neutron | bool) %}
+# Neutron tests
+
+# DEVQA-421: Adding some Neutron API tests
+# BUG: HQA-1509
+# The following test will always call setUpClass (tempest.api.network.test_networks.NetworksTest)
+# and if we running a flat network with no external network it will fail.
+{% if (cp_tempest_data[tempest_worker.region_name].external_networks is defined) or
+       tempest_network_name == 'ext-net' %}
++tempest\.api\.network\.test_networks\.NetworksTest\.test_create_update_delete_network_subnet
++tempest\.api\.network\.test_networks\.NetworksTest\.test_external_network_visibility
+{% endif %}
+{% endif %}
+
+{% if (tempest_testable.cinder | bool) %}
+# Cinder Test
+
++tempest\.api\.volume\.test_volumes_get\.VolumesV2GetTest\.test_volume_create_get_update_delete
+-tempest\.api\.volume\.test_volumes_get\.VolumesV2GetTest\.test_volume_create_get_update_delete_.*
+{% endif %}
+
+{% if (tempest_testable.horizon | bool) %}
+# Horizon tests
+
+# HORI-3925: Enable horizon test
++tempest\.scenario\.test_dashboard_basic_ops.*
+{% endif %}
+
+{% if (tempest_testable.heat | bool) %}
+# Heat tests
+
+# HQA-198: Adding Heat/Orchestration API tests
+# HQA-464 Temporarily disable failing test
++tempest\.api\.orchestration\.stacks\.test_non_empty_stack.*
++tempest\.api\.orchestration\.stacks\.test_stacks\.test_list_events
++tempest\.api\.orchestration\.stacks\.test_stacks\.test_stack_list
+{% endif %}
+
+{% if (tempest_testable.ironic | bool) %}
+# Ironic tests
+
+#IRONIC-349 Enable Baremetal tests
+#+tempest\.scenario\.test_baremetal_basic_ops.*
+{% endif %}
+
+{% if (tempest_testable.designate | bool) %}
+# Designate tests
+
+# DNSAAS-1102 Enable basic DNS/Designate tests
++designate_tempest_plugin\.tests\.api\.v2\.test_zones\.ZonesTest\.test_list_zones
+-designate_tempest_plugin\.tests\.api\.v2\.test_zones\.ZonesTest\.test_list_zones_.*
++designate_tempest_plugin\.tests\.api\.v2\.test_zones\.ZonesTest\.test_create_zone
+{% endif %}

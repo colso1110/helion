@@ -1,0 +1,150 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+barbican_home_dir: /home/barbican
+barbican_user: barbican
+barbican_group: barbican
+barbican_centralized_log_group: adm
+
+service: barbican
+
+barbican_api_network_address: "{{ host.bind.KEYMGR_API.internal.ip_address }}"
+barbican_api_port: "{{ host.bind.KEYMGR_API.internal.port }}"
+
+barbican_bin_dir: "{{ service | bin_dir() }}"
+barbican_conf_dir: "{{ service | config_dir() }}/{{service}}"
+barbican_share_dir: "{{ service | share_dir() }}"
+barbican_venv_dir: "{{ service | venv_dir }}"
+barbican_unversioned_conf_dir: "{{ service | config_dir() }}/{{service}}"
+
+barbican_admin_domain_name: "Default"
+
+barbican_admin_role: "{{ KEYMGR_API.vars.barbican_admin_role | default (KEY_API.vars.keystone_admin_role) }}"
+barbican_observer_role: "key-manager:observer"
+barbican_creator_role: "key-manager:creator"
+barbican_auditor_role: "key-manager:auditor"
+barbican_service_admin_role: "key-manager:service-admin"
+keystone_service_role: service
+
+barbican_api_audit_enable: "{{ KEYMGR.audit.enabled }}"
+
+barbican_audit_log_base_location: "{{ KEYMGR.audit.dir }}"
+
+barbican_admin_user: "{{ KEYMGR_API.vars.barbican_admin_user }}"
+barbican_admin_user_password: "{{ KEYMGR_API.vars.barbican_admin_password | quote }}"
+
+barbican_service_user: "{{ KEYMGR_API.vars.barbican_service_user }}"
+barbican_service_password: "{{ KEYMGR_API.vars.barbican_service_password | quote }}"
+#barbican_service_password: '%random-password%'
+
+barbican_api_conf_file: barbican.conf
+
+barbican_api_service_name: barbican-api
+barbican_worker_service_name: barbican-worker
+
+# Keystone specific variables
+keystone:
+  admin_user: "{{ KEY_API.vars.keystone_admin_user }}"
+  admin_password: "{{ KEY_API.vars.keystone_admin_pwd | quote }}"
+  default_domain_name: "{{ KEY_API.vars.keystone_default_domain }}"
+  admin_tenant_name: "{{ KEY_API.vars.keystone_admin_tenant }}"
+  service_tenant_name: "{{ KEY_API.vars.keystone_service_tenant }}"
+  admin_role: "{{ KEY_API.vars.keystone_admin_role }}"
+  auth_url: "{{ KEYMGR_API.consumes_KEY_API.vips.private[0].url }}"
+  identity_url: "{{ KEYMGR_API.consumes_KEY_API.vips.private[0].url }}"
+  admin_url: "{{ KEYMGR_API.consumes_KEY_API.vips.private[0].url }}"
+
+barbican_db_ca_file: "/etc/ssl/certs/ca-certificates.crt"
+barbican_database_connection_string: "mysql://{{ KEYMGR_API.consumes_FND_MDB.vars.accounts.barbican.username }}:{{ KEYMGR_API.consumes_FND_MDB.vars.accounts.barbican.password | urlencode }}@{{ KEYMGR_API.consumes_FND_MDB.vips.private[0].host }}/barbican{% if KEYMGR_API.consumes_FND_MDB.vips.private[0].use_tls %}?ssl_ca={{ barbican_db_ca_file }}{% endif %}"
+
+barbican_admin_vip_protocol: "{{ KEYMGR_API.advertises.vips.admin[0].protocol }}"
+barbican_admin_vip_host: "{{ KEYMGR_API.advertises.vips.admin[0].host }}"
+barbican_admin_vip_port: "{{ KEYMGR_API.advertises.vips.admin[0].port }}"
+
+barbican_internal_vip_protocol: "{{ KEYMGR_API.advertises.vips.private[0].protocol }}"
+barbican_internal_vip_host: "{{ KEYMGR_API.advertises.vips.private[0].host }}"
+barbican_internal_vip_port: "{{ KEYMGR_API.advertises.vips.private[0].port }}"
+
+barbican_public_vip_protocol: "{{ KEYMGR_API.advertises.vips.public[0].protocol }}"
+barbican_public_vip_host: "{{ KEYMGR_API.advertises.vips.public[0].host }}"
+barbican_public_vip_port: "{{ KEYMGR_API.advertises.vips.public[0].port }}"
+
+barbican_internal_endpoint: "{{ KEYMGR_API.advertises.vips.private[0].url }}"
+
+# Default master key used for store_crypto plugin
+# Mainly defined for CI/CD processing.
+#barbican_default_master_key: "3Z8QOImQyi2PAZUHjcqfxkcvZhPlHyXlH2wqjgwRpDI="
+barbican_default_master_key: "{{ KEYMGR_API.vars.barbican_master_kek_db_plugin | b64encode }}"
+
+# Value passed to barbican configuration, keep it blank
+barbican_simple_crypto_master_key:
+
+barbican_pkcs11_package_name:
+barbican_pkcs11_slot_id: 1
+barbican_pkcs11_generate_labels: False
+barbican_pkcs11_hpe_generate_conf: False
+
+barbican_secretstore_plugins:
+barbican_enabled_crypto_plugins:
+
+barbican_pkcs11_hpe_connector_base_path: "/opt/hpe/eskm_pkcs11"
+barbican_pkcs11_hpe_connector_library_path: "{{ barbican_pkcs11_hpe_connector_base_path }}/lib/libhppkcs11.so"
+barbican_pkcs11_hpe_connector_client_cert_path: "{{ barbican_pkcs11_hpe_connector_base_path }}/conf/cert.pem"
+barbican_pkcs11_hpe_connector_client_key_path: "{{ barbican_pkcs11_hpe_connector_base_path }}/conf/privkey.pem"
+barbican_pkcs11_hpe_connector_client_cacert_path: "{{ barbican_pkcs11_hpe_connector_base_path }}/conf/ca.pem"
+barbican_pkcs11_hpe_kmip_host:
+barbican_pkcs11_hpe_kmip_port: 5696
+
+barbican_pkcs11_project_kek_cache_ttl_secs: 900
+barbican_pkcs11_project_kek_cache_size: 100
+
+# Message queue variables
+_mq_hosts_list: "{{ KEYMGR_API.consumes_FND_RMQ.members.private | default (KEYMGR_API.consumes_FND_RMQ.members.public) }}"
+
+barbican_control_exchange: openstack
+barbican_notification_driver: log
+
+barbican_rabbit_hosts_port_pair:
+  "{% for x in _mq_hosts_list -%}
+   {{ x.host }}:{{ x.port }}
+   {%- if not loop.last -%},{% endif %}
+   {%- endfor %}"
+
+barbican_rabbit_user: "{{ KEYMGR.consumes_FND_RMQ.vars.accounts.barbican.username }}"
+barbican_rabbit_password: "{{ KEYMGR.consumes_FND_RMQ.vars.accounts.barbican.password }}"
+barbican_rabbit_use_ssl: "{{ KEYMGR.consumes_FND_RMQ.members.private[0].use_tls }}"
+
+barbican_api_ssl_client_key: "{{ barbican_conf_dir }}/ssl/certs/client.key"
+barbican_api_ssl_client_cert: "{{ barbican_conf_dir }}/ssl/certs/client.crt"
+barbican_api_ssl_ca_cert: "{{ barbican_conf_dir }}/ssl/certs/ca.crt"
+
+barbican_kmip_client_key_path: "/etc/barbican/ssl/certs/kmip_client.key"
+barbican_kmip_client_cert_path: "/etc/barbican/ssl/certs/kmip_client.crt"
+barbican_kmip_client_cacert_path: "/etc/barbican/ssl/certs/kmip_ca.crt"
+
+barbican_host_set: "{{ groups[verb_hosts.KEYMGR_API]  | default([]) }}"
+
+# Barbican database version, head means version as per included barbican code base
+# Please see https://github.com/openstack/barbican/blob/stable/liberty/barbican/cmd/db_manage.py#L72
+barbican_db_version: head
+barbican_db_auto_create_enabled: True
+
+# flag set in configure playbooks to trigger services handlers to restart
+barbican_restart_required: False
+barbican_api_restart_required: False
+barbican_worker_restart_required: False
+barbican_api_reload_required: False

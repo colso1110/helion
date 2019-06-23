@@ -1,0 +1,45 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: GLA-API | cache_preconfigure | Test for cache logical volume defined (caching enabled)
+  # If the input model specifies a logical volume with usage "glance-cache"
+  # we will enable caching and use that to store cached images.
+  # If no such volume exists caching will not be enabled on the node.
+  set_fact:
+    glance_api_cache_active: true
+    glance_api_cache_dir: "{{ item.1.mount }}"
+  when: item.1.consumer is defined and item.1.consumer.usage is defined and item.1.consumer.usage == "glance-cache" and item.1.mount is defined
+  with_subelements:
+    - "{{ host.my_disk_models.volume_groups }}"
+    - logical_volumes
+
+- name: GLA-API | cache_preconfigure | Test if cache directory mount point is active
+  command: mountpoint -q "{{ glance_api_cache_dir }}"
+  changed_when: false
+  when: glance_api_cache_active
+
+# This leaves a % of space as the glance cache pruner only cleans when over the max value.
+# If the cache size can't grow over the max size images will never get cleaned out.
+- name: GLA-API | cache_preconfigure | Get size of cache mount
+  set_fact:
+    glance_api_cache_max_size: "{{ (item.size_total|float * (glance_api_cache_prune_percent_size|float / 100.0))|int }}"
+  with_items: ansible_mounts
+  when: glance_api_cache_active and item.mount == glance_api_cache_dir
+
+- name: GLA-API | cache_preconfigure | Change pipeline flavour
+  set_fact:
+    glance_api_flavor: "{{ glance_api_flavor }}+caching"
+  when: glance_api_cache_active

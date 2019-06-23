@@ -1,0 +1,148 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Tasks
+
+- name: OPS-WEB | install | Create BLL/Leia Group
+  group:
+    name: "{{ ops_console_os_group }}"
+    state: present
+
+- name: OPS-WEB | install | Create BLL/Leia User
+  user:
+    name: "{{ ops_console_os_user }}"
+    group: "{{ ops_console_os_group }}"
+    createhome: yes
+    shell: /usr/sbin/nologin
+    state: present
+  ignore_errors: yes
+
+- name: OPS-WEB | install | Create logging directory
+  file:
+    path: "{{ ops_console_log_dir }}"
+    owner: "{{ ops_console_os_user }}"
+    group: "{{ ops_console_os_group }}"
+    mode: 0775
+    state: directory
+
+# install wsgi Apache module
+- name: OPS-WEB | install | Install dependencies
+  sudo: yes
+  apt:
+    state: latest
+    name: "{{ item }}"
+  with_items:
+    - libapache2-mod-wsgi
+    - python-httplib2 # Used by Ansible URI modual
+
+- name: Enable wsgi module in apache
+  command: a2enmod wsgi
+  register: ops_console_mod_enable_result
+  changed_when: '"already enabled" not in ops_console_mod_enable_result.stdout'
+
+- name: OPS-WEB | install | Update venv cache
+  become: yes
+  install_package:
+    cache: update
+
+- name: OPS-WEB | install | install the Ops Console service
+  install_package: 
+    name: leia
+    service: ops-console-web 
+    state: present
+  register: hlm_notify_opsweb_reload_required
+
+# install mysql-client
+- name: OPS-WEB | install | Install dependencies (mysql-client)
+  become: yes
+  include: "{{ playbook_dir }}/roles/FND-MDB/tasks/install_client.yml"
+
+- name: OPS-WEB | install | Install dependencies (python-mysqldb)
+  become: yes
+  apt:
+    state: latest
+    name: "{{ item }}"
+  with_items:
+    - python-mysqldb     # needed by create_db.yml
+
+- name: OPS-WEB | install | Create Virtual Host Error Logging File
+  file:
+    path: "{{ ops_console_error_log }}"
+    owner: "{{ ops_console_os_user }}"
+    group: "{{ ops_console_centralized_log_group }}"
+    mode: 0640
+    state: touch
+
+- name: OPS-WEB | install | Create Virtual Host Access Log File
+  file:
+    path: "{{ ops_console_access_log }}"
+    owner: "{{ ops_console_os_user }}"
+    group: "{{ ops_console_centralized_log_group }}"
+    mode: 0640
+    state: touch
+
+- name: OPS-WEB | install | Install Transient Web Artifact Project
+  install_package:
+    name: ops_console_content
+    service: ops-console-content
+    state: present
+  register: hlm_notify_opsweb_reload_required
+
+- name: OPS-WEB | install | Find archive name
+  shell: ls {{ 'ops-console-content' | jar_dir }}
+  register: archive_list
+
+- name: OPS-WEB | install | Extract Ops Console UI Web Files
+  unarchive:
+    dest: /var/www
+    src: "{{ 'ops-console-content' | jar_dir }}/{{ item }}"
+    copy: no
+    owner: root
+    group: root
+    mode: 0775
+  with_items: (archive_list.stdout).splitlines()
+
+- name: OPS-WEB | install | Remove Transient Web Artifact Project
+  install_package:
+    name: ops_console_content
+    service: ops-console-content
+    state: absent
+  register: hlm_notify_opsweb_reload_required
+
+- name: OPS-WEB | install | Clear old web directory
+  file:
+    path: "{{ ops_console_web_root }}"
+    state: absent
+
+- name: OPS-WEB | install | Rename Web Directory
+  command: mv /var/www/dist.hos "{{ ops_console_web_root }}"
+
+- name: OPS-WEB | install | Establish Web directory
+  file:
+    path: "{{ ops_console_web_root }}"
+    owner: root
+    group: root
+    mode: 0775
+    state: directory
+
+
+- name: OPS-WEB | install | Create WSGI directory
+  file:
+    path: "{{ ops_console_wsgi_dir }}"
+    owner: root
+    group: root
+    mode: 0775
+    state: directory

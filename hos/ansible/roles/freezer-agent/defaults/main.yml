@@ -1,0 +1,43 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# This file contains settings that are common to all operating systems.
+
+freezer_agent_packages:
+  - bzip2
+
+hlmuser: "{{ ansible_env['USER'] }}"
+hlmuser_home: "{{ ansible_env['HOME'] }}"
+
+freezer_agent_bin_dir: "{{ 'freezer-agent' | bin_dir() }}"
+freezer_agent_conf_dir: "{{ 'freezer-agent' | config_dir() }}"
+
+# Logging
+freezer_agent_log_dir: "/var/log/freezer-agent"
+freezer_agent_log_file: "{{ freezer_agent_log_dir }}/freezer-agent.log"
+freezer_agent_json_log_file: "{{ freezer_agent_log_dir }}/freezer-agent-json.log"
+freezer_scheduler_log_file: "{{ freezer_agent_log_dir }}/freezer-scheduler.log"
+freezer_scheduler_json_log_file: "{{ freezer_agent_log_dir }}/freezer-scheduler-json.log"
+freezer_log_group: adm
+
+# Freezer scheduler options
+freezer_scheduler_command: "source {{ hlmuser_home }}/backup.osrc && freezer-scheduler --config-file {{ freezer_agent_conf_dir }}/scheduler.conf"
+freezer_client_id: "{{ old_deployer_hostname | default(ansible_hostname) }}"
+freezer_scheduler_poll_interval: 60
+freezer_scheduler_loglevel: INFO
+freezer_scheduler_logstash_loglevel: INFO
+
+freezer_agent_restart_required: false

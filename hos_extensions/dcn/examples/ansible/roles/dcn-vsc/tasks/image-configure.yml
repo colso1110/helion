@@ -1,0 +1,84 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: dcn-vsc | image-configure | disconnect dev nbd0
+  become: yes
+  command: qemu-nbd --disconnect /dev/nbd0
+  ignore_errors: true
+
+- name: dcn-vsc | image-configure | unmount mntpt folder
+  become: yes
+  mount:
+    name: /tmp/mntpt
+    src: /dev/nbd0p1
+    fstype: devtmpfs
+    state: unmounted
+  ignore_errors: true
+
+- name: dcn-vsc | image-configure | remove mount folder
+  become: yes
+  file:
+    path: /tmp/mntpt
+    state: absent
+  ignore_errors: true
+
+- name: dcn-vsc | image-configure | make the mount directory
+  become: yes
+  command: mkdir -p /tmp/mntpt
+
+- name: dcn-vsc | image-configure | load nbd module
+  become: yes
+  command: modprobe nbd max_part=63
+
+- name: dcn-vsc | image-configure | map the image
+  become: yes
+  command: qemu-nbd -c /dev/nbd0 /tmp/{{ vsc_image_name }}.qcow2
+
+- name: dcn-vsc | image-configure | mount the image
+  become: yes
+  command: mount /dev/nbd0p1 /tmp/mntpt
+
+- name: dcn-vsc | image-configure | Copy the bof file on primary node
+  become: yes
+  template:
+    src: "bof.cfg.j2"
+    dest: "/tmp/mntpt/bof.cfg"
+    owner: "root"
+    group: "root"
+    mode: 0600
+
+- name: dcn-vsc | image-configure | unmount the image
+  become: yes
+  command: umount /tmp/mntpt
+
+- name: dcn-vsc | image-configure | kill the nbd session
+  become: yes
+  command: qemu-nbd --disconnect /dev/nbd0
+
+- name: dcn-vsc | image-configure | remove the mount directory
+  become: yes
+  command: rm -rf /tmp/mntpt
+
+- name: dcn-vsc | image-configure | make the images directory
+  become: yes
+  file:
+    path: "{{ vsc_image_dir }}"
+    state: directory
+
+- name: dcn-vsc | image-configure | copy image file to vsc node
+  become: yes
+  command: "cp /tmp/{{ vsc_image_name }}.qcow2 {{ vsc_image_dir }}"

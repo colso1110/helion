@@ -1,0 +1,50 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: vmfactory | check_upgraded_packages |
+    Check upgraded apparmor packages
+  command: /bin/true
+  notify:
+    - reload vmf_apparmor
+  when: item in hlm_upgraded_pkgs | default({})
+  with_items: vmf_apparmor_restart_packages
+  register: check_apparmor_update_result
+
+- name: vmfactory | check_upgraded_packages | update reload apparmor file for 3rd party vms
+  become: yes
+  shell: |
+     df /var/run | grep -q tmpfs || exit 1
+     mkdir -p /var/run/hos
+     touch /var/run/hos/reload_apparmor
+  when: check_apparmor_update_result.changed and (vmf_third_party_vm_support | bool == True)
+
+- name: vmfactory | check_upgraded_packages | Check upgraded libvirt packages
+  command: /bin/true
+  notify:
+    - reload vmf_libvirtd
+  when: item in hlm_upgraded_pkgs | default({})
+  with_items: vmf_libvirt_restart_packages
+  register: check_libvirt_update_result
+
+- name: vmfactory | configure | update restart libvirtd file for 3rd party vms
+  become: yes
+  shell: |
+     df /var/run | grep -q tmpfs || exit 1
+     mkdir -p /var/run/hos
+     touch /var/run/hos/reload_libvirtd
+  when: check_libvirt_update_result.changed and (vmf_third_party_vm_support | bool == True)
+

@@ -1,0 +1,85 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: KEY-API | _configure_ldap | Display variables that are configured for LDAP
+  debug: var=keystone_domainldap_conf
+  tags:
+    - keystone
+    - keystone_debug
+  when: keystone_debug is defined
+
+- name: KEY-API | _configure_ldap | Get a domain scoped token
+  keystone_v3:
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    login_username: "{{ keystone_admin_user }}"
+    login_password: "{{ keystone_admin_user_pwd }}"
+    login_user_domain_name: "Default"
+    login_domain_name: "Default"
+    action: "token_get"
+  run_once: true
+  register: domain_scoped_token_result
+
+- name: KEY-API | _configure_ldap | Configure LDAP | Create domains
+  keystone_v3:
+    login_token: "{{ domain_scoped_token_result.result }}"
+    endpoint: "{{ keystone_internal_endpoint }}/v3"
+    action: "create_domain"
+    description: "{{ keystone_domainldap_conf.domain_settings.description }}"
+    domain_name:  "{{ keystone_domainldap_conf.domain_settings.name }}"
+  run_once: true
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_ldap | Delete the existing configuration file
+  file:
+      path: "{{ keystone_conf_dir }}/domains/keystone.{{
+              keystone_domainldap_conf.domain_settings.name }}.conf"
+      state: absent
+  become: yes
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_ldap | Populate domain specific config entries
+  ini_file:
+      dest: "{{ keystone_conf_dir }}/domains/keystone.{{
+              keystone_domainldap_conf.domain_settings.name }}.conf"
+      section: "{{ item.section }}"
+      option: "{{ item.option }}"
+      value: "{{ item.value }}"
+      owner: "{{ keystone_user }}"
+      group: "{{ keystone_group }}"
+      backup: no
+  with_items: keystone_domainldap_conf.conf_settings | osini()
+  become: yes
+  register: hlm_notify_keystone_change
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_ldap | Create the ldap CA file
+  copy:
+    dest: "{{ keystone_domainldap_conf.conf_settings.ldap.tls_cacertfile }}"
+    content: "{{ keystone_domainldap_conf.cert_settings.cacert }}"
+    owner: "{{ keystone_user }}"
+    group: "{{ keystone_group }}"
+    mode: 0644
+  when: (keystone_domainldap_conf.conf_settings.ldap.use_tls is defined and
+          keystone_domainldap_conf.conf_settings.ldap.use_tls == True)
+          or keystone_domainldap_conf.conf_settings.ldap.url|
+          split(':')|first() == 'ldaps'
+  become: yes
+  tags:
+    - keystone

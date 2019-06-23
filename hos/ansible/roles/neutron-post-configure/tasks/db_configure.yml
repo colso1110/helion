@@ -1,0 +1,55 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Neutron Database actions for post-configure tasks
+---
+
+- name: neutron-post-configure | db_configure |
+     build the neutron_config_file_args variable
+  include_vars: ../../neutron-common/vars/config_file_args.yml
+
+- name: neutron-post-configure | db_configure | Run Neutron-manage DB sync
+  become: yes
+  command:
+    "{{ neutron_bin_dir }}/neutron-db-manage
+    --config-file {{ neutron_conf_dir }}/neutron.conf
+    {{ neutron_config_file_args }} upgrade head"
+
+- name: neutron-post-configure | db_configure | Run Neutron-manage DB sync for LBaaSv2
+  become: yes
+  command:
+    "{{ neutron_bin_dir }}/neutron-db-manage --service lbaas
+    --config-file {{ neutron_conf_dir }}/neutron.conf
+    {{ neutron_config_file_args }} upgrade head"
+
+- name: neutron-post-configure | db_configure | Run Neutron-manage DB sync for FWaaS
+  become: yes
+  command:
+    "{{ neutron_bin_dir }}/neutron-db-manage --service fwaas
+    --config-file {{ neutron_conf_dir }}/neutron.conf
+    {{ neutron_config_file_args }} upgrade head"
+
+- name: neutron-post-configure | db_configure | Run Neutron-manage DB sync for ovsvapp
+  become: yes
+  command:
+    "{{ neutron_bin_dir }}/neutron-ovsvapp-db-manage
+    --config-file {{ neutron_conf_dir }}/neutron.conf
+    {{ neutron_config_file_args }} upgrade head"
+
+- name: neutron-post-configure | db_configure | Update Neutron DB entries for OVSvApp
+  become: yes
+  ovsvapp_db_update:
+      connection: "{{ neutron_db_connection }}"
+  register: db_result

@@ -1,0 +1,60 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# nova-common | configure
+---
+- name: nova-common | configure | debug message for nova_component
+  debug:
+      msg: "Running nova-common configure for {{ nova_component }}"
+  when: nova_component is defined
+  run_once: true
+
+- name: nova-common | configure | set os-specific variables
+  include_vars: "{{ ansible_os_family | lower }}.yml"
+
+- include: _read_migrate_enabled.yml
+
+- include: _create_pci_whitelist.yml
+  when: network_device_types is defined
+
+- include: _write_conf.yml
+  src: "nova.conf.j2"
+  dest: "{{ nova_service_conf_dir }}/nova.conf"
+  owner: "{{ nova_system_user }}"
+  group: "{{ nova_system_group }}"
+
+- name: nova-common | configure | notify on nova.conf change
+  shell: echo "notify change"
+  register: hlm_notify_nova_restart_required
+  when: write_conf_result.changed
+
+- name: nova-common | configure | default rootwrap_changed to false
+  set_fact:
+    rootwrap_changed: false
+
+- include: _configure_rootwrap.yml
+  when: nova_rootwrap_filters is defined
+
+- include: _configure_policy.yml
+  when: nova_policy_file is defined
+
+# write to deployer fact file whether migrate/resize is enabled or not
+- name: nova-common | configure | Write localhost enable_migrate file
+  delegate_to: localhost
+  become: yes
+  copy:
+    dest: "{{ enable_migrate_file }}"
+    content: "{{ nova_migrate_enabled }}"
+    mode: 0664

@@ -1,0 +1,111 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+---
+
+# This script is intended to run early in the boot process to improve the
+# chances of getting physically contiguous pages in the specified NUMA nodes.
+- name: osconfig | setup-hugepages | template service script
+  become: yes
+  template:
+    src: hugepages-service.sh.j2
+    dest: /usr/bin/hugepages-service.sh
+    owner: root
+    group: root
+    mode: 0755
+  with_items:
+    numa_huge_pages
+  when:
+    numa_huge_pages | length > 0
+
+- name: osconfig | setup-hugepages | clean existing service
+  become: yes
+  file:
+    path: /lib/systemd/system/helion-hugepages.service
+    state: absent
+
+- name: osconfig | setup-hugepages | template service systemd
+  become: yes
+  template:
+    src: hugepages-service.j2
+    dest: /lib/systemd/system/helion-hugepages.service
+    owner: root
+    group: root
+    mode: 0644
+  register:
+    hlm_notify_service_systemd_result
+  when:
+    numa_huge_pages | length > 0
+
+- name: osconfig | setup-hugepages | add service to systemd
+  become: yes
+  command: /bin/systemctl daemon-reload
+  when:
+    not (hlm_notify_service_systemd_result is not defined) and
+    hlm_notify_service_systemd_result.changed
+
+- name: osconfig | setup-hugepages | start and enable service
+  become: yes
+  service:
+    name: helion-hugepages
+    enabled: yes
+    state: stopped
+  when:
+    hlm_notify_service_systemd_result is defined and
+    hlm_notify_service_systemd_result.changed
+
+- name: osconfig | setup-hugepages | create hugepage directories
+  become: yes
+  file:
+    name: /dev/hugepages_{{ item.size }}
+    state: directory
+    owner: root
+    group: root
+    mode: 01770
+  with_items:
+    total_huge_pages
+  when:
+    total_huge_pages | length > 0
+
+- name: osconfig | setup-hugepages | mount hugepages
+  become: yes
+  mount:
+    name: /dev/hugepages_{{ item.size }}
+    src: hugetlbfs
+    fstype: hugetlbfs
+    state: mounted
+    opts: 'pagesize={{ item.size }}'
+  with_items:
+    total_huge_pages
+  when:
+    total_huge_pages | length > 0
+
+- name: osconfig | setup-hugepages | remove any existing hugepages mounts
+  become: yes
+  lineinfile:
+    dest: /etc/fstab
+    regexp: '^.*hugetlbfs.*$'
+    state: absent
+
+- name: osconfig | setup-hugepages | Add hugepages mount to fstab
+  become: yes
+  lineinfile:
+    dest: /etc/fstab
+    line: >
+      hugetlbfs    /dev/hugepages_{{ item.size }}    hugetlbfs
+      mode=01770,pagesize={{ item.size }} 0 0
+    insertafter: EOF
+  with_items:
+    total_huge_pages
+  when:
+    total_huge_pages | length > 0

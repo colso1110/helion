@@ -1,0 +1,195 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Setup default email notification method
+#------------------------------------------------------------------------------
+- name: logging-monitor | alarm-definitions | Set default email notification
+  become: yes
+  monasca_notification_method:
+    name: "Default Email"
+    type: 'EMAIL'
+    address: "root@localhost"
+    keystone_url: "{{ keystone_admin_endpoint }}"
+    keystone_user: "{{ keystone_admin_user }}"
+    keystone_password: "{{ keystone_admin_password | quote }}"
+    keystone_project: "{{ kronos_monitoring_project }}"
+    monasca_api_url: "{{ monasca_alarm_definition_api_url }}"
+    overwrite: false
+  register: default_notification_result
+  run_once: true
+
+# Configure Monasca alarm definitions
+#------------------------------------------------------------------------------
+- name: >-
+    logging-monitor | alarm-definitions | Setup default check
+    against monasca-log-api url
+  become: yes
+  monasca_agent_plugin:
+    name: "httpcheck"
+    args: >-
+      url={{ kronos_api_url }}
+      use_keystone=true
+      dimensions=service:logging,monitored_host_type:instance
+
+- name: logging-monitor | alarm-definitions | Remove old alarm definitions
+  become: yes
+  monasca_alarm_definition:
+    state: absent
+    name: "{{ item.name }}"
+    monasca_api_url: "{{ monasca_alarm_definition_api_url }}"
+    keystone_token: "{{ default_notification_result.keystone_token }}"
+    severity: "Medium"
+    ok_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    undetermined_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    alarm_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+  run_once: true
+  with_items:
+    - name: "Elasticsearch Open File Descriptors"
+    - name: "Elasticsearch Max Total Indices Size"
+    - name: "Elasticsearch Low Watermark alarm definition"
+    - name: "Elasticsearch High Watermark alarm definition"
+
+- name: logging-monitor | alarm-definitions | Create Logging Alarm Definitions
+  become: yes
+  monasca_alarm_definition:
+    name: "{{ item.name }}"
+    description: "{{ item.description }}"
+    expression: "{{ item.expression }}"
+    monasca_api_url: "{{ monasca_alarm_definition_api_url }}"
+    keystone_token: "{{ default_notification_result.keystone_token }}"
+    match_by: ["hostname"]
+    severity: "{{ item.severity | default('LOW') }}"
+    ok_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    undetermined_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    alarm_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+  run_once: true
+  with_items:
+    - name: "Kafka Kronos Consumer Lag"
+      description: >-
+        Alarms when the Kronos consumer group is not keeping up
+        with the incoming messages on the metric topic."
+      expression: >-
+        avg(kafka.consumer_lag{ consumer_group={{ kronos_kafka_consumer_group }}
+        }) > {{ kronos_kafka_max_lag }} times 3
+      severity: "Low"
+    - name: "Elasticsearch Number of Log Entries"
+      description: >-
+        Track the total number of log entries.  Trigger
+        set to < 0 (should never trigger)--just for monitoring purposes.
+      expression: "elasticsearch.docs.count<0"
+      severity: "Low"
+    - name: "Elasticsearch Unassigned Shards"
+      description: >-
+        Elasticsearch has one or more unassigned shards and it is
+        trying to assign them. If you continue to see this alarm,
+        please refer to the troubleshooting guide."
+      expression: "elasticsearch.unassigned_shards>0"
+      severity: "High"
+    - name: "Elasticsearch Field Data Evictions"
+      description: >-
+        Triggers when there are any elasticsearch.fielddata.evictions
+      expression: "elasticsearch.fielddata.evictions>0"
+      severity: "High"
+    - name: "Elasticsearch Low Watermark"
+      description: >-
+        Elasticsearch disk space usage has increased. If it gets critical,
+        old indices will be deleted. Adjust the curator
+        configuration variables and enabled backup if needed.
+      expression: >-
+        disk.space_used_perc{mount_point=/var/lib/elasticsearch}>
+        {{ curator_low_watermark_percent }}
+      severity: "Low"
+    - name: "Elasticsearch High Watermark"
+      description: >-
+        Elasticsearch is running low on disk space. Will attempt to delete
+        old indices to free up space. If you see this alarm often,
+        reconfigure logging by adjusting the curator variables.
+      expression: >-
+        disk.space_used_perc{mount_point=/var/lib/elasticsearch}>
+        {{ curator_high_watermark_percent }}
+      severity: "High"
+    - name: "Log Partition Low Watermark"
+      description: >-
+        The /var/log disk space usage has crossed low watermark. If the
+        high watermark is reached, logrotate will be run to free up disk
+        space. Adjust var_log_low_watermark_percent if needed.
+      expression: >-
+        disk.space_used_perc{mount_point=/var/log}>=
+        {{ var_log_low_watermark_percent }}
+      severity: "Low"
+    - name: "Log Partition High Watermark"
+      description: >-
+        The /var/log volume is running low on disk space. Logrotate will
+        be run now to free up space. Adjust var_log_high_watermark_percent
+        if needed.
+      expression: >-
+        disk.space_used_perc{mount_point=/var/log}>=
+        {{ var_log_high_watermark_percent }}
+      severity: "Critical"
+    - name: "Beaver Memory Usage"
+      description: >-
+        Beaver is using more memory than expected. This may indicate that
+        it cannot forward messages and it's queue is filling up. If you
+        continue to see this, see the troubleshooting guide.
+      expression: >-
+        process.mem.rss_mbytes{process_name=beaver} >=
+        {{ beaver_max_mem_usage*1024*1024 }}
+      severity: "High"
+    - name: "Audit Partition Low Watermark"
+      description: >-
+        The /var/audit disk space usage has crossed low watermark. If the
+        high watermark is reached, logrotate will be run to free up disk
+        space. Adjust var_audit_low_watermark_percent if needed.
+      expression: >-
+        disk.space_used_perc{mount_point=/var/audit}>=
+        {{ var_audit_low_watermark_percent }}
+      severity: "Low"
+    - name: "Audit Partition High Watermark"
+      description: >-
+        The /var/audit volume is running low on disk space. Logrotate will
+        be run now to free up space. Adjust var_audit_high_watermark_percent
+        if needed.
+      expression: >-
+        disk.space_used_perc{mount_point=/var/audit}>=
+        {{ var_audit_high_watermark_percent }}
+      severity: "Critical"
+
+- name: logging-monitor | alarm-definitions | Service Log Size alarm definition
+  become: yes
+  monasca_alarm_definition:
+    name: "Service Log Directory Size"
+    description: "Service log directory consuming more disk than its quota."
+    expression: >-
+      directory.size_bytes>{{ service_log_directory_size_quota*1024*1024*1024 }}
+    monasca_api_url: "{{ monasca_alarm_definition_api_url }}"
+    keystone_token: "{{ default_notification_result.keystone_token }}"
+    match_by: ["service","hostname","path"]
+    severity: "Low"
+    ok_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    undetermined_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    alarm_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+  register: hlm_notify_monitor_directory_restart
+  run_once: true

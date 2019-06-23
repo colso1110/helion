@@ -1,0 +1,52 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: _write_conf.yml
+  src: "heat.conf.j2"
+  dest: "{{ heat_service_conf_dir }}/heat.conf"
+
+- name: "heat-common | configure | notify on heat.conf change"
+  command: /bin/true
+  register: hlm_notify_heat_all_restart_required
+  when: write_conf_result.changed
+
+#TODO : Move this to api specific configure task
+- name: heat-common | configure | Copy the files to '{{ heat_service_conf_dir }}'
+  copy:
+    src: "{{ item }}"
+    dest: "{{ heat_service_conf_dir }}"
+    owner: "{{ heat_system_user }}"
+    group: "{{ heat_system_group }}"
+    mode: 0640
+  with_items:
+    - heat_api_audit_map.conf
+    - policy.json
+  register: hlm_notify_heat_all_restart_required
+
+- include: _write_conf.yml
+  src: "api-paste.ini.j2"
+  dest: "{{ heat_service_conf_dir }}/api-paste.ini"
+
+- name: heat-common | configure | Create heat audit logging directory
+  become: yes
+  file:
+    path: "{{ heat_audit_log_location }}"
+    owner: "{{ heat_system_user }}"
+    group: "{{ heat_system_group | default('root') }}"
+    mode: "0755"
+    state: directory
+  when: heat_audit_enable

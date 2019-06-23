@@ -1,0 +1,63 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Playbook to reconfigure networking and inform
+# services of network restart
+---
+
+# Serialise deployer and hosts with keepalived
+- hosts: "OPS-LM:FND-CLU:&{{ osconfig_resources | default('resources') }}"
+  roles:
+    - network_interface
+    - osconfig-network-pci
+  serial: 1
+  tasks:
+      # Try to move the VIP to another agent before we restart the network
+      # TODO: if we could tell a network restart was really going to happen
+      #       we could make this conditional.
+    - include: roles/network_interface/tasks/keepalived-force-restart.yml
+      when: ('FND-CLU' in group.services)
+
+      # Reconfigure virtual functions
+    - include: roles/osconfig-network-pci/tasks/configure.yml
+
+      # Reconfigure and potentially restart the network
+    - include: roles/network_interface/tasks/configure.yml
+
+      # A network restart may remove the VIP from an interface.  Need to
+      # reload keepalived in such an event to preserve any VIPs
+    - include: roles/network_interface/tasks/keepalived-reload.yml
+      when: ('FND-CLU' in group.services)
+
+      # Network restarts remove and re-add Open vSwitch ports which can
+      # cause errors with existing OpenFlow rules. Restart the neutron
+      # Open vSwitch agent, so that such configuration is corrected.
+      #
+      # ::TODO:: This needs to be moved out of here and put in the
+      #          neutron-ansible playbook, where it belongs.
+    - include: roles/network_interface/tasks/neutron-ovs-agent-restart.yml
+      when: ('NEU-OVS' in group.services)
+
+- hosts: "{{ osconfig_resources | default('resources') }}:!OPS-LM:!FND-CLU"
+  roles:
+    - network_interface
+    - osconfig-network-pci
+  tasks:
+    - include: roles/osconfig-network-pci/tasks/configure.yml
+
+    - include: roles/network_interface/tasks/configure.yml
+
+    - include: roles/network_interface/tasks/neutron-ovs-agent-restart.yml
+      when: ('NEU-OVS' in group.services)

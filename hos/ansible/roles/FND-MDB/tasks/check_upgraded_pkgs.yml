@@ -1,0 +1,29 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- include: check_install.yml
+
+# We do not notify a mysql_change here as for mysql an upgrade of the package
+# requires mysql to be restarted at package installation time.
+# The restart cannot be delayed until later.  This just logs a message
+# to indicate packages have changed
+- name: FND-MDB | check_upgraded_pkgs | Check upgraded packages
+  shell: echo "Notify change in mysql package dependency - {{ item }}"
+  when: item in hlm_upgraded_pkgs | default({})
+  with_items:
+      percona-xtradb-cluster-server-{{ percona_latest_installed_version }}
+      percona-xtradb-cluster-client-{{ percona_latest_installed_version }}
+      percona-xtradb-cluster-common-{{ percona_latest_installed_version }}

@@ -1,0 +1,147 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: tempest | static-config | Create required resource directories
+  become: yes
+  file:
+    path: "{{ item }}"
+    owner: "{{ tempest_user }}"
+    group: "{{ tempest_group }}"
+    state: directory
+    mode: 0755
+  with_items:
+    - "{{ tempest_worker.resource_dir }}"
+    - "{{ tempest_worker.config_parts_dir }}"
+
+# Generate a tempest confguration for the on the test target.
+- name: tempest | static-config | Create Tempest config for each region
+  become: yes
+  become_user: "{{ tempest_user }}"
+  template:
+    src: "tempest.conf.j2"
+    dest: "{{ tempest_worker.config_parts_dir }}/tempest.conf"
+    owner: "{{ tempest_user }}"
+    group: "{{ tempest_group }}"
+    mode: 0600
+
+# TLS logic:
+- name: tempest | static-config | validate Tempest TLS setup
+  fail:
+    msg: |
+      A single endpoint can be passed on to Tempest.
+      So either enable_internal_tls or enable_external_tls needs to be true.
+  when: enable_internal_tls == "true" and
+        enable_external_tls == "true"
+
+- name: tempest | static-config | Clear TLS configuration.
+  become: yes
+  become_user: "{{ tempest_user }}"
+  file:
+    path: "{{ tempest_worker.config_parts_dir }}/tls_tempest.conf"
+    state: absent
+
+# TLS disabled: enable_external_tls=false and enable_internal_tls=false
+- name: tempest | static-config | Configure Tempest without TLS
+  become: yes
+  become_user: "{{ tempest_user }}"
+  ini_file:
+    dest: "{{ tempest_worker.config_parts_dir }}/tls_tempest.conf"
+    section: "{{ item.section }}"
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+  when: enable_external_tls == "false" and
+        enable_internal_tls == "false" and
+        (item.enabled | bool)
+  with_items:
+     - "{{ tempest_tls.disabled }}"
+     - "{{ tempest_tls.common }}"
+
+# internal TLS enabled : enable_external_tls=false and
+# enable_internal_tls=true
+- name: tempest | static-config | Configure with internal TLS enabled
+  become: yes
+  become_user: "{{ tempest_user }}"
+  ini_file:
+    dest: "{{ tempest_worker.config_parts_dir }}/tls_tempest.conf"
+    section: "{{ item.section }}"
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+  when: enable_external_tls == "false" and
+        enable_internal_tls == "true" and
+        (item.enabled | bool)
+  with_items:
+    - "{{ tempest_tls.internal_enabled }}"
+    - "{{ tempest_tls.common }}"
+
+# external TLS enabled : enable_external_tls=true and
+# enable_internal_tls=false
+- name: tempest | static-config | Configure Tempest with external TLS
+  become: yes
+  become_user: "{{ tempest_user }}"
+  ini_file:
+    dest: "{{ tempest_worker.config_parts_dir }}/tls_tempest.conf"
+    section: "{{ item.section }}"
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+  when: enable_external_tls == "true" and
+        enable_internal_tls == "false" and
+        (item.enabled | bool)
+  with_items:
+    - "{{ tempest_tls.external_enabled }}"
+
+
+# The default value for stack_owner_role is a role that does not exists in
+# HLM, which used to be heat default: heat_stack_owner
+# Changing this to keystone default role to match devstack behaviour
+- name: tempest | static-config | Update stack_owner_role
+  become: yes
+  become_user: "{{ tempest_user }}"
+  ini_file:
+    dest: "{{ tempest_worker.config_parts_dir }}/tls_tempest.conf"
+    section: "orchestration"
+    option: "stack_owner_role"
+    value: "{{ tempest_keystone.member_role }}"
+  when: (tempest_available.heat | bool)
+
+
+# Orchestration tests by default expect my.micro as flavor
+# The smallest flavor available in HOS is my.tiny, so changing configuration
+# to that. Available flavours are not available in group_vars, so hard-coding
+# this for now.
+- name: tempest | static-config | Set flavour for orchestration tests
+  become: yes
+  become_user: "{{ tempest_user }}"
+  ini_file:
+    dest: "{{ tempest_worker.config_parts_dir }}/tls_tempest.conf"
+    section: "orchestration"
+    option: "instance_type"
+    value: "m1.tiny"
+  when: (tempest_available.heat | bool)
+
+
+- name: tempest | static-config | Set the ironic specific values
+  become: yes
+  become_user: "{{ tempest_user }}"
+  ini_file:
+    dest: "{{ tempest_worker.config_parts_dir }}/tls_tempest.conf"
+    section: "{{ item.section }}"
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+  when: (tempest_available.ironic | bool) and
+        (item.enabled | bool)
+  with_items:
+    - "{{ tempest_ironic_cloud_options }}"

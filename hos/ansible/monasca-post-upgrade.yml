@@ -1,0 +1,106 @@
+
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- hosts: FND-KFK:MON-API:MON-PST:MON-THR
+  tasks:
+    - name:  monasca-post-upgrade | Remove openjdk-7-jre-headless
+      become: yes
+      apt:
+        name: openjdk-7-jre-headless
+        state: absent
+
+- name: Delete Alarms for Old Storm Version
+  hosts: MON-API
+  tags: [alarms]
+  vars_files:
+    - roles/monasca-variables/vars/configuration.yml
+    - roles/monasca-variables/defaults/main.yml
+    - roles/monasca-default-alarms/defaults/main.yml
+    - roles/monasca-api/defaults/main.yml
+  roles:
+    - { role: monasca-alarm-definition }
+  tasks:
+    - name: start | restart monasca-api
+      become: yes
+      service: name=monasca-api state=restarted enabled=yes
+
+    - name: start | wait for api port
+      wait_for: port={{monasca_api_client_port}} host={{monasca_api_bind_host | default('127.0.0.1') }} state=started timeout={{ monasca_wait_for_period }}
+      when: verify
+
+    - name: Clean up old Storm Alarms
+      monasca_alarm_cleanup:
+        alarm_definition_name: "Process Check"
+        metric_dimensions:
+          process_name: "backtype.storm.daemon.nimbus|backtype.storm.daemon.supervisor|backtype.storm.daemon.worker"
+        keystone_url: "{{ monasca_keystone_url }}"
+        keystone_user: "{{ monasca_keystone_user }}"
+        keystone_password: "{{ monasca_keystone_password }}"
+        keystone_project: "{{ monasca_keystone_project }}"
+        monasca_api_url: "{{ monasca_api_url }}"
+      run_once: True
+      register: alarm_cleanup_result
+      until: not alarm_cleanup_result | failed
+      retries: "{{ monasca_client_retries }}"
+      delay: "{{ monasca_client_retry_delay }}"
+
+- hosts: all:!MON-API--first-member
+  tags: [alarms]
+  tasks:
+  - name: cleanup | Remove old VM alarm cleanup from crontab
+    cron:
+      name: "Alarm cleanup for deleted VMs"
+      minute: "*/5"
+      job: "/opt/monasca/bin/vm_alarm_cleanup"
+      state: absent
+    become: yes
+  - name: cleanup | Remove old VM alarm cleanup cron job file
+    file:
+      src: vm_alarm_cleanup.j2
+      dest: /opt/monasca/bin/vm_alarm_cleanup
+      state: absent
+    become: yes
+
+- hosts: all
+  tags: [vertica]
+  tasks:
+  - name: vertica | Remove vertica sql files
+    file: path=/var/vertica/{item} state=absent
+    with_items:
+    - mon_alarms_schema.sql
+    - mon_metrics_schema.sql
+    - mon_metrics_multi_node.sql
+    - mon_users_and_limits.sql
+  - name: monasca-schema | mysql | remove temporary files
+    file:
+      dest: "{{ item }}"
+      state: absent
+    with_items:
+      - "{{ monasca_script_file }}"
+      - "{{ monasca_schema_file }}"
+
+- hosts: all
+  tags: [monasca-schema-mysql, monasca-schema]
+  vars_files:
+    - roles/monasca-schema/defaults/main.yml
+  tasks:
+    - name: monasca-schema | mysql | remove temporary files
+      file:
+        dest: "{{ item }}"
+        state: absent
+      with_items:
+        - "{{ monasca_script_file }}"
+        - "{{ monasca_schema_file }}"

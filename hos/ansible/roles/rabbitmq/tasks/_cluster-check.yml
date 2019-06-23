@@ -1,0 +1,33 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: rabbitmq | _cluster-check | Check RabbitMQ node is in a cluster
+  become: yes
+  shell: >
+    rabbitmqctl cluster_status 2>/dev/null |
+    awk '/running_nodes,\[[^]]+,/,/]},/' |
+    sed 's/,\([^[]\)/,\n\1/g'
+  register: _rabbitmq_cluster_check_result
+  changed_when: false
+
+- include: _join-cluster.yml
+  when: not (_rabbitmq_cluster_check_result.stdout |
+              search(rabbitmq_remote_nodename))
+
+# Wait for queues to synchronise, during synchronisation the queues will
+# pause and not allow any messages to be placed in the queue that is
+# synchronising. We always check we are in sync before continuing.
+- include: _wait-for-cluster-sync.yml

@@ -1,0 +1,152 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Some of these libraries are already in base node install. No harm in listing
+# here.
+# python-httplib2 is an ansible dependency for the module uri
+- name:  KEYMGR-API | install | Install barbican dependencies
+  become: yes
+  apt:
+    state: latest
+    name: "{{ item }}"
+  with_items:
+    - python-dev
+    - libffi-dev
+    - libssl-dev
+    - libmysqlclient18
+    - libldap2-dev
+    - libsasl2-dev
+    - python-httplib2
+  tags:
+    - barbican
+
+- name: KEYMGR-API | install | Add group '{{ barbican_group }}'
+  become: yes
+  group:
+    name: "{{ barbican_group }}"
+    state: present
+  tags:
+    - barbican
+
+- name: KEYMGR-API | install | Add user '{{ barbican_user }}'
+  become: yes
+  user:
+    name: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+    createhome: yes
+    home: "{{ barbican_home_dir }}"
+    shell: /bin/true
+    state: present
+  tags:
+    - barbican
+
+- name: KEYMGR-API | install | Update Home directory permission
+  become: yes
+  file:
+    path: "{{ barbican_home_dir }}"
+    mode: 0750
+    state: directory
+  tags:
+    - barbican
+
+- name: KEYMGR-API | install | Update venv cache
+  become: yes
+  install_package:
+    cache: update
+
+- name: KEYMGR-API | install | Install Barbican from barbican venv
+  become: yes
+  install_package:
+    name: barbican
+    service: "{{ barbican_api_service_name }}"
+    state: present
+    activate: act_off
+  register: barbican_api_install_result
+  notify: barbican_api_config_change
+  tags:
+    - barbican
+
+- name: KEYMGR-API | install | Install packge result echo
+  debug:
+    msg: "barbican_api_install_result = {{ barbican_api_install_result }}"
+
+- include: ../../barbican-common/tasks/_set_directories.yml
+  vars:
+    install_package_result: "{{ barbican_api_install_result }}"
+
+- name: KEYMGR-API | install | Create barbican config directories only
+  become: yes
+  file:
+    path: "{{ item.name }}"
+    owner: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+    mode: "{{ item.mode }}"
+    state: "directory"
+  with_items:
+    - { name: "{{ barbican_conf_dir }}", mode: "0755" }
+    - { name: "{{ barbican_conf_dir }}/vassals", mode: "0755" }
+    - { name: "{{ barbican_conf_dir }}/ssl/certs", mode: "0755" }
+  tags:
+    - barbican
+
+- name: KEYMGR-API | install | Create /etc/barbican directories only
+  become: yes
+  file:
+    path: "{{ item.name }}"
+    owner: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+    mode: "{{ item.mode }}"
+    state: "directory"
+  with_items:
+    - { name: /etc/barbican, mode: "u+rwx,g+rx,o+rx" }
+    - { name: /etc/barbican/vassals, mode: "u+rwx,g+rx,o+rx" }
+    - { name: /etc/barbican/ssl/certs, mode: "u+rwx,g-rx,o-rx" }
+  tags:
+    - barbican
+
+- name: KEYMGR-API | install | print venv
+  debug:
+    msg: "Barbican venv dir = {{ barbican_venv_dir }},
+    bin dir = {{ barbican_bin_dir }},
+    conf dir = {{ barbican_conf_dir }},
+    share dir = {{ barbican_share_dir }}"
+  tags:
+    - barbican
+    - barbican_debug
+  when: barbican_debug is defined
+
+- name: KEYMGR-API | install | Create logging directory
+  become: yes
+  file:
+    path: /var/log/barbican
+    owner: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+    mode: 0755
+    state: directory
+  tags:
+    - barbican
+
+- name: KEYMGR-API | install | Register barbican-api as a service
+  become: yes
+  setup_systemd:
+    service: "{{ barbican_api_service_name }}"
+    user: "{{ barbican_user }}"
+    group: "{{ barbican_group }}"
+    cmd: "barbican_api_server"
+    args: 'start'
+  tags:
+    - barbican

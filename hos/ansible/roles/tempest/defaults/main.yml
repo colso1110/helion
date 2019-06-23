@@ -1,0 +1,276 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+tempest_test_axis: region
+
+tempest_auth_url: "{{ TPS_TST.consumes_KEY_API.vips.private[0].url }}"
+
+tempest_keystone:
+  admin_user: "{{ KEY_API.vars.keystone_admin_user }}"
+  admin_tenant: "{{ KEY_API.vars.keystone_admin_tenant }}"
+  admin_pwd: "{{ KEY_API.vars.keystone_admin_pwd }}"
+
+  demo_user: "{{ KEY_API.vars.keystone_demo_user }}"
+  demo_tenant: "{{ KEY_API.vars.keystone_demo_tenant }}"
+  demo_pwd: "{{ KEY_API.vars.keystone_demo_pwd }}"
+
+  member_role: "{{ KEY_API.vars.keystone_member_role }}"
+
+# The tempest_install_dir is where the configuration files are deployed,
+# e.g. .testr.conf, etc/tempest.conf
+tempest_install_dir: "{{ 'tempest' | venv_dir }}"
+tempest_bin_dir: "{{ 'tempest' | bin_dir }}"
+
+# Internal tempest directories to be used.
+tempest_site_dir: "{{ tempest_install_dir }}/lib/python2.7/site-packages"
+_tempest_home_dir: "/opt/stack/tempest"
+tempest_run:
+  dir: "{{ _tempest_home_dir }}"
+  bin_dir: "{{ _tempest_home_dir }}/bin"
+  conf_dir: "{{ _tempest_home_dir }}/configs"
+  log_dir: "{{ _tempest_home_dir }}/logs"
+  resource_dir: "{{ _tempest_home_dir }}/resource"
+  run_filters: "{{ _tempest_home_dir }}/run_filters"
+
+tempest_user: tempest
+tempest_group: tempest
+
+# The default run concurrency is determined by the number of the CPU cores on
+# the test driver
+run_concurrency: 0
+
+# This is the file that includes the regex to filter the tests to be executed
+run_filter: smoke
+
+# tempest tests timeout in seconds
+tempest_timeout_secs: 32400
+tempest_poll_secs: 60
+
+# Services to test using tempest by region or control_plane.
+tempest_testable:
+  keystone: "{{ tempest_worker.services.keystone | default(false) }}"
+  cinder: "{{ tempest_worker.services.cinder | default(false) }}"
+  neutron: "{{ tempest_worker.services.neutron | default(false) }}"
+  glance: "{{ tempest_worker.services.glance | default(false) }}"
+  swift: "{{ tempest_worker.services.swift | default(false) }}"
+  nova: "{{ tempest_worker.services.nova | default(false) }}"
+  heat: "{{ tempest_worker.services.heat | default(false) }}"
+  ceilometer: "{{ tempest_worker.services.ceilometer | default(false) }}"
+  horizon: "{{ tempest_worker.services.horizon | default(false) }}"
+  sahara: false
+  ironic: "{{ tempest_worker.services.ironic | default(false) }}"
+  trove: false
+  zaqar: false
+  designate: "{{ tempest_worker.services.designate | default(false) }}"
+
+# Services we required for testing as are available in the region.
+tempest_available:
+  cinder: "{{ tempest_worker.services_by_region.cinder | default(false) }}"
+  neutron: "{{ tempest_worker.services_by_region.neutron | default(false) }}"
+  glance: "{{ tempest_worker.services_by_region.glance | default(false) }}"
+  swift: "{{ tempest_worker.services_by_region.swift | default(false) }}"
+  nova: "{{ tempest_worker.services_by_region.nova | default(false) }}"
+  heat: "{{ tempest_worker.services_by_region.heat | default(false) }}"
+  ceilometer: "{{ tempest_worker.services_by_region.ceilometer | default(false) }}"
+  horizon: "{{ tempest_worker.services_by_region.horizon | default(false) }}"
+  sahara: false
+  ironic: "{{ tempest_worker.services_by_region.ironic | default(false) }}"
+  trove: false
+  zaqar: false
+  designate: "{{ tempest_worker.services_by_region.designate | default(false) }}"
+
+# Defaults for test resources
+username: helion_tempest
+alt_username: helion_tempest_alt
+password: helion
+
+# Guest OS image to use and related ssh user name
+glance_image_name: cirros
+glance_image_ssh_user: cirros
+
+# Nova flavor to use
+flavor_ref: 1
+flavor_ref_alt: 2
+
+tempest_network_name: >
+  {%- if (tempest_available.neutron | bool) -%}
+    {%- if (cp_tempest_data[tempest_worker.region_name].external_networks is defined) -%}
+      {{ cp_tempest_data[tempest_worker.region_name].external_networks | first }}
+    {%- elif (cp_tempest_data[tempest_worker.region_name].flat_networks is defined) -%}
+      {{ cp_tempest_data[tempest_worker.region_name].flat_networks | first }}
+    {%- elif (tempest_available.ironic | bool) -%}
+      flat-net
+    {%- else -%}
+      ext-net
+    {%- endif -%}
+  {%- endif -%}
+
+# DNS / Designate Variables
+dns_build_timeout: 120
+
+# TLS switches (true/false)
+enable_external_tls: "false"
+enable_internal_tls: "true"
+
+# TLS certificate file.
+cacert: /etc/ssl/certs/ca-certificates.crt
+
+# Service public URL to use.
+tempest_publicURL_data:
+  keystone: >
+    {{ cp_tempest_data[tempest_worker.region_name].public_endpoints.keystone }}
+  horizon: >
+    {%- if (tempest_available.horizon | bool) -%}
+      {{ cp_tempest_data[tempest_worker.region_name].public_endpoints.horizon }}
+    {%- endif -%}
+
+# Tempest options without TLS
+tempest_tls:
+  # Common config when disabled or internal but not external
+  common:
+    - { enabled: "{{ tempest_available.ironic }}",
+        section: "baremetal", option: "endpoint_type", value: "internalURL" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute", option: "endpoint_type", value: "internalURL" }
+    - { enabled: "{{ tempest_available.sahara }}",
+        section: "data_processing", option: "endpoint_type", value: "internalURL" }
+    - { enabled: "{{ tempest_available.designate }}",
+        section: "dns", option: "endpoint_type", value: "internalURL" }
+    - { enabled: true,
+        section: "identity", option: "v2_public_endpoint_type", value: "internalURL" }
+    - { enabled: true,
+        section: "identity", option: "ca_certificates_file", value: "{{ cacert }}" }
+    - { enabled: true,
+        section: "identity", option: "uri", value: "{{ TPS_TST.consumes_KEY_API.vips.private[0].url }}/v2.0" }
+    - { enabled: true,
+        section: "identity", option: "uri_v3", value: "{{ TPS_TST.consumes_KEY_API.vips.private[0].url }}/v3" }
+    - { enabled: "{{ tempest_available.glance }}",
+        section: "image", option: "endpoint_type", value: "internalURL" }
+    - { enabled: "{{ tempest_available.neutron }}",
+        section: "network", option: "endpoint_type", value: "internalURL" }
+    - { enabled: "{{ tempest_available.swift }}",
+        section: "object-storage", option: "endpoint_type", value: "internalURL" }
+    - { enabled: "{{ tempest_available.heat }}",
+        section: "orchestration", option: "endpoint_type", value: "internalURL" }
+    - { enabled: "{{ tempest_available.ceilometer }}",
+        section: "telemetry", option: "endpoint_type", value: "internalURL" }
+    - { enabled: "{{ tempest_available.cinder }}",
+        section: "volume", option: "endpoint_type", value: "internalURL" }
+
+  disabled:
+    - { enabled: "{{ tempest_available.horizon }}",
+        section: "dashboard", option: "dashboard_url", value: "{{ TPS_TST.consumes_HZN_WEB.vips.private[0].url }}" }
+    - { enabled: "{{ tempest_available.horizon }}",
+        section: "dashboard", option: "login_url", value: "{{ TPS_TST.consumes_HZN_WEB.vips.private[0].url }}/auth/login" }
+    - { enabled: true,
+        section: "identity", option: "disable_ssl_certificate_validation", value: "true" }
+
+  # Tempest options with internal TLS enabled
+  internal_enabled:
+    - { enabled: "{{ tempest_available.horizon }}",
+        section: "dashboard", option: "dashboard_url", value: "{{ TPS_TST.consumes_HZN_WEB.vips.private[0].url }}" }
+    - { enabled: "{{ tempest_available.horizon }}",
+        section: "dashboard", option: "login_url", value: "{{ TPS_TST.consumes_HZN_WEB.vips.private[0].url }}/auth/login" }
+    - { enabled: true,
+        section: "identity", option: "disable_ssl_certificate_validation", value: "false" }
+
+  # Tempest options with external TLS enabled
+  external_enabled:
+    - { enabled: "{{ tempest_available.horizon }}",
+        section: "dashboard", option: "dashboard_url", value: "{{ tempest_publicURL_data.horizon }}" }
+    - { enabled: "{{ tempest_available.horizon }}",
+        section: "dashboard", option: "login_url", value: "{{ tempest_publicURL_data.horizon }}/auth/login" }
+    - { enabled: true,
+        section: "identity", option: "disable_ssl_certificate_validation", value: "false" }
+    - { enabled: true,
+        section: "identity", option: "ca_certificates_file", value: "{{ cacert }}" }
+    - { enabled: true,
+        section: "identity", option: "uri", value: "{{ tempest_publicURL_data.keystone }}/v2.0" }
+    - { enabled: true,
+        section: "identity", option: "uri_v3", value: "{{ tempest_publicURL_data.keystone }}/v3" }
+
+tempest_ironic:
+  ssh_user: "root"
+  flavor: "m1.baremetal"
+
+tempest_ironic_cloud_options:
+    - { enabled: "{{ tempest_available.neutron }}",
+        section: "network", option: "tenant_network_cidr", value: "192.168.245.0/24" }
+    - { enabled: "{{ tempest_available.neutron }}",
+        section: "network", option: "tenant_networks_reachable", value: "True" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute", option: "flavor_ref", value: "6" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute", option: "flavor_ref_alt", value: "6" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute", option: "ssh_connect_method", value: "fixed" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute", option: "ssh_user", value: "{{ tempest_ironic.ssh_user }}" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute", option: "image_ssh_user", value: "{{ tempest_ironic.ssh_user }}" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute", option: "build_timeout", value: "1200" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute", option: "allow_tenant_isolation", value: "True" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute", option: "network_for_ssh", value: "{{ tempest_network_name }}" }
+    - { enabled: true,
+        section: "scenario", option: "ssh_user", value: "{{ tempest_ironic.ssh_user }}" }
+    - { enabled: true,
+        section: "baremetal", option: "driver_enabled", value: "True" }
+    - { enabled: true,
+        section: "baremetal", option: "active_timeout", value: "1800" }
+    - { enabled: true,
+        section: "baremetal", option: "association_timeout", value: "500" }
+    - { enabled: true,
+        section: "baremetal", option: "power_timeout", value: "120" }
+    - { enabled: true,
+        section: "baremetal", option: "unprovision_timeout", value: "1800" }
+    - { enabled: true,
+        section: "validation", option: "ssh_timeout", value: "1200" }
+    - { enabled: true,
+        section: "validation", option: "ip_version_for_ssh", value: "4" }
+    - { enabled: true,
+        section: "validation", option: "run_validation", value: "False" }
+    - { enabled: true,
+        section: "validation", option: "connect_method", value: "fixed" }
+    - { enabled: "{{ tempest_available.heat }}",
+        section: "orchestration", option: "instance_type", value: "{{ tempest_ironic.flavor }}" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute-feature-enabled", option: "suspend", value: "False" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute-feature-enabled", option: "snapshot", value: "False" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute-feature-enabled", option: "shelve", value: "False" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute-feature-enabled", option: "rescue", value: "False" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute-feature-enabled", option: "pause", value: "False" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute-feature-enabled", option: "interface_attach", value: "False" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute-feature-enabled", option: "console_output", value: "False" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute-feature-enabled", option: "live_migration", value: "False" }
+    - { enabled: "{{ tempest_available.nova }}",
+        section: "compute-feature-enabled", option: "vnc_console", value: "False" }
+
+# Timeout (in seconds) to wait for the ssh banner
+ssh_timeout: 300
+
+# Prefix for subunit test results
+subunit_prefix: testrepository

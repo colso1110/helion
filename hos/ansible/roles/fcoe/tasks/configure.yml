@@ -1,0 +1,144 @@
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+---
+# fcoe configure playbook
+# playbook to enable fcoe for bnxfc2 driver
+
+- name: fcoe | configure | bring up interface
+  become: yes
+  command: /sbin/ip link set up {{ item.1 }}
+  with_subelements:
+      - "{{ host.fcoe_interfaces | default([]) }}"
+      - devices
+
+- name: fcoe | configure | disable Redhat network manager
+  become: yes
+  service:
+    name: NetworkManager
+    enabled: no
+  when: ansible_os_family == 'RedHat' and host.fcoe_interfaces | length > 0
+
+- name: fcoe | configure | stop Redhat network manager
+  become: yes
+  service:
+    name: NetworkManager
+    state: stopped
+  when: ansible_os_family == 'RedHat' and host.fcoe_interfaces | length > 0
+
+- name: fcoe | configure | remove default config redhat
+  become: yes
+  file:
+      path: /etc/sysconfig/network-scripts/ifcfg-{{ item.1 }}
+      state: absent
+  with_subelements:
+      - "{{ host.fcoe_interfaces | default([]) }}"
+      - devices
+  when: ansible_os_family == 'RedHat'
+  register: fcoe_ifcfgs_rm_result
+
+# Add the fcoe boots args for given interface to kernel command line
+# only if not already present, ensuring that crashkernel options are
+# always at the end of the generated command line.
+- name: fcoe | configure | add required args to kernel command line
+  shell: |
+    set -e
+    for arg in {{ hostvars[inventory_hostname] | fcoe_boot_args(item.1) }}
+    do
+        if ! grep -qs "^GRUB_CMDLINE_LINUX=.*\<${arg}\>" /etc/default/grub; then
+            sed -i -e '/^GRUB_CMDLINE_LINUX=/ {
+                        s/\("\)$/ '"${arg}"'\1/
+                        s/\(crashkernel=[^ ]* \)\([^\"]*\)\("\)$/\2 \1\3/
+                        s/ * \("\)$/\1/
+                       }' /etc/default/grub
+            echo Changed
+      fi
+    done
+  with_subelements:
+      - "{{ host.fcoe_interfaces | default([]) }}"
+      - devices
+  when: ansible_os_family == 'RedHat'
+  register: fcoe_grub_mod_result
+  changed_when: '"Changed" in fcoe_grub_mod_result.stdout'
+
+- name: fcoe | configure | update grub if kernel command line changed
+  become: yes
+  command: grub2-mkconfig -o /boot/grub2/grub.cfg
+  when: fcoe_grub_mod_result | changed and ansible_os_family == 'RedHat'
+
+- name: fcoe | configure | create the fcoe dir
+  become: yes
+  file:
+    path: "{{fcoe_config_dir}}"
+    state: directory
+    mode: 0755
+
+- name: fcoe | configure | Setup fcoe cfg file
+  become: yes
+  template:
+    src: fcoe.cfg.j2
+    dest: "{{fcoe_config_dir}}/cfg-{{ item.1 }}"
+  with_subelements:
+      - "{{ host.fcoe_interfaces | default([]) }}"
+      - devices
+  register: fcoe_result
+
+- name: fcoe | configure | enable lldpad
+  become: yes
+  service:
+     name: lldpad
+     state: restarted
+     enabled: true
+  when: fcoe_result.changed
+
+- name: fcoe | configure | disable lldpad on interfaces
+  become: yes
+  command: /usr/sbin/lldptool set-lldp -i {{ item.1 }} adminStatus=disabled
+  with_subelements:
+      - "{{ host.fcoe_interfaces | default([]) }}"
+      - devices
+  when: fcoe_result.changed
+
+- name: fcoe | configure | restart the service
+  become: yes
+  service:
+     name: fcoemon
+     state: restarted
+     enabled: true
+  when: fcoe_result.changed and ansible_os_family == 'Debian'
+
+- name: fcoe | configure | restart the service
+  become: yes
+  service:
+     name: fcoe
+     state: restarted
+     enabled: true
+  when: fcoe_result.changed and ansible_os_family == 'RedHat'
+
+- name: fcoe | configure | get scsi hosts
+  become: yes
+  shell: ls -d -1 /sys/class/scsi_host/host*
+  register: dir_list_result
+
+- name: fcoe | configure | rescan the bus
+  become: yes
+  shell: echo "- - - " > "{{ item }}/scan"
+  with_items: "{{ dir_list_result.stdout_lines}}"
+  when: fcoe_result.changed
+
+- name: fcoe | configure | rebuild the initramfs
+  become: yes
+  command: "{{ initramfs_update_command }}"
+  when: fcoe_result.changed or
+        (ansible_os_family == 'RedHat' and
+         ((fcoe_ifcfgs_rm_result | changed) or
+          (fcoe_grub_mod_result | changed)))

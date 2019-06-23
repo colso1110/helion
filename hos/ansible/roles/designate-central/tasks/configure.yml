@@ -1,0 +1,45 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Configure the designate-central service
+---
+- include: ../../designate-common/tasks/_set_directories.yml
+  vars:
+    install_package_result: "{{ hlm_notify_designate_central_venv_changed }}"
+
+- include: ../../designate-common/tasks/configure.yml
+
+- include: ../../designate-common/tasks/_write_conf.yml
+  src: "../../designate-central/templates/central.conf.j2"
+  dest: "central.conf"
+
+# write_conf_result is set within the _write_conf.yml task, and
+# is still available for us once the _write_conf task completes.
+- name: "designate-central | configure | notify on central.conf change"
+  shell: echo "notify change"
+  register: hlm_notify_designate_central_restart_required
+  when: write_conf_result.changed
+
+- name: "designate-central | configure | Apply template: {{ item }}"
+  become: yes
+  template:
+    src: "{{ item }}.j2"
+    dest: "{{ designate_service_conf_dir }}/{{ item }}"
+    owner: "{{ designate_system_user }}"
+    group: "{{ designate_system_group }}"
+    mode: 0640
+  with_items:
+    - "central-logging.conf"
+  register: hlm_notify_designate_central_restart_required

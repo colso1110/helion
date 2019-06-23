@@ -1,0 +1,75 @@
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+---
+
+- name: hlm-hypervisor-monitoring | monasca_alarms | setup default email notification method
+  monasca_notification_method:
+    name: "Default Email"
+    type: "EMAIL"
+    address: "root@localhost"
+    keystone_url: "{{ hhv_monitor.keystone.url }}"
+    keystone_user: "{{ hhv_monitor.keystone.user }}"
+    keystone_password: "{{ hhv_monitor.keystone.password | quote }}"
+    keystone_project: "{{ hhv_monitor.keystone.project }}"
+    monasca_api_url: "{{ hhv_monitor.api_url }}"
+    overwrite: false
+  register: default_notification
+  run_once: true
+
+- name: hlm-hypervisor-monitoring | monasca_alarms | create alarms for overall hypervisor status
+  become: yes
+  when: '"HLMHypervisorSummary" in hhv_monitor.plugins'
+  run_once: true
+  monasca_alarm_definition:
+    name: "HLM Hypervisor Status"
+    description: "Alarms if any HLM Hypervisor VM is not healthy"
+    severity: "HIGH"
+    expression: "hlm-hypervisor.vcp_vms > 0"
+    match_by:
+      - "hostname"
+    keystone_url: "{{ hhv_monitor.keystone.url }}"
+    keystone_user: "{{ hhv_monitor.keystone.user }}"
+    keystone_password: "{{ hhv_monitor.keystone.password | quote }}"
+    keystone_project: "{{ hhv_monitor.keystone.project }}"
+    monasca_api_url: "{{ hhv_monitor.api_url }}"
+    ok_actions:
+      - "{{ default_notification.notification_method_id }}"
+    undetermined_actions:
+      - "{{ default_notification.notification_method_id }}"
+    alarm_actions:
+      - "{{ default_notification.notification_method_id }}"
+
+- name: hlm-hypervisor-monitoring | monasca_alarms | create alarms for individual VMs
+  become: yes
+  when: '"HLMHypervisorVMs" in hhv_monitor.plugins'
+  with_items: hhv_monitor.vms
+  run_once: true
+  monasca_alarm_definition:
+    name: "HLM Hypervisor VM {{ item.vm }} Status"
+    description: "Alarms if HLM Hypervisor VM {{ item.vm }} is not healthy"
+    severity: "HIGH"
+    expression: "hlm-hypervisor.vcp_vm.{{ item.vm }} > 0"
+    match_by:
+      - "hostname"
+    keystone_url: "{{ hhv_monitor.keystone.url }}"
+    keystone_user: "{{ hhv_monitor.keystone.user }}"
+    keystone_password: "{{ hhv_monitor.keystone.password | quote }}"
+    keystone_project: "{{ hhv_monitor.keystone.project }}"
+    monasca_api_url: "{{ hhv_monitor.api_url }}"
+    ok_actions:
+      - "{{ default_notification.notification_method_id }}"
+    undetermined_actions:
+      - "{{ default_notification.notification_method_id }}"
+    alarm_actions:
+      - "{{ default_notification.notification_method_id }}"

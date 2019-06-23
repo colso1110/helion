@@ -1,0 +1,101 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- include: ./_determine_volume_host.yml
+
+- name: _CND-CMN | _service_status | Print service being checked
+  debug:
+    msg: "Running service check for {{ cinder_component }}"
+  run_once: True
+
+# no_log set to True to suppress redundant output from systemctl
+# changed_when set to False so that ansible output reports a status
+# of ok instead of changed when the service is running
+- name: _CND-CMN | _service_status | Check system service running
+  command: systemctl status "{{ cinder_component }}"
+  ignore_errors: yes
+  no_log: True
+  changed_when: False
+  register: cinder_systemctl_status_result
+
+# This task is only required to support the upgrade from HOS 2.x to 3.0
+# It can be removed when upgrade from 2.x is no longer supported
+- name: _CND-CMN | _service_status | Check if the cindervolume.fact file is present
+  stat: path=/etc/ansible/facts.d/cindervolume.fact
+  register: cinder_fact_result
+
+# This task is only required to support the upgrade from HOS 2.x to 3.0
+# It can be removed when upgrade from 2.x is no longer supported
+- name: _CND-CMN | _service_status | Re-read the local facts if the cindervolume.fact file exists
+  setup: filter=ansible_local
+  when: cinder_fact_result.stat.exists == True
+
+- name: _CND-CMN | _service_status | Set status facts based on local facts in cindervolume.fact
+  set_fact:
+    cinder_api_sch_not_running_error: >-
+      {{ cinder_systemctl_status_result | failed and
+          cinder_component != "cinder-volume" and
+          cinder_component != "cinder-backup" }}
+    cinder_vol_bck_not_running_error: >-
+      {{ cinder_systemctl_status_result | failed and
+          (cinder_component == "cinder-volume" or
+            cinder_component == "cinder-backup") and
+          ansible_local.cindervolume.status.running == "True" }}
+    cinder_vol_bck_running_error: >-
+      {{ cinder_systemctl_status_result | success and
+          (cinder_component == "cinder-volume" or
+            cinder_component == "cinder-backup") and
+          ansible_local.cindervolume.status.running == "False" }}
+  when: cinder_fact_result.stat.exists == True
+
+- name: _CND-CMN | _service_status | Set status facts
+  set_fact:
+    cinder_api_sch_not_running_error: >-
+      {{ cinder_systemctl_status_result | failed and
+          cinder_component != "cinder-volume" and
+          cinder_component != "cinder-backup" }}
+    cinder_vol_bck_not_running_error: >-
+      {{ cinder_systemctl_status_result | failed and
+          (cinder_component == "cinder-volume" or
+            cinder_component == "cinder-backup") and
+          (_cinder_volume_running_here | bool) }}
+    cinder_vol_bck_running_error: >-
+      {{ cinder_systemctl_status_result | success and
+          (cinder_component == "cinder-volume" or
+            cinder_component == "cinder-backup") and
+          (not _cinder_volume_running_here | bool) }}
+  when: cinder_fact_result.stat.exists == False
+
+- name: _CND-CMN | _service_status | Report status of "{{ cinder_component }} unexpectedly not running"
+  fail:
+    msg: |
+      {{ cinder_component }} is not running.
+      systemctl status {{ cinder_component }} output:
+      {{ cinder_systemctl_status_result.stdout }}
+      {{ cinder_systemctl_status_result.stderr }}
+  when: >
+    (cinder_api_sch_not_running_error == "True") or
+    (cinder_vol_bck_not_running_error == "True")
+
+- name: _CND-CMN | _service_status | Report status of "{{ cinder_component }} unexpectedly running"
+  fail:
+    msg: |
+      {{ cinder_component }} is running.
+      systemctl status {{ cinder_component }} output:
+      {{ cinder_systemctl_status_result.stdout }}
+      {{ cinder_systemctl_status_result.stderr }}
+  when: cinder_vol_bck_running_error == "True"
+

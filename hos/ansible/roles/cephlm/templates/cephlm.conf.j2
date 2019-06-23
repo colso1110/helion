@@ -1,0 +1,48 @@
+{#
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+# This logic works under the assumption that, RGW and Monitor will use the same
+# network interface for ceph public network, if they are deployed together
+[global]
+ceph_command_timeout = {{ ceph_command_timeout }}
+
+{% if host.bind.CEP_OSD is defined %}
+{% set mybind = host.bind.CEP_OSD['ceph-public'] %}
+{% elif host.bind.CEP_MON is defined %}
+{% set mybind = host.bind.CEP_MON['ceph-public'] %}
+{% elif host.bind.CEP_RGW is defined %}
+{% set mybind = host.bind.CEP_RGW['public'] %}
+{% endif %}
+
+[network-interface]
+{% if mybind is defined %}
+public_ip = {{ mybind.ip_address }}
+{% endif %}
+{% if host.bind.CEP_OSD_I is defined %}
+private_ip = {{ host.bind.CEP_OSD_I['ceph-cluster'].ip_address }}
+{% endif %}
+
+[pools]
+include_private_pools = {{ include_private_pools }}
+
+[osd]
+optimal_osd_per_journal = {{ optimal_osd_per_journal }}
+
+[perfscale]
+ram_gib_per_tib = {{ ram_gib_per_tib }}
+public_nic_speed = {{ public_nic_speed }}
+private_nic_speed_multiplier = {{ private_nic_speed_multiplier }}

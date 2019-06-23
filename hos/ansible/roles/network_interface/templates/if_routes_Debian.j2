@@ -1,0 +1,54 @@
+{#
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+{% set family %}{% if item.family is defined and item.family == 'IPv6' %}6{% else %}{% endif %}
+{% endset %}
+{% set ip_family %}
+{% if family == '6' %} -f inet6{% else %}{% endif %}
+{% endset %}
+{% set route_family %}
+{% if family == '6' %} --inet6{% else %}{% endif %}
+{% endset %}
+{% if item.route is defined %}
+{% for i in item.route %}
+{% if i.netmask == '0.0.0.0' or i.netmask == '::/0' %}
+  pre-up ip{{ ip_family }} route delete default || true
+{% endif %}
+  up route{{ route_family }} add -net {{ i.network }}  netmask {{ i.netmask }} gw {{ i.gateway }} dev {{ item.device }} || true
+  down route{{ route_family }} delete -net {{ i.network }} netmask {{ i.netmask }} gw {{ i.gateway }} dev {{ item.device }} || true
+{% endfor %}
+{% endif %}
+{% if item.routing_table is defined %}
+{% if item.address is defined %}
+{% if item.gateway is defined %}
+  up ip{{ ip_family }} route add default via {{ item.gateway }} table {{ item.routing_table }} || true
+  down ip{{ ip_family }} route delete default via {{ item.gateway }} table {{ item.routing_table }} || true
+{% if item.cidr is defined %}
+  up ip{{ ip_family }} route add {{ item.cidr }} dev {{ item.device }} table {{ item.routing_table }} || true
+  down ip{{ ip_family }} route delete {{ item.cidr }} dev {{ item.device }} table {{ item.routing_table }} || true
+{% endif %}
+  up ip{{ ip_family }} rule add from {{ item.address }} table {{ item.routing_table }} || true
+  down ip{{ ip_family }} rule delete from {{ item.address }} table {{ item.routing_table }} || true
+{% if item.vips is defined %}
+{% for vip in item.vips %}
+  up ip{{ ip_family }} rule add from {{ vip }} table {{ item.routing_table }} || true
+  down ip{{ ip_family }} rule delete from {{ vip }} table {{ item.routing_table }} || true
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}

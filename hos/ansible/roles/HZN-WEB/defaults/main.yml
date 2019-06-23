@@ -1,0 +1,90 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Variables labeled as "convenience variables" are simply intended to provide
+# a shorthand for the given value, as a way of making the templates easier to
+# read.  These should NOT be modified or overridden in any way.
+# Variables labeled as "user configurable" are ones that can be overridden
+# by the input configuration.
+
+# convenience variables
+horizon_user: horizon
+horizon_group: horizon
+
+horizon_venv_user: horizon-venv
+horizon_venv_group: horizon-venv
+# The venv user doesn't need a real home directory
+horizon_venv_user_homedir: /nonexistent
+
+service: horizon
+
+# Set service dirs using package filters where possible
+# These directory pathes need to be set using the package filters, as they are
+# referenced by the configure tasks.  They also need to be re-set to version-
+# specific non-symlink paths so that they point to yet-to-be-activated venv
+# subdirectories when an install or upgrade is taking place.  (See this role's
+# tasks/install.yml file).
+# These variables will end with the suffix _dir.
+horizon_conf_dir: "{{ service | config_dir() }}"
+horizon_enabled_dashboard_dir: "{{ service | jar_dir() }}/python2.7/site-packages/openstack_dashboard/local/enabled"
+horizon_site_packages_dir: "{{ service | jar_dir() }}/python2.7/site-packages"
+horizon_bin_dir: "{{ service | bin_dir() }}"
+horizon_static_dir: "{{ service | venv_dir() }}/static"
+
+# convenience variables
+# These variables all have a suffix of "_constant" to indicate that they
+# are never used to refer to paths in an un-activated venv, but always used in
+# a context where only the symlinked path is to be used.
+horizon_venv_dir_constant: "/opt/stack/service/horizon/venv"
+horizon_openstack_dashboard_dir_constant: "{{ horizon_venv_dir_constant }}/lib/python2.7/site-packages/openstack_dashboard"
+horizon_python_path_constant: "{{ horizon_venv_dir_constant }}:{{ horizon_venv_dir_constant }}/lib/python2.7/site-packages/"
+horizon_static_dir_constant: "{{ horizon_venv_dir_constant }}/static"
+horizon_bin_dir_constant: "{{ service | bin_dir() }}"
+
+horizon_public_protocol: "{{ HZN_WEB.advertises.vips.public[0].protocol }}"
+horizon_private_protocol: "{{ HZN_WEB.advertises.vips.private[0].protocol }}"
+
+# Address and port we bind to
+horizon_port: "{{ host.bind.HZN_WEB.internal.port }}"
+horizon_host: "{{ host.bind.HZN_WEB.internal.ip_address }}"
+
+# user configurable
+horizon_keystone_url: "{{ HZN_WEB.consumes_KEY_API.vips.private[0].url }}/v3"
+horizon_websso_keystone_url: "{{ KEY_API.advertises.vips.public[0].url }}/v3"
+
+# this defaults otherwise to publicURL; controls the endpoint type Horizon
+# uses internally to talk to openstack services
+horizon_openstack_endpoint_type: "internalURL"
+
+# user configurable
+horizon_log_level: INFO
+
+ca_file: "/etc/ssl/certs/ca-certificates.crt"
+
+mysql:
+  host: >
+    {{ HZN_WEB | item('consumes_FND_MDB.vips.private[0].host',
+       default=( HZN_WEB | item('consumes_FND_MDB.vips.public[0].host') )) }}
+  horizon_user: "{{ HZN_WEB.consumes_FND_MDB.vars.accounts.horizon.username }}"
+  horizon_password: "{{ HZN_WEB.consumes_FND_MDB.vars.accounts.horizon.password | quote }}"
+  horizon_db: "{{ HZN_WEB.consumes_FND_MDB.vars.databases.horizon.dbname }}"
+  use_ssl: "{{ HZN_WEB.consumes_FND_MDB.vips.private[0].use_tls }}"
+
+# user configurable
+horizon_websso_enabled: False
+horizon_websso_choices:
+  - {protocol: saml2, description: "ADFS Credentials"}

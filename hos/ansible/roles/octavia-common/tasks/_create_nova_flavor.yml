@@ -1,0 +1,89 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+---
+
+- name: octavia-common | _create_nova_flavor | Check if flavor exists
+  shell: >
+    nova flavor-show {{ octavia_nova_flavor_name }}
+  environment: &OS_ENV
+    OS_AUTH_URL: "{{ keystone_endpoint }}"
+    OS_USERNAME: "{{ keystone_admin_user }}"
+    OS_PASSWORD: "{{ keystone_admin_password }}"
+    OS_PROJECT_NAME: "{{ keystone_service_tenant }}"
+    OS_USER_DOMAIN_NAME: "{{ keystone_default_domain }}"
+    OS_PROJECT_DOMAIN_NAME: "{{ keystone_default_domain }}"
+    OS_ENDPOINT_TYPE: "{{ octavia_endpoint_type }}"
+    OS_REGION_NAME: "{{ octavia_region_name }}"
+  register: octavia_nova_flavor_check_result
+  ignore_errors: True
+  run_once_per: verb_hosts.OCT_API
+
+- name: octavia-common | _create_nova_flavor | Create nova flavor
+  shell: >
+    nova flavor-create --is-public False {{ octavia_nova_flavor_name }} auto 1024 2 1
+  environment: *OS_ENV
+  when: octavia_nova_flavor_check_result|failed
+  run_once_per: verb_hosts.OCT_API
+
+- name: octavia-common | _create_nova_flavor | Get octavia project id
+  shell: >
+    openstack project show -f value -c id {{ octavia_project_name }}
+  environment: *OS_ENV
+  when: octavia_nova_flavor_check_result|failed
+  register: project_id_results
+  changed_when: False
+  run_once_per: verb_hosts.OCT_API
+
+- name: octavia-common | _create_nova_flavor | Assign tenant access to flavor
+  shell: >
+    nova flavor-access-add {{ octavia_nova_flavor_name }} {{ project_id_results.stdout }}
+  environment: *OS_ENV
+  when: octavia_nova_flavor_check_result|failed
+  run_once_per: verb_hosts.OCT_API
+
+- name: octavia-common | _create_nova_flavor | Retrieve nova flavor_id for single-cp
+  shell: >
+    nova flavor-list | grep {{ octavia_nova_flavor_name }} | tr -d ' ' | cut -f 2 -d '|'
+  environment:
+    OS_AUTH_URL: "{{ octavia_auth_endpoint }}"
+    OS_USERNAME: "{{ octavia_admin_user }}"
+    OS_PASSWORD: "{{ octavia_admin_password }}"
+    OS_PROJECT_NAME: "{{ octavia_project_name }}"
+    OS_USER_DOMAIN_NAME: "{{ octavia_user_domain_name }}"
+    OS_PROJECT_DOMAIN_NAME: "{{ octavia_project_domain_name }}"
+    OS_ENDPOINT_TYPE: "{{ octavia_endpoint_type }}"
+    OS_REGION_NAME: "{{ octavia_region_name }}"
+  register: octavia_nova_flavor_id
+  run_once: true
+
+# Duplicating it for the case of multi-cp environment so that this variable is registered
+# for all the regions. Only this task will not work as this variable is required by all
+# the controllers in single-cp environment also.
+- name: octavia-common | _create_nova_flavor | Retrieve nova flavor_id for multi-cp
+  shell: >
+    nova flavor-list | grep {{ octavia_nova_flavor_name }} | tr -d ' ' | cut -f 2 -d '|'
+  environment:
+    OS_AUTH_URL: "{{ octavia_auth_endpoint }}"
+    OS_USERNAME: "{{ octavia_admin_user }}"
+    OS_PASSWORD: "{{ octavia_admin_password }}"
+    OS_PROJECT_NAME: "{{ octavia_project_name }}"
+    OS_USER_DOMAIN_NAME: "{{ octavia_user_domain_name }}"
+    OS_PROJECT_DOMAIN_NAME: "{{ octavia_project_domain_name }}"
+    OS_ENDPOINT_TYPE: "{{ octavia_endpoint_type }}"
+    OS_REGION_NAME: "{{ octavia_region_name }}"
+  register: octavia_nova_flavor_id
+  run_once_per: verb_hosts.OCT_API

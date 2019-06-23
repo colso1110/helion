@@ -1,0 +1,54 @@
+#
+# (c) Copyright 2015 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+# During an upgrade a service restart notification may be set by:
+#    install - e.g. new code, new package
+#    configure - e.g. change to a configuration file
+---
+- include: designate-status.yml
+
+# Install and configure services in a new venv
+- include: _designate-install.yml
+- include: _designate-check-upgraded-packages.yml
+- include: _designate-configure.yml
+
+# Perform any database expand operations
+- hosts: DES-CEN
+  roles:
+    - designate-post-configure
+  tasks:
+    - include: roles/designate-post-configure/tasks/db_expand.yml
+
+# Configure Designate keystone resources
+- hosts: DES-API
+  roles:
+    - designate-post-configure
+  # This task should be set to run-once
+  tasks:
+    - include: roles/designate-post-configure/tasks/keystone_conf.yml
+      ansible_python_interpreter: "{{ KEY_CLI.vars.keystone_client_python_interpreter }}"
+
+# Restart services based on notifications set earlier
+- include: designate-start.yml
+
+# Perform any database contract operations
+- hosts: DES-CEN
+  roles:
+    - designate-post-configure
+  tasks:
+    - include: roles/designate-post-configure/tasks/db_contract.yml
+
+- include: designate-status.yml

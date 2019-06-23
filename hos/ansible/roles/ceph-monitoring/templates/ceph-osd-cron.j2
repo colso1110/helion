@@ -1,0 +1,23 @@
+{#
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+# Cronjob that runs cephlm commands and emits json to be reaped by monasca monitor
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+MAILTO=""
+*/2 * * * * root /usr/local/bin/cephlm-probe --osd-node-ram --format json > {{ cephlm_cache_dir }}/cephlm_osd_node_ram.log 2>&1 && mv {{ cephlm_cache_dir }}/cephlm_osd_node_ram.log {{ cephlm_cache_dir }}/cephlm_osd_node_ram.json
+*/2 * * * * root /usr/local/bin/cephlm-probe --osd-journal-ratio --format json > {{ cephlm_cache_dir }}/cephlm_osd_journal_ratio.log 2>&1 && mv {{ cephlm_cache_dir }}/cephlm_osd_journal_ratio.log {{ cephlm_cache_dir }}/cephlm_osd_journal_ratio.json

@@ -1,0 +1,76 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+    version: 2
+
+service-components:
+-   name: swift-proxy
+    mnemonic: SWF-PRX
+    service: swift
+
+    advertises-to-services:
+    -   service-name: KEY-API
+        entries:
+        -   service-name: swift
+            service-type: object-store
+            service-description: "Swift Object Storage Service"
+            url-suffix: "/v1/AUTH_%(tenant_id)s"
+
+    consumes-services:
+    -   service-name: KEY-API
+        relationship-vars:
+        -   name: keystone_swift_user
+            value: swift
+        -   name: keystone_swift_password
+            properties:
+                max-length: 12
+                min-length: 8
+            value: '%random-password%'
+        -   name: keystone_swift_monitor_user
+            value: swift-monitor
+        -   name: keystone_swift_monitor_password
+            properties:
+                max-length: 12
+                min-length: 8
+            value: '%random-password%'
+        -   name: keystone_swift_dispersion_user
+            value: swift-dispersion
+        -   name: keystone_swift_dispersion_password
+            properties:
+                max-length: 12
+                min-length: 8
+            value: '%random-password%'
+    -   service-name: FND-MEM
+
+    endpoints:
+    -   port: '8080'
+        has-vip: true
+        vip-options:
+        - "option httpchk GET /healthcheck"
+        roles:
+        - public
+        - internal
+        - admin
+
+    requires:
+    - name: swift-client
+      scope: host
+    - name: swift-common
+      scope: host
+    # Needed for keystone registration of service.
+    - name: keystone-client
+      scope: host

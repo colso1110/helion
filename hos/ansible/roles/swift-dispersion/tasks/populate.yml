@@ -1,0 +1,38 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: swift-dispersion | populate | Run swift-dispersion-populate
+  command: >
+    swift-dispersion-populate {{ swift_dispersion_conf_dir }}/dispersion.conf
+    --policy-name={{ item.policy.name }}
+  become: yes
+  register: dispersion_populate_result
+  with_items: "{{ storage_policies }}"
+
+- name: swift-dispersion | populate | Save dispersion populate results
+  set_fact: output= "{{ item }}"
+  register: output_result
+  no_log: True
+  with_items: "{{ dispersion_populate_result.results }}"
+
+- name: swift-dispersion | populate | Get dispersion populate results
+  set_fact: >
+    dispersion_populate_results="{{ output_result.results |
+    map(attribute='item.stdout_lines') | list }}"
+
+- name: swift-dispersion | populate | Display dispersion populate result
+  debug: var=dispersion_populate_results

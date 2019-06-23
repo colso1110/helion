@@ -1,0 +1,211 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+ironic_user : "ironic"
+ironic_group : "ironic"
+ironic_rootwrap_dir : "{{ ironic_service_conf_dir }}/rootwrap.d"
+ironic_logs_dir : "/var/log/ironic"
+ironic_images_path : "/tftpboot"
+ironic_http_port : "{{ host.bind.IRN_CND.ipxe_http.port }}"
+ironic_ipxe_http_address: "{{ host.bind.IRN_CND.ipxe_http.ip_address }}"
+
+ironic_host:
+  pxelinux : "/usr/lib/PXELINUX/pxelinux.0"
+  ldlinux : "/usr/lib/syslinux/modules/bios/ldlinux.c32"
+  ipxe : "/usr/lib/ipxe/undionly.kpxe"
+  ipxe_efi: "/boot/ipxe.efi"
+
+ironic_audit:
+  configfile: "{{ ironic_service_conf_dir }}/ironic_api_audit_map.conf"
+  log_location: "{{ IRN.audit.dir }}/ironic"
+  enable: "{{ IRN.audit.enabled }}"
+  notification_driver: "log"
+
+## [DEFAULT]
+ironic_log_config_append : >
+  "{{ ironic_service_conf_dir }}/{{ ironic_component }}-logging.conf"
+ironic_rootwrap_config_append : "{{ ironic_service_conf_dir }}/rootwrap.conf"
+ironic_api_loglevel: "{{ helion_loglevel | default('INFO') }}"
+ironic_api_logstash_loglevel: "{{ helion_loglevel | default('INFO') }}"
+ironic_conductor_loglevel: "{{ helion_loglevel | default('INFO') }}"
+ironic_conductor_logstash_loglevel: "{{ helion_loglevel | default('INFO') }}"
+ironic_verbose : "True"
+ironic_debug : "True"
+ironic_policy_file : "{{ ironic_service_conf_dir }}/policy.json"
+ironic_log_group: "adm"
+
+_ironic_rabbit_hosts_list : "{{ IRN.consumes_FND_RMQ.members.private }}"
+ironic_rpc:
+  userid : "{{ IRN.consumes_FND_RMQ.vars.accounts.ironic.username }}"
+  password : "{{ IRN.consumes_FND_RMQ.vars.accounts.ironic.password }}"
+  hosts: >
+    {% for x in _ironic_rabbit_hosts_list -%}
+       {{ x.host ~ ':' ~ x.port }}
+       {%- if not loop.last -%}, {% endif %}
+    {%- endfor %}
+  use_ssl: "{{ IRN.consumes_FND_RMQ.members.private[0].use_tls }}"
+  backend : "rabbit"
+  conn_pool_size : "100"
+
+agent_drivers_enabled : "{{ config_data.IRN.enable_agent_drivers | default(true) }}"
+
+ironic_enabled_drivers: "pxe_ipmitool, pxe_ilo{%- if agent_drivers_enabled|bool %}, agent_ilo, agent_ipmitool{%- if oneview_enabled|bool %}, agent_pxe_oneview {% endif %} {% endif %}"
+
+## [database]
+ironic_db_connection : >
+  {{ 'mysql://' ~ IRN.consumes_FND_MDB.vars.accounts.ironic.username ~ ':' ~
+     IRN.consumes_FND_MDB.vars.accounts.ironic.password | urlencode ~ '@' ~
+     IRN.consumes_FND_MDB.vips.private[0].host ~ '/ironic?charset=utf8' }}{{ ironic_db_ssl }}
+
+ironic_keystone_admin:
+  user: "{{ KEY_API.vars.keystone_admin_user }}"
+  password: "{{ KEY_API.vars.keystone_admin_pwd | quote }}"
+  admin_tenant_name: "{{ KEY_API.vars.keystone_admin_tenant }}"
+  role: "{{ KEY_API.vars.keystone_admin_role }}"
+  tenant_name: "{{ KEY_API.vars.keystone_service_tenant }}"
+  default_domain: "Default"
+  auth_version: "3"
+  auth_version_v2: "2"
+
+## [keystone_authtoken]
+ironic_api_admin:
+  user: "{{ IRN_API.consumes_KEY_API.vars.keystone_ironic_user }}"
+  password: "{{ IRN_API.consumes_KEY_API.vars.keystone_ironic_password }}"
+  auth_uri: "{{ IRN_API.consumes_KEY_API.vips.private[0].url }}/v3"
+  auth_uri_v2: "{{ IRN_API.consumes_KEY_API.vips.private[0].url }}/v2.0"
+  identity_uri: "{{ IRN_API.consumes_KEY_API.vips.private[0].url }}"
+
+ironic_cnd_admin:
+  user: "{{ IRN_CND.consumes_KEY_API.vars.keystone_ironic_user }}"
+  password: "{{ IRN_CND.consumes_KEY_API.vars.keystone_ironic_password }}"
+  auth_uri: "{{ IRN_CND.consumes_KEY_API.vips.private[0].url }}/v3"
+  auth_uri_v2: "{{ IRN_CND.consumes_KEY_API.vips.private[0].url }}/v2.0"
+  identity_uri: "{{ IRN_CND.consumes_KEY_API.vips.private[0].url }}"
+
+## [api]
+ironic_api:
+  host_ip : "{{ host.bind.IRN_API.internal.ip_address }}"
+  port : "{{ IRN_API.advertises.vips.private[0].port }}"
+  url : >
+    {{ IRN_API.advertises.vips.private[0].protocol ~ '://' ~
+       IRN_API.advertises.vips.private[0].ip_address ~ ':' ~
+       IRN_API.advertises.vips.private[0].port }}
+
+ironic_cnd:
+  url : >
+    {{ IRN_CND.consumes_IRN_API.vips.private[0].protocol ~ '://' ~
+       IRN_CND.consumes_IRN_API.vips.private[0].ip_address ~ ':' ~
+       IRN_CND.consumes_IRN_API.vips.private[0].port }}
+
+## [neutron]
+ironic_neutron:
+  url : "{{ IRN_CND.consumes_NEU_SVR.vips.private[0].url }}"
+  admin_pwd: "{{ KEY_API.vars.keystone_admin_pwd }}"
+
+ironic_cleaning_network:
+  name : "{{ config_data.IRN.cleaning_network }}"
+  uuid : >
+    {% if cleaning_network_id_result is defined %}
+       {{ cleaning_network_id_result.stdout | default('') }}
+    {% endif %}
+
+ironic_deploy_image_tmp_dir: "/tmp"
+ironic_deploy_image:
+  version: "HOS4.0"
+  ramdisk: "{{ ironic_deploy_image_tmp_dir }}/ironic-deploy.initramfs"
+  kernel: "{{ ironic_deploy_image_tmp_dir }}/ironic-deploy.kernel"
+  iso: "{{ ironic_deploy_image_tmp_dir }}/ironic-deploy.iso"
+
+## [glance]
+ironic_glance:
+  host: "{{ IRN_CND.consumes_GLA_API.vips.private[0].host }}"
+  port: "{{ IRN_CND.consumes_GLA_API.vips.private[0].port }}"
+  protocol: "{{ IRN_CND.consumes_GLA_API.vips.private[0].protocol }}"
+  admin_password: "{{ IRN_CND.consumes_KEY_API.vars.keystone_glance_password | quote }}"
+  admin_user: "{{ IRN_CND.consumes_KEY_API.vars.keystone_glance_user }}"
+
+ironic_swift:
+  temp_url_key : "{{ IRN_CND.vars.swift_temp_url_key }}"
+  internal_endpoint: >
+    {% if agent_drivers_enabled|bool %}
+      {{ IRN_CND.consumes_SWF_PRX.vips.private[0].protocol ~ '://' ~
+         IRN_CND.consumes_SWF_PRX.vips.private[0].ip_address ~ ':' ~
+         IRN_CND.consumes_SWF_PRX.vips.private[0].port }}
+    {% endif %}
+  container: "glance-{{ glance_cloud }}-{{ glance_cp }}-{{ glance_cluster }}"
+  glance_user : >
+    {{ IRN_CND.consumes_KEY_API.vars.keystone_glance_swift_user }}
+  glance_password : >
+    {{ IRN_CND.consumes_KEY_API.vars.keystone_glance_swift_password }}
+  glance_tenant : >
+    {{ IRN_CND.consumes_KEY_API.vars.keystone_glance_swift_tenant }}
+
+## [oneview]
+oneview_enabled : "{{ config_data.IRN.enable_oneview }}"
+ironic_oneview:
+  manager_url : >
+    {{ config_data.IRN.oneview_manager_url | default(none) }}
+  username : "{{ config_data.IRN.oneview_username | default(none) }}"
+  encrypted_password : "{{ config_data.IRN.oneview_encrypted_password | default(none) }}"
+  allow_insecure_connections : >
+    {{ config_data.IRN.oneview_allow_insecure_connections | default(false) }}
+  tls_cacert_file : "{{ config_data.IRN.tls_cacert_file | default(none) }}"
+
+## [pxe]
+ironic_images:
+  tftp_server : "{{ host.bind.IRN_CND.tftp.ip_address }}"
+  path : "{{ ironic_images_path }}"
+  instance_master_path : "{{ ironic_images_path }}/master_images"
+  pxe_append_params : "nofb nomodeset vga=normal elevator=deadline
+                       security=apparmor crashkernel=256M console=tty0
+                       console=ttyS0"
+  http_root : "{{ ironic_images_path }}"
+  http_url : "http://{{ ironic_ipxe_http_address }}:{{ ironic_http_port }}"
+  ipxe_enabled : "True"
+  pxe_config_template: '$pybasedir/drivers/modules/ipxe_config.template'
+  pxe_bootfile_name : "undionly.kpxe"
+  uefi_pxe_config_template: '$pybasedir/drivers/modules/ipxe_config.template'
+  uefi_pxe_bootfile_name: 'ipxe.efi'
+  ipxe_boot_script: '$pybasedir/drivers/modules/boot.ipxe'
+
+## [conductor]
+ironic_automated_clean : >
+  {{ config_data.IRN.enable_node_cleaning | default(true) }}
+
+## [ilo]
+ironic_ilo:
+  power_retry : 6
+  power_wait : 2
+
+# #[ipmi]
+ironic_ipmi:
+  retry_timeout : 60
+  min_command_interval : 5
+
+## [oslo_messaging_rabbit]
+ironic_kombu_reconnect_delay : 5.0
+
+## [ssl]
+ironic_ca_file : "/etc/ssl/certs/ca-certificates.crt"
+ironic_db_ssl: "{% if IRN.consumes_FND_MDB.vips.private[0].use_tls %}&ssl_ca={{ ironic_ca_file }} {% endif %}"
+
+## [region]
+ironic_region: "{{ IRN.regions | first }}"
+
+ironic_iso_mount_path: "{{ ironic_deploy_image_tmp_dir }}/deploy_iso"
+ironic_iso_build_path: "{{ ironic_deploy_image_tmp_dir }}/tmp_deploy_iso"
+ironic_initrd_build_path: "{{ ironic_deploy_image_tmp_dir }}/tmp_deploy_ramdisk"

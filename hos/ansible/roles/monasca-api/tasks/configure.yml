@@ -1,0 +1,151 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: setup group
+  group: name={{monasca_group}} system=yes
+  register: hlm_notify_monasca_api_restart_required
+
+- name: Setup user
+  user: name={{monasca_api_user}} system=yes group={{monasca_group}}
+  register: hlm_notify_monasca_api_restart_required
+
+- name: Ensure vertica jdbc permissions
+  file: path={{ vertica_jdbc_location }} mode=0644
+  when: database_type == 'vertica'
+
+- name: Detect if this is a systemd based system
+  command: cat /proc/1/comm
+  register: init
+- set_fact: use_systemd=True
+  when: init.stdout == 'systemd'
+- set_fact: use_systemd=False
+  when: init.stdout != 'systemd'
+
+- name: create systemd config
+  template: dest={{api_systemd_service}} owner=root group=root mode=0644 src=monasca-api.service.j2
+  register: hlm_notify_monasca_api_restart_required
+  when: use_systemd
+
+- command: systemctl daemon-reload
+  when: use_systemd
+
+- name: create upstart script from template
+  template: dest=/etc/init/monasca-api.conf owner=root group=root mode=0744 src=monasca-api.conf.j2
+  register: hlm_notify_monasca_api_restart_required
+  when: not use_systemd
+
+- name: create monasca log dir
+  file: path={{monasca_log_dir}} state=directory owner=root group={{monasca_group}} mode=0775
+  register: hlm_notify_monasca_api_restart_required
+
+- name: create api log dir
+  file: path={{api_log_dir}} state=directory owner=root group={{monasca_group}} mode=0775
+  register: hlm_notify_monasca_api_restart_required
+
+- name: stat /etc/monasca/api-config.yml file
+  stat: path=/etc/monasca/api-config.yml
+  register: api_conf_file_result
+
+- name: move api-config.yml to api-config.yml.old if not a symlink
+  command: mv /etc/monasca/api-config.yml /etc/monasca/api-config.yml.old
+  when: api_conf_file_result.stat.exists and api_conf_file_result.stat.isreg
+
+- name: stat old api jar
+  stat: path=/opt/stack/service/monasca/venv/lib/monasca-api-1.1.0.9-SNAPSHOT-shaded.jar
+  register: old_api_jar_result
+
+- name: use old config if old api jar
+  set_fact:
+    old_api_jar: True
+  when: old_api_jar_result.stat.exists
+
+- name: create conf_file from template
+  template: dest={{ monasca_api_conf_file }} owner={{monasca_api_user}} group={{monasca_group}} mode=0640 src=api-config.yml.j2
+  register: hlm_notify_monasca_api_restart_required
+
+- name: link /etc/monasca/api-config.yml to service config dir
+  file:
+    path: /etc/monasca/api-config.yml
+    src: "{{ 'monasca' | config_dir() }}/api-config.yml"
+    state: link
+    owner: "{{monasca_api_user}}"
+    group: "{{monasca_group}}"
+    mode: 0640
+
+- name: Copy Truststore
+  copy: dest={{monasca_api_truststore}} src={{monasca_api_truststore_src}}
+  when: monasca_api_truststore_src is defined
+  register: hlm_notify_monasca_api_restart_required
+
+- name: monasca-api | configure | register restart to load changed truststore
+  debug: msg="hlm_notifiy_monasca_api_restart_required changed status"
+  register: hlm_notify_monasca_api_restart_required
+  changed_when: True
+  when: ( hlm_notify_certs_updated is defined )
+    and ( run_mode == 'Configure' or run_mode == 'Upgrade' )
+
+- name: Copy Client Keystore
+  copy: dest={{monasca_api_client_keystore}} src={{monasca_api_client_keystore_src}}
+  when: monasca_api_client_keystore_src is defined
+  register: hlm_notify_monasca_api_restart_required
+
+- name: Copy Keystore
+  copy: dest={{monasca_api_keystore}} src={{monasca_api_keystore_src}}
+  when: monasca_api_keystore_src is defined
+  register: hlm_notify_monasca_api_restart_required
+
+- name: Create directory for storing md5sums
+  file:
+    path: "{{ monasca_api_jar_saved_md5 | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Determine md5 of monasca-api jar
+  stat:
+    path: "{{ monasca_api_jar }}"
+    follow: yes
+  register: monasca_api_jar_result
+
+- name: Check if current md5 exists
+  stat:
+    path: "{{ monasca_api_jar_saved_md5 }}"
+  register: monasca_api_jar_old_md5_file_result
+
+- name: Get the current md5 if it exists
+  slurp:
+    src: "{{ monasca_api_jar_saved_md5 }}"
+  when: monasca_api_jar_old_md5_file_result.stat.exists
+  register: monasca_api_jar_old_md5_result
+
+- name: Mark Monasca API for restart if new monasca-api jar
+  debug: msg="restart monasca-api because monasca-api jar changed"
+  changed_when: True
+  when: not monasca_api_jar_old_md5_file_result.stat.exists or
+        ( monasca_api_jar_old_md5_file_result.stat.exists and
+          ( monasca_api_jar_result.stat.md5 !=
+            ( monasca_api_jar_old_md5_result.content | b64decode ) ) )
+  register: hlm_notify_monasca_api_restart_required
+
+- name: Write md5sum if changed or not written yet
+  copy:
+    dest: "{{ monasca_api_jar_saved_md5 }}"
+    content: "{{ monasca_api_jar_result.stat.md5 }}"
+  when: not monasca_api_jar_old_md5_file_result.stat.exists or
+        ( monasca_api_jar_old_md5_file_result.stat.exists and
+          ( monasca_api_jar_result.stat.md5 !=
+            ( monasca_api_jar_old_md5_result.content | b64decode ) ) )

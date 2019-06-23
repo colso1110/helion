@@ -1,0 +1,122 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- hosts: localhost
+  connection: local
+  roles:
+    - tls-trust
+    - octavia-common
+  tasks:
+    - include: roles/octavia-common/tasks/tls_bootstrap.yml
+    - include: roles/tls-trust/tasks/cert_csr.yml
+    - include: roles/tls-trust/tasks/cert_sign.yml
+    - include: roles/octavia-common/tasks/tls_copy.yml
+
+- hosts: OCT-API
+  sudo: yes
+  roles:
+  - octavia-post-configure
+  tasks:
+  - include: roles/octavia-post-configure/tasks/keystone_conf.yml
+    ansible_python_interpreter: "{{ KEY_CLI.vars.keystone_client_python_interpreter }}"
+
+- hosts: OCT-API:OCT-HMX
+  sudo: yes
+  roles:
+  - octavia-common
+  tasks:
+  - include: roles/octavia-common/tasks/install.yml
+  - include: roles/octavia-common/tasks/configure.yml
+  - include: roles/octavia-common/tasks/start.yml
+
+- hosts: OCT-API
+  sudo: yes
+  roles:
+  - octavia-post-configure
+  tasks:
+  - include: roles/octavia-post-configure/tasks/db_configure.yml
+
+- hosts: OCT-API
+  sudo: yes
+  roles:
+    - octavia-post-configure
+  tasks:
+    - include: roles/octavia-post-configure/tasks/set_nova_quotas.yml
+      ansible_python_interpreter: "{{ NOV_CLI.vars.nova_client_python_interpreter }}"
+
+- hosts: OCT-API
+  sudo: yes
+  roles:
+    - octavia-post-configure
+  tasks:
+    - include: roles/octavia-post-configure/tasks/set_neutron_quotas.yml
+      ansible_python_interpreter: "{{ NEU_CLI.vars.neutron_client_python_interpreter }}"
+
+- hosts: OCT-API
+  sudo: yes
+  roles:
+  - octavia-common
+  - octavia-api
+  tasks:
+  - include: roles/octavia-api/tasks/configure.yml
+  - include: roles/octavia-api/tasks/start.yml
+
+- hosts: OCT-API
+  sudo: yes
+  roles:
+  - octavia-common
+  - octavia-worker
+  tasks:
+  - include: roles/octavia-common/tasks/tls_deploy.yml
+  - include: roles/octavia-worker/tasks/configure.yml
+  - include: roles/octavia-worker/tasks/start.yml
+
+- hosts: OCT-HMX
+  sudo: yes
+  roles:
+  - octavia-common
+  - octavia-health-manager
+  tasks:
+  - include: roles/octavia-health-manager/tasks/configure.yml
+  - include: roles/octavia-health-manager/tasks/start.yml
+
+- hosts: OCT-API
+  sudo: yes
+  roles:
+  - octavia-common
+  - octavia-housekeeping
+  tasks:
+  - include: roles/octavia-housekeeping/tasks/configure.yml
+  - include: roles/octavia-housekeeping/tasks/start.yml
+
+# after everything is running, turn on monitoring
+- hosts: OCT-API:OCT-HMX
+  roles:
+  - octavia-common
+  - { role: monasca-agent, run_mode: Use }
+
+  tasks:
+  - include: roles/octavia-common/tasks/setup_monasca_service_plugin.yml
+
+# set up active check of octavia api via vip
+- hosts: OCT-API:&MON-AGN
+  roles:
+  - octavia-common
+  - { role: monasca-agent, run_mode: Use }
+
+  tasks:
+  - include: roles/octavia-common/tasks/remote_monitor.yml

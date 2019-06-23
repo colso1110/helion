@@ -1,0 +1,59 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: keystone-post-configure | services_conf | Get a domain scoped token
+  become: yes
+  keystone_v3:
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    login_username: "{{ keystone_admin_user }}"
+    login_password: "{{ keystone_admin_user_pwd }}"
+    login_user_domain_name: "{{ keystone_default_domain }}"
+    login_domain_name: "{{ keystone_default_domain }}"
+    action: "token_get"
+  run_once: true
+  register: domain_scoped_token_result
+
+- name: keystone-post-configure | services_conf | Create services in Keystone
+  become: yes
+  keystone_v3:
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    login_token: "{{ domain_scoped_token_result.result }}"
+    action: "create_service"
+    service_name: "{{ item.service_name }}"
+    service_type: "{{ item.service_type | default('') }}"
+    description: "{{ item.service_description | default('') }}"
+  run_once: True
+  with_items:
+    -  "{{ keystone_services }}"
+  when: item.service_name is defined
+
+- name: keystone-post-configure | services_conf  | Create endpoints in Keystone
+  become: yes
+  keystone_v3:
+    endpoint: "{{ keystone_admin_endpoint }}/v3"
+    login_token: "{{ domain_scoped_token_result.result }}"
+    action: "create_endpoint"
+    service_name: "{{ item.service_name }}"
+    region: "{{ item.region | default('') }}"
+    admin_url: "{{ item.admin_url | default('') }}"
+    internal_url: "{{ item.internal_url | default('') }}"
+    public_url: "{{ item.public_url | default('') }}"
+  run_once: True
+  with_items:
+    -  "{{ keystone_endpoints }}"
+  when: item.service_name is defined
+

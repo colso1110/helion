@@ -1,0 +1,68 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Configure the hypervisor.conf specific to vmware
+---
+- name: NOV-CMP-ESX | configure | Decrypt the vCenter password
+  shell: /usr/bin/eon-encrypt -d "{{ vcenter_encrypted_password }}"
+  any_errors_fatal: True
+  delegate_to: localhost
+  register: decrypt_result
+  when: vcenter_encrypted_password|default("") != ""
+
+- name: NOV-CMP-ESX | configure | Get vcenter password from EON
+  shell: eon get-vcenter-password "{{ vmware_vcenter_id }}"
+  register: vcenter_info_result
+  become: yes
+  environment:
+    OS_USERNAME: "{{ eon_admin_user }}"
+    OS_PASSWORD: "{{ eon_admin_password }}"
+    OS_TENANT_NAME: "{{ eon_admin_tenant_name }}"
+    OS_AUTH_URL: "{{ keystone_auth_uri }}/v2.0"
+    OS_ENDPOINT_TYPE: "internalURL"
+    OS_REGION_NAME: "{{ eon_os_region_name }}"
+  when: not vcenter_encrypted_password|default("")
+
+- name: NOV-CMP-ESX | configure | Assign vcenter password vmware_host_password
+  set_fact: vmware_host_password="{{ decrypt_result.stdout }}"
+  when: decrypt_result.changed
+
+- name: NOV-CMP-ESX | configure | Assign vcenter password vmware_host_password
+  set_fact: vmware_host_password="{{ vcenter_info_result.stdout }}"
+  when: vcenter_info_result.changed
+
+- name: NOV-CMP-ESX | configure | Report the get vCenter password error
+  fail:
+    msg: "{{ vcenter_info_result.stderr }}"
+  when: vcenter_info_result.changed and vcenter_info_result.stderr|length > 0
+
+- include: ../../nova-common/tasks/_set_directories.yml
+  vars:
+    install_package_result: "{{ hlm_notify_nova_compute_install_result }}"
+
+# hypervisor.conf will be loaded last by nova-compute
+# filename should remain the same across hypervisors
+# we can use nova_service_conf_dir as this will be set to compute
+# by including the nova-compute role as a dependency
+- include: ../../nova-common/tasks/_write_conf.yml
+  src: "../../NOV-CMP-ESX/templates/hypervisor.conf.j2"
+  dest: "{{ nova_service_conf_dir }}/hypervisor.conf"
+  owner: "{{ nova_system_user }}"
+  group: "{{ nova_system_group }}"
+
+- name: NOV-CMP-ESX | configure | notify on hypervisor.conf change
+  command: /bin/true
+  register: hlm_notify_nova_compute_restart_required
+  when: write_conf_result.changed

@@ -1,0 +1,52 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: ironic-cloud-configure | ironic-flavor-setup | check for baremetal
+        flavor
+  shell: >
+    nova
+    --os-username {{ ironic_keystone.user }}
+    --os-project-name {{ ironic_keystone.tenant_name }}
+    --os-password {{ ironic_keystone.admin_pwd }}
+    --os-user-domain-name {{ ironic_keystone.default_domain }}
+    --os-project-domain-name {{ ironic_keystone.default_domain }}
+    --os-endpoint-type internalURL
+    --os-region-name {{ ironic_region }}
+    --os-auth-url {{ ironic_keystone.auth_url }}
+    flavor-list
+  register: bm_flavor_check_result
+
+- name: ironic-cloud-configure | ironic-flavor-setup | create baremetal flavor
+  shell: >
+    nova
+    --os-username {{ ironic_keystone.user }}
+    --os-project-name {{ ironic_keystone.tenant_name }}
+    --os-password {{ ironic_keystone.admin_pwd }}
+    --os-user-domain-name {{ ironic_keystone.default_domain }}
+    --os-project-domain-name {{ ironic_keystone.default_domain }}
+    --os-endpoint-type internalURL
+    --os-region-name {{ ironic_region }}
+    --os-auth-url {{ ironic_keystone.auth_url }}
+    {{ item }}
+  with_items:
+  - "flavor-create {{ ironic_flavor.name }} {{ ironic_flavor.id }}
+      {{ ironic_flavor.ram_mb }} {{ ironic_flavor.disk_gb }}
+      {{ ironic_flavor.vcpu }}"
+  - "flavor-key m1.baremetal set cpu_arch=amd64
+      baremetal_type={{ ironic_flavor.type }}
+      capabilities:boot_option={{ ironic_flavor.boot_option }}
+      capabilities:boot_mode={{ ironic_flavor.boot_mode }}"
+  when: "not '{{ ironic_flavor.name }}' in bm_flavor_check_result.stdout"

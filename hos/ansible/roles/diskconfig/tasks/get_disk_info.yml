@@ -1,0 +1,119 @@
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
+---
+- name: osconfig | diskconfig | list multipath devs
+  become: yes
+  shell: ls -1 /dev/mapper/mpath* | wc -l
+  register: multipath_devs_result
+
+- name: osconfig | diskconfig | check multipath devs
+  set_fact: multipath_env=true
+  when: multipath_devs_result.stdout != "0"
+
+- name: osconfig | diskconfig | set multipath env
+  set_fact: wipe_disks_multipath=true
+  when: wipe_disks_multipath is not defined and multipath_env is defined
+
+- name: osconfig | diskconfig | set multipath env
+  set_fact: wipe_disks_multipath=false
+  when: wipe_disks_multipath is not defined and multipath_env is not defined
+
+- name: osconfig | diskconfig | set default_disk
+  set_fact: wipe_disks_skip_partition="sda"
+  when: wipe_disks_skip_partition is not defined and wipe_disks_multipath == False
+
+- name: osconfig | diskconfig | set default_mulitpath_disk
+  set_fact: wipe_disks_skip_partition="mpatha"
+  when: wipe_disks_skip_partition is not defined and wipe_disks_multipath == True
+
+- name: osconfig | diskconfig | get list of devices
+  shell: cat /proc/partitions | grep "sd" | grep -v {{ wipe_disks_skip_partition }}$ | grep -v {{ wipe_disks_skip_partition }}[0-9] | awk '{ print $4 }'
+  register: single_results
+  sudo: yes
+  when: wipe_disks_multipath == False
+  ignore_errors: true
+
+- name: osconfig | diskconfig | get multipath list of devices
+  shell: ls -1 /dev/mapper/ | grep "mpath"  | grep -v {{ wipe_disks_skip_partition }}$ | grep -v {{ wipe_disks_skip_partition }}[0-9]
+  register: multi_results
+  sudo: yes
+  when: wipe_disks_multipath == True
+  ignore_errors: true
+
+- name: osconfig | diskconfig | set single path result
+  set_fact: all_devices="{{ single_results.stdout_lines }}"
+  when: wipe_disks_multipath == False
+
+- name: osconfig | diskconfig | set multi path result
+  set_fact: all_devices="{{ multi_results.stdout_lines }}"
+  when: wipe_disks_multipath == True
+
+- name: osconfig | diskconfig | filter one disk only if specified
+  set_fact: devices="{{ all_devices }}"
+  when: wipe_one_disk is not defined
+
+# Check needs to be an exact item by item equality check.
+- name: osconfig | diskconfig | filter one disk if it exists
+  set_fact: found_one_dev="{{ wipe_one_disk }}"
+  when: wipe_one_disk is defined and item == wipe_one_disk
+  with_items: "{{ all_devices }}"
+
+# Create a one-item list
+- name: osconfig | diskconfig | continue if disk exists
+  set_fact:
+    devices:
+      - "{{ wipe_one_disk }}"
+  when: wipe_one_disk is defined and found_one_dev is defined
+
+- name: osconfig | diskconfig | fail if specified disk doesnt exist
+  fail:
+    msg: >
+        did not find {{ wipe_one_disk }} in list of devices on this node
+        {{ all_devices }}
+  when: wipe_one_disk is defined and found_one_dev is not defined
+
+- name: osconfig | diskconfig | Check if osconfig has run
+  stat: path=/etc/hos/osconfig-ran
+  register: osconfig_ran
+
+- name: osconfig | diskconfig | check result of osconfig check
+  fail:
+    msg: >
+        found /etc/hos/osconfig-ran on node, this means that Helion
+        OpenStack software has been previously installed on this system
+        {{ inventory_hostname }}, if you want to continue to wipe this node
+        please remove /etc/hos/osconfig-ran from the node(s) in question.
+  when: osconfig_ran.stat.exists == True and wipe_one_disk is not defined
+
+- name: osconfig | diskconfig | check if devices
+  set_fact: devs_exist=true
+  with_items: "{{ devices }}"
+
+- name: osconfig | diskconfig | check partition tables for all devices found
+  shell: fdisk /dev/{{ item }} -l
+  sudo: yes
+  with_items: "{{ devices }}"
+  register: partitions_found
+  when: item != "{{ wipe_disks_skip_partition }}" and (osconfig_ran.stat.exists == False or wipe_one_disk is defined) and devs_exist is defined and wipe_disks_multipath == False
+
+- name: osconfig | diskconfig | check partition tables for all devices found
+  shell: fdisk /dev/mapper/{{ item }} -l
+  sudo: yes
+  with_items: "{{ devices }}"
+  register: partitions_found
+  when: item != "{{ wipe_disks_skip_partition }}" and (osconfig_ran.stat.exists == False or wipe_one_disk is defined) and devs_exist is defined and wipe_disks_multipath == True
+
+- name: osconfig | diskconfig | devices to be wiped
+  debug: msg="wipe {{ devices }}"

@@ -1,0 +1,45 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- include: _check-vm-status.yml
+
+- name: dcn-vsc | vsc-deploy | Display VM status
+  debug: var=vm_status
+
+- name: dcn-vsc | vsc-deploy | Decide if the VSC should be deployed
+  set_fact:
+    vsc_vm_needs_deployment: vm_status|failed
+
+- include: install.yml
+  when: vsc_vm_needs_deployment
+
+- include: _copy_image.yml
+  when: vsc_vm_needs_deployment
+
+- include: image-configure.yml
+  when: vsc_vm_needs_deployment
+
+- include: deploy.yml
+  when: vsc_vm_needs_deployment
+
+- include: vsc-os-configure.yml
+  when: vsc_vm_needs_deployment
+
+- name: dcn-vsc | vsc-deploy | save the new qcow2's md5sum to vsc_image_dir
+  become: yes
+  command: "cp /tmp/{{ vsc_image_name }}.md5 {{ vsc_image_dir }}"
+  when: vsc_vm_needs_deployment

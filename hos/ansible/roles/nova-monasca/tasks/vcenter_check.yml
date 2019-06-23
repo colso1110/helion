@@ -1,0 +1,60 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: nova-monasca | vcenter_check | Setup default email notification method
+  include: _set_email_notifications.yml
+
+- name: nova-monasca | vcenter_check | Run vCenter detection plugin
+  become: yes
+  monasca_agent_plugin:
+    name: "vcenter"
+
+- name: nova-monasca | vcenter_check | Alarms for ESX cluster
+  monasca_alarm_definition:
+    name: "{{ item.name }}"
+    description: "{{
+      item.description | default('vCenter ESX cluster alarm') }}"
+    expression: "{{ item.expression }}"
+    match_by: "{{ item.match_by | default(['esx_cluster_id']) }}"
+    severity: "{{ item.severity | default('HIGH') }}"
+    monasca_api_url: "{{ monasca_alarm_definition_api_url }}"
+    keystone_token: "{{
+      nova_monasca_notification_method_result.keystone_token }}"
+    alarm_actions:
+      - "{{ nova_monasca_notification_method_result.notification_method_id }}"
+    ok_actions:
+      - "{{ nova_monasca_notification_method_result.notification_method_id }}"
+    undetermined_actions:
+      - "{{ nova_monasca_notification_method_result.notification_method_id }}"
+  run_once: True
+  register: monasca_vcenter_alarms_result
+  until: not monasca_vcenter_alarms_result | failed
+  with_items:
+    - name: "ESX cluster CPU Usage"
+      description: "Alarms when ESX cluster CPU usage is high"
+      expression: "avg(vcenter.cpu.used_perc) > 90 times 3"
+      severity: "HIGH"
+      match_by: "esx_cluster_id"
+    - name: "ESX cluster Disk Usage"
+      description: "Alarms when ESX cluster datastore usage is high"
+      expression: "vcenter.disk.total_used_space_perc > 90"
+      severity: "HIGH"
+      match_by: "esx_cluster_id"
+    - name: "ESX cluster Memory Usage"
+      description: "Alarms when ESX cluster memory usage is high"
+      expression: "avg(vcenter.mem.used_perc) > 90 times 3"
+      severity: "HIGH"
+      match_by: "esx_cluster_id"

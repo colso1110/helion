@@ -1,0 +1,118 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- hosts: "NEU-DHCP:NEU-L3A:NEU-LBAV*:NEU-MDA:NEU-OVS:\
+          NEU-SVR:NEU-VPNA:NEU-L2GWA:NEU-IFBLXA:NEU-SRIOV:NEU-OVSVAPP"
+  roles:
+    - neutron-common
+
+  tasks:
+    - include: roles/neutron-common/tasks/start.yml
+
+- hosts: NEU-SVR
+  roles:
+    - neutron-common
+    - neutron-server
+
+  tasks:
+    - include: roles/neutron-server/tasks/start.yml
+
+- hosts: NEU-OVS
+  roles:
+    - neutron-common
+    - neutron-openvswitch-agent
+
+  tasks:
+  - include: roles/neutron-openvswitch-agent/tasks/start.yml
+
+- hosts: NEU-OVSVAPP
+  roles:
+    - neutron-common
+    - neutron-ovsvapp-agent
+
+  tasks:
+  - include: roles/neutron-ovsvapp-agent/tasks/start.yml
+
+- hosts: NEU-DHCP
+  roles:
+    - neutron-common
+    - neutron-dhcp-agent
+
+  tasks:
+    - include: roles/neutron-dhcp-agent/tasks/start.yml
+
+- hosts: NEU-MDA
+  roles:
+    - neutron-common
+    - neutron-metadata-agent
+
+  tasks:
+    - include: roles/neutron-metadata-agent/tasks/start.yml
+
+- hosts: NEU-L3A
+  roles:
+    - neutron-common
+    - neutron-l3-agent
+
+  tasks:
+    - include: roles/neutron-l3-agent/tasks/start.yml
+
+- hosts: NEU-VPNA
+  roles:
+    - neutron-common
+    - neutron-vpn-agent
+
+  tasks:
+    - include: roles/neutron-vpn-agent/tasks/start.yml
+
+- hosts: NEU-LBAV2
+  roles:
+    - neutron-common
+    - neutron-lbaasv2-agent
+
+  tasks:
+    - include: roles/neutron-lbaasv2-agent/tasks/start.yml
+
+- hosts: NEU-LBAV1
+  roles:
+    - neutron-common
+    - neutron-lbaas-agent
+
+  tasks:
+    - include: roles/neutron-lbaas-agent/tasks/start.yml
+
+- hosts: NEU-L2GWA
+  roles:
+    - neutron-common
+    - neutron-l2gateway-agent
+
+  tasks:
+    - include: roles/neutron-l2gateway-agent/tasks/start.yml
+
+- hosts: NEU-SRIOV
+  roles:
+    - neutron-common
+    - neutron-sriov-nic-agent
+
+  tasks:
+    - include: roles/neutron-sriov-nic-agent/tasks/start.yml
+
+- hosts: NEU-IFBLXA
+  roles:
+    - neutron-common
+    - neutron-infoblox-ipam-agt
+  tasks:
+    - include: roles/neutron-infoblox-ipam-agt/tasks/start.yml

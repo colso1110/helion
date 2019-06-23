@@ -1,0 +1,80 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: Check if database exists
+  command: /opt/vertica/bin/admintools -t list_db -d '{{ vertica_database_name }}'
+  sudo_user: dbadmin
+  ignore_errors: yes
+  register: database_exists
+
+# cleanup_target_hosts is initialized when conditions are met
+- name: Set cleanup_target_hosts when DB does not exist
+  set_fact: cleanup_target_hosts="{{ groups['FND-VDB'] }}"
+  ignore_errors: yes
+  when: database_exists | failed or (force is defined and force == 'yes')
+
+- name: Stop verticad on cluster when DB does not exist
+  command: /etc/init.d/verticad stop
+  ignore_errors: yes
+  delegate_to: "{{ item }}"
+  with_items: "{{ cleanup_target_hosts | default([]) }}"
+
+- name: Stop vertica agent on cluster when DB does not exist
+  command: /etc/init.d/vertica_agent stop
+  ignore_errors: yes
+  delegate_to: "{{ item }}"
+  with_items: "{{ cleanup_target_hosts | default([]) }}"
+
+- name: Remove catalog DB dir from cluster when DB does not exist
+  file: path="{{ vertica_catalog_dir }}/{{ vertica_database_name }}" state=absent
+  sudo_user: dbadmin
+  ignore_errors: yes
+  delegate_to: "{{ item }}"
+  with_items: "{{ cleanup_target_hosts | default([]) }}"
+
+- name: Remove data DB dir from cluster when DB does not exist
+  file: path="{{ vertica_data_dir }}/{{ vertica_database_name }}" state=absent
+  sudo_user: dbadmin
+  ignore_errors: yes
+  delegate_to: "{{ item }}"
+  with_items: "{{ cleanup_target_hosts | default([]) }}"
+
+- name: Remove admintools config from cluster when DB does not exist
+  sudo_user: dbadmin
+  file: path="{{ vertica_config_dir }}/admintools.conf" state=absent
+  ignore_errors: yes
+  delegate_to: "{{ item }}"
+  with_items: "{{ cleanup_target_hosts | default([]) }}"
+
+- name: Remove vsql files when DB does not exist so we recrete them and run them on recreation
+  sudo_user: dbadmin
+  file: path="/var/vertica/{{ item }}" state=absent
+  with_items:
+    - mon_metrics_schema.sql
+    - mon_alarms_schema.sql
+    - mon_users_and_limits.sql
+  when: database_exists | failed or (force is defined and force == 'yes')
+
+- name: Create default admintools config file
+  template: src=admintools.conf.j2 dest={{vertica_config_dir}}/admintools.conf owner="{{vertica_dbadmin_user}}" group="{{vertica_dbadmin_group}}" mode=660
+  ignore_errors: yes
+  delegate_to: "{{ item }}"
+  with_items: "{{ cleanup_target_hosts | default([]) }}"
+
+- name: vertica | clean vertica database | remove logrotate directory
+  file: path=/opt/vertica/config/logrotate state=absent
+  delegate_to: "{{ item }}"
+  with_items: "{{ cleanup_target_hosts | default([]) }}"

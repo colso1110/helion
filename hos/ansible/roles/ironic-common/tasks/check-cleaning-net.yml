@@ -1,0 +1,51 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: ironic-common | check-cleaning-net | get known networks
+  shell: >
+    neutron
+    --os-username {{ ironic_keystone_admin.user }}
+    --os-project-name {{ ironic_keystone_admin.admin_tenant_name }}
+    --os-password {{ ironic_neutron.admin_pwd }}
+    --os-user-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-project-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-auth-url {{ ironic_cnd_admin.auth_uri }}
+    --os-region-name {{ ironic_region }}
+    --os-endpoint-type internalURL
+    net-list
+  register: get_known_nets_result
+
+- name: ironic-common | check-cleaning-net | check if cleaning-net exists
+  shell: >
+    neutron
+    --os-username {{ ironic_keystone_admin.user }}
+    --os-project-name {{ ironic_keystone_admin.admin_tenant_name }}
+    --os-password {{ ironic_neutron.admin_pwd }}
+    --os-user-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-project-domain-name {{ ironic_keystone_admin.default_domain }}
+    --os-auth-url {{ ironic_cnd_admin.auth_uri }}
+    --os-region-name {{ ironic_region }}
+    --os-endpoint-type internalURL
+    net-show {{ ironic_cleaning_network.name }} | grep '^|[ ]*id'
+  register: cleaning_network_result
+
+- name: ironic-common | check-cleaning-net | get cleaning network id
+  shell: >
+    echo '{{ cleaning_network_result.stdout }}' |
+    awk -F '|' '{ print $3 }' |
+    tr -d '[[:space:]]'
+  register: cleaning_network_id_result

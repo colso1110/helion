@@ -1,0 +1,32 @@
+{#
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+# Neutron tree api tests
++neutron\.tests\.api\.*
+
+# Exclude external network tests.
+-neutron\.tests\.api\.admin\.test_external_network_extension*
+
+# router instantiated lately cause test instability
+-neutron\.tests\.api\.admin\.test_l3_agent_scheduler\.L3AgentSchedulerTestJSON\.test_add_list_remove_router_on_l3_agent
+
+# timestamp create vs update instability
+-neutron\.tests\.api\.test_timestamp\.TestTimeStamp\.test_show.*
+-neutron\.tests\.api\.test_timestamp\.TestTimeStamp\.test_update.*
+
+# mismatch error in multi-concurrency tests.
+-neutron\.tests\.api\.admin\.test_shared_network_extension\.SharedNetworksTest\.test_filtering_shared_subnets

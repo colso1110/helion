@@ -1,0 +1,38 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Beaver variables
+#-------------------------------------------------------------------------------
+beaver_user: beaver
+beaver_group: adm
+beaver_conf_dir: /etc/beaver
+beaver_purge_config_files: false
+beaver_queue_timeout_secs: 7200 # 2 hours
+beaver_max_retries: 5
+beaver_transport: monascalog
+
+kronos_beaver_user: "{{ LOG_PRO.consumes_KEY_API.vars.logging_beaver_user }}"
+kronos_beaver_password: "{{ LOG_PRO.consumes_KEY_API.vars.logging_beaver_password }}"
+beaver_monascalog_enable_batching: true
+monascalog_api_nodes: "{{ LOG_PRO.consumes_LOG_API.members.private }}"
+beaver_monascalog_api_hosts: "{% for node in monascalog_api_nodes %}{{ node.host }}:{{ node.port }}{% if not loop.last %},{% endif %}{% endfor %}"
+beaver_monascalog_uri: v3.0/logs
+beaver_monascalog_url: "{{ LOG_PRO.consumes_LOG_API.vips.private[0].url }}/{{ beaver_monascalog_uri }}"
+beaver_keystone_identity_url: "{{ LOG_PRO.consumes_KEY_API.vips.private[0].url }}/v3"
+
+# tune these if the beaver producer is faster than the consumer
+beaver_max_queue_size: 10000
+beaver_number_of_consumer_processes: 1

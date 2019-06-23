@@ -1,0 +1,2 @@
+mon-agent ALL=(root) NOPASSWD:/usr/bin/ovs-vsctl
+Defaults:mon-agent !requiretty

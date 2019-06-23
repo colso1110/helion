@@ -1,0 +1,9 @@
+{% for service in host.tls_in %}
+{% if loop.first %}
+listen {{ service.name }}
+    mode http
+    bind {{ service.accept.ip_address }}:{{ service.accept.port }} ssl crt /etc/ssl/private/helion-node-cert
+    server {{ service.name }} {{ service.connect.ip_address }}:{{ service.connect.port }} check inter 2000 rise 2 fall 5
+{% endif %}
+{% endfor %}
+

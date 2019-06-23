@@ -1,0 +1,155 @@
+#!/bin/bash -e
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+# A script to setup the user account with the hlinux.qcow2 image used
+# as the basis for creating HOS VMs on a vmfactory node.
+
+# The user account we expect to find in the hlinux.qcow2 image
+VMF_VM_DIST_USER="${VMF_VM_DIST_USER:-{{ vmf_vm_dist_user }}}"
+
+# The user account we need in the hlinux.qcow2 image
+VMF_VM_ANSIBLE_USER="${VMF_VM_ANSIBLE_USER:-{{ vmf_vm_ansible_user }}}"
+
+# The file containing the encrypt password we want to set for the
+# user account
+VMF_VM_PASSWD_FILE="${VMF_VM_PASSWD_FILE:-{{ vmf_vm_passwd_file }}}"
+
+# Sanity check input values
+if [[ -z "${VMF_VM_DIST_USER}" ]]
+then
+    echo "E: No VMF_VM_DIST_USER value specified."
+    exit 1
+fi
+if [[ -z "${VMF_VM_ANSIBLE_USER}" ]]
+then
+    echo "E: No VMF_VM_ANSIBLE_USER value specified."
+    exit 1
+fi
+if [[ -z "${VMF_VM_PASSWD_FILE}" ]]
+then
+    echo "E: No VMF_VM_PASSWD_FILE value specified."
+    exit 1
+fi
+if [[ ! -r "${VMF_VM_PASSWD_FILE}" ]]
+then
+    echo "E: Specified VMF_VM_PASSWD_FILE doesn't exist."
+    exit 1
+fi
+
+# If the desired user account already exists we can skip over the
+# renaming of the expected account to the desired account.
+if ! id ${VMF_VM_ANSIBLE_USER} >/dev/null 2>&1
+then
+    echo "I: The ${VMF_VM_ANSIBLE_USER} account doesn't exist."
+
+    # If the expected account doesn't exist, we have a problem
+    if ! id ${VMF_VM_DIST_USER} >/dev/null 2>&1
+    then
+        echo "E: ${VMF_VM_DIST_USER} account doesn't exist!"
+        exit 1
+    fi
+
+    # Construct new sudoers file but leave original for now
+    echo "I: Fix up sudoers settings"
+    if [[ -e /etc/sudoers.d/${VMF_VM_DIST_USER} ]]
+    then
+        cp -v -p \
+            /etc/sudoers.d/${VMF_VM_DIST_USER} \
+            /etc/sudoers.d/${VMF_VM_ANSIBLE_USER}
+        sed -i \
+            -e "s/${VMF_VM_DIST_USER}/${VMF_VM_ANSIBLE_USER}/g" \
+            /etc/sudoers.d/${VMF_VM_ANSIBLE_USER}
+    fi
+
+    # Now rename the account user and group
+    echo "I: Renaming: ${VMF_VM_DIST_USER} ==> ${VMF_VM_ANSIBLE_USER}."
+    usermod \
+        --move-home \
+        --login ${VMF_VM_ANSIBLE_USER} \
+        --home /home/${VMF_VM_ANSIBLE_USER} \
+        ${VMF_VM_DIST_USER}
+    groupmod \
+        --new-name ${VMF_VM_ANSIBLE_USER} \
+        ${VMF_VM_DIST_USER}
+
+    # Account renamed successfully so remove old sudoers file
+    rm -f /etc/sudoers.d/${VMF_VM_DIST_USER}
+fi
+
+# Set the encrypted password we want for the VMF_VM_ANSIBLE_USER account
+echo "I: Setting password on ${VMF_VM_ANSIBLE_USER}"
+usermod \
+    --password "$(< ${VMF_VM_PASSWD_FILE})" \
+    ${VMF_VM_ANSIBLE_USER}
+
+#
+# Sanity checks to make sure everything is setup right.
+#
+
+# Verify user specific sudoers is correct if it exists
+if [[ ! -e /etc/sudoers.d/${VMF_VM_ANSIBLE_USER} ]]
+then
+    echo "W: No sudoers file found for ${VMF_VM_ANSIBLE_USER} user."
+elif ! grep -qs \
+        -e "^${VMF_VM_ANSIBLE_USER}\>.*\<NOPASSWD:ALL\>" \
+        /etc/sudoers.d/${VMF_VM_ANSIBLE_USER}
+then
+    echo "E: sudo not configured correctly for ${VMF_VM_ANSIBLE_USER} user."
+    exit 1
+elif ! sudo --non-interactive \
+        -u ${VMF_VM_ANSIBLE_USER} \
+        -- \
+        sudo --non-interactive true
+then
+    echo "E: Passwordless sudo not working for ${VMF_VM_ANSIBLE_USER} user."
+    exit 1
+else
+    echo "I: sudo configured correctly for ${VMF_VM_ANSIBLE_USER} user."
+fi
+
+# Verify encrypted password matches desired value
+if [[ "$(grep ${VMF_VM_ANSIBLE_USER} /etc/shadow | cut -d: -f2)" != \
+      "$(< ${VMF_VM_PASSWD_FILE})" ]]
+then
+    echo "E: Password in /etc/shadow doesn't match specified password file."
+    echo "'$(grep ${VMF_VM_ANSIBLE_USER} /etc/shadow | cut -d: -f2)' -> /etc/shadow"
+    echo "'$(< ${VMF_VM_PASSWD_FILE})' -> ${VMF_VM_PASSWD_FILE}"
+    exit 1
+else
+    echo "I: Password configured correctly for ${VMF_VM_ANSIBLE_USER} user."
+fi
+
+# All good so report success
+echo "I: The ${VMF_VM_ANSIBLE_USER} user account is setup correctly."
+
+#
+# Ensure sshd is configured to disable password based login.
+#
+sshd_conf=/etc/ssh/sshd_config
+if ! grep -qs "^PasswordAuthentication no" ${sshd_conf}
+then
+    if ! grep -qs "^#PasswordAuthentication yes" ${sshd_conf}
+    then
+        echo "E: ${sshd_conf} updates failed; already customized?"
+        exit 1
+    fi
+    sed -i -e "s,#\(PasswordAuthentication \)yes,\1no,g" ${sshd_conf}
+    echo "I: ${sshd_conf} updated."
+fi
+
+# All good so report success
+echo "I: The image is setup correctly."

@@ -1,0 +1,106 @@
+#!/bin/bash
+
+CONFIG_DIR={{ barbican_conf_dir }}
+SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+
+echo 'CONFIG_DIR: '$CONFIG_DIR
+
+debug_barbican()
+{
+    #   Start barbican server in debug mode.
+    #   Note: for Eclipse IDE users
+    #   Make sure PYTHONPATH is set with pydev
+    #   export PYTHONPATH=/<eclipse_home>/plugins/org.python.pydev_2.8.2.2013090511/pysrc"
+    #   Note: for Pycharm IDE users
+    #   Follow the instruction in link below
+    #   https://github.com/cloudkeep/barbican/wiki/Developer-Guide-for-Contributors#debugging-using-pycharm
+    #   Following are two commands to start barbican in debug mode
+    #   (1) ./barbican_api_server debug
+    #   (2) ./barbican_api_server debug --pydev-debug-host localhost  --pydev-debug-port 5678
+
+    if [ -z $3 ] ;
+    then
+        debug_host=localhost
+    else
+        debug_host=$3
+    fi
+
+    if [ -z $5 ] ; then
+       debug_port=5678
+    else
+       debug_port=$5
+    fi
+
+    export PYDEV_DEBUG_HOST=$debug_host
+    export PYDEV_DEBUG_PORT=$debug_port
+
+    echo "Starting barbican in debug mode ..." --pydev-debug-host $debug_host --pydev-debug-port $debug_port
+	start_barbican
+}
+
+
+status_barbican()
+{
+	barbican_pid=`pgrep -f barbican_api_server`
+	if [ -z $barbican_pid ] ; then
+        echo "Barbican API process is not running."
+        exit 3
+    fi
+}
+
+start_barbican()
+{
+    echo "*********** Starting Barbican API server"
+    #   Note: Add ' --stats :9314' to run a stats server on port 9314
+	{{ barbican_bin_dir }}/uwsgi --emperor {{ barbican_conf_dir }}/vassals
+	#{{ barbican_bin_dir }}/uwsgi --ini {{ barbican_conf_dir }}/vassals/barbican-api.ini
+    e=$?
+    if [ $e != 0 ]; then
+        echo "Barbican API start has encountered error with code = $e"
+        return $e
+    fi
+    barbican_pid=`pgrep -f barbican_api_server`
+    echo "Barbican API process with pid=[$barbican_pid] has started."
+}
+
+stop_barbican()
+{
+	ignore_not_running=$1
+	barbican_pid=`pgrep -f barbican_api_server`
+	if [ $barbican_pid ] ; then
+        echo "Stopping Barbican API process with pid = $barbican_pid"
+        kill -9 $barbican_pid
+    else
+        if [ -z $ignore_not_running ] ; then
+            echo "Nothing to stop as Barbican API process is not running."
+            exit 7
+        fi
+    fi
+}
+
+case "$1" in
+  debug)
+    debug_barbican $*
+    ;;
+  status)
+    status_barbican
+    ;;
+  start)
+    start_barbican
+    ;;
+  stop)
+    stop_barbican
+    ;;
+  restart)
+    stop_barbican true
+    sleep 5
+    start_barbican
+    ;;
+
+  *)
+    echo "Usage: barbican_ap_server  {start|stop|status|debug <debug_params>|restart}"
+    echo "where debug_params are: --pydev-debug-host <host> --pydev-debug-port <port>, <host> defaults to 'localhost' and <port> defaults to '5678'"
+    exit 1
+esac
+
+exit 0

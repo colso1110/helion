@@ -1,0 +1,86 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: CEP-OSD | _validate_disks |
+    Validate the data disks specified for {{ inventory_hostname }} are available
+  stat: path={{ item }}
+  with_items:
+    - "{{ osd_disks.keys() |
+      union( osd_disks.values() ) | unique }}"
+  register: ceph_stat_result
+
+- name: CEP-OSD | _validate_disks | Create a string of non available disks
+  set_fact: ceph_non_available_disks="{{ ceph_stat_result.results |
+    rejectattr('item', 'none') | selectattr('stat.exists', 'sameas', false)
+    | map(attribute='item') | join(', ') }}"
+
+- name: CEP-OSD | _validate_disks | Fail if a disk is unavailable
+  fail: msg='Following disks were not found -> "{{ ceph_non_available_disks }}"'
+  when: ceph_non_available_disks|default("") != ""
+
+- name: CEP-OSD | _validate_disks | Fetch the ceph disk information on osd node
+  become: yes
+  shell: set -o pipefail; ceph-disk list | awk '{print $1, $2, $3}' |
+    awk '{gsub(/,$/,""); print}'
+  args:
+    executable: /bin/bash
+  register: ceph_disk_result
+
+- name: CEP-OSD | _validate_disks | Filter out data disks
+  set_fact: ceph_data="{{ item }}"
+  when: "'ceph data' in '{{ item }}'"
+  with_items: "{{ ceph_disk_result.stdout_lines }}"
+  register: ceph_osd_data_disks_result
+
+- name: CEP-OSD | _validate_disks | Check if the data disk is partitioned
+  any_errors_fatal: True
+  ceph_check_partition:
+    disk: "{{ item }}"
+    data_disks: >
+      "{{ ceph_osd_data_disks_result.results |
+      selectattr('ansible_facts', 'defined') |
+      map(attribute='ansible_facts.ceph_data') | list }}"
+  with_items: >
+    "{{
+    osd_disks.keys() }}"
+
+- name: CEP-OSD | _validate_disks | Filter out journal disks
+  set_fact: ceph_journal="{{ item }}"
+  when: "'ceph journal' in '{{ item }}'"
+  with_items: "{{ ceph_disk_result.stdout_lines }}"
+  register: ceph_osd_journal_disks_result
+
+- name: CEP-OSD | _validate_disks | Create a json of existing journal disks
+  set_fact: ceph_existing_journal_disks="{{
+    ceph_osd_journal_disks_result.results |
+    selectattr('ansible_facts', 'defined') |
+    map(attribute='ansible_facts.ceph_journal') |
+    map('replace', ' ceph journal', '') | list | to_json }}"
+
+- name: CEP-OSD | _validate_disks | Fetch block device details
+  shell: lsblk -Pb -o +NAME,SIZE,TYPE |awk '{print $(NF-2), $(NF-1), $NF}'
+  register: blk_dev_info_result
+
+- name: CEP-OSD | _validate_disks | Validate the journal disks
+  set_fact: ceph_validate_result="{{ osd_disks.values() |
+    journal_disk_validate(blk_dev_info_result.stdout_lines,
+    osd_journal_size, ceph_existing_journal_disks) }}"
+
+- name: CEP-OSD | _validate_disks |
+    Fail if journal disk size is less than required
+  fail:  msg="{{ ceph_validate_result }}"
+  when: ceph_validate_result != true

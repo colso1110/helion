@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/bin/radosgw -c /etc/ceph/{{ ceph_cluster }}.conf -n client.radosgw.{{ radosgw_user }}

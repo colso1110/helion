@@ -1,0 +1,62 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: neutron-common | common_install | Print running neutron common install
+  debug:
+    msg:  "Running neutron-common common_install
+            for {{ neutron_component | default('neutron-common') }}"
+  run_once: true
+
+- name: neutron-common | common_install | Debian - Install packages
+  become: yes
+  apt: name={{ item }} install_recommends=no state=latest force=yes
+  with_items:
+    required_packages | default([])
+  when: ansible_os_family == 'Debian'
+
+- name: neutron-common | common_install | RedHat - Install packages
+  become: yes
+  yum: name={{ item }} state=latest
+  with_items:
+    required_packages | default([])
+  when: ansible_os_family == 'RedHat'
+
+- name: Neutron Common | common_install | RedHat - Start openvswitch
+  become: yes
+  service:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  with_items:
+    required_packages | default([])
+  when:
+    ansible_os_family == 'RedHat' and
+    item == 'openvswitch'
+
+# Iterate through current pkg-updates-all fact (from CP) for packages relevant
+# to service component.
+# Packages relating to each service component are defined in defaults/main
+# as required_packages:
+# Register the result to be picked up by the service component restart handler.
+# TODO use HLM mechanism to find if required packages got updated
+# AND REMOVE THE changed_when: False!!
+- name: neutron-common | common_install | Check for updated packages
+  shell: echo " dummy command - this needs to be worked out"
+  with_items:
+    required_packages | default([])
+  register: check_updated_packages_result
+  changed_when: False

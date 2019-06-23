@@ -1,0 +1,72 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# If we are told to regenerate all certs remove existing reqs
+- name: FND-MDB | _configure_tls | remove mysql cert requests
+  become: yes
+  file:
+    path: "{{ mysql_cert_deploy_dir }}/{{ item }}.req"
+    state: absent
+  with_items: "{{ mysql_server_cert_name }}"
+  when: (mysql_certs_needs_regeneration | bool)
+
+# Are there any certs about to expire? The openssl -checkend option
+# will return 1 if cert is about to expire. So we use it as a filter
+# in the next step to replace the expiring certs
+- name: FND-MDB | _configure_tls | check cert expiry
+  become: yes
+  command: >
+    openssl x509 -in {{ item }}.pem -checkend {{ mysql_tls_expiry_check }}
+  args:
+    chdir: "{{ mysql_cert_deploy_dir }}"
+  with_items: "{{ mysql_server_cert_name }}"
+  register: _mysql_cert_expiry_checks_result
+  ignore_errors: yes
+
+# Delete the cert requests whose certs are about to expire
+- name: FND-MDB | _configure_tls | remove expiring cert requests
+  become: yes
+  file:
+    path: "{{ mysql_cert_deploy_dir }}/{{ item }}.req"
+    state: absent
+  with_items: "{{ mysql_server_cert_name }}"
+  when: (_mysql_cert_expiry_checks_result | failed)
+  ignore_errors: yes
+
+# Copy cert requests. A successful copy indicates that the
+# corresponding cert needs to be copied too.
+- name: FND-MDB | _configure_tls | copy mysql cert requests
+  become: yes
+  copy:
+    src: "{{ mysql_tls_certs_dir }}/{{ item }}.req"
+    dest: "{{ mysql_cert_deploy_dir }}/{{ item }}.req"
+    owner: mysql
+    group: mysql
+    mode: 0400
+  with_items: "{{ mysql_server_cert_name }}"
+  register: _mysql_cert_request_update_result
+
+- name: FND-MDB | _configure_tls | copy mysql certs
+  become: yes
+  copy:
+    src: "{{ mysql_tls_certs_dir }}/{{ item.item }}"
+    dest: "{{ mysql_cert_deploy_dir }}/{{ item.item }}.pem"
+    owner: mysql
+    group: mysql
+    mode: 0400
+  with_items: "{{ _mysql_cert_request_update_result.results }}"
+  when: (item.changed | bool)
+  register: hlm_notify_mysql_restart_required

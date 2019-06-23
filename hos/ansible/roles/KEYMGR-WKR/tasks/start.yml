@@ -1,0 +1,56 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Restart or start Barbican Worker
+- name: KEYMGR-WKR | start | Activate the latest install
+  become: yes
+  install_package:
+    name: barbican-worker
+    service: "{{ barbican_worker_service_name }}"
+    activate: act_on
+    version: "{{ barbican_worker_install_result.version }}"
+  register: barbican_worker_activate_result
+  when: barbican_worker_install_result is defined
+  tags:
+    - barbican
+
+- name: KEYMGR-WKR | start | Activate barbican worker result echo
+  debug:
+    msg: "barbican_worker_activate_result =
+    {{ barbican_worker_activate_result }}"
+  when: barbican_worker_activate_result is defined
+
+- name: KEYMGR-WKR | start | Restart barbican-worker service
+  become: yes
+  service:
+    name: "{{ barbican_worker_service_name }}"
+    state: restarted
+  when: (hlm_notify_barbican_worker_restart_required is defined and
+        hlm_notify_barbican_worker_restart_required.changed and
+        barbican_worker_restarted_result is not defined)
+        or barbican_worker_restart_required
+  register: barbican_worker_restarted_result
+  tags:
+    - barbican
+
+- name: KEYMGR-WKR | start | Ensure barbican-worker service is started
+  become: yes
+  service:
+    name: "{{ barbican_worker_service_name }}"
+    state: started
+  tags:
+    - barbican

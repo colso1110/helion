@@ -1,0 +1,88 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: logging-server | start-kibana | Restart Kibana
+  become: yes
+  service:
+    name: kibana
+    state: restarted
+  when: >-
+    not hlm_notify_kibana_restart is not defined
+    and hlm_notify_kibana_restart.changed
+    or hlm_notify_kronos_restart is defined
+    and hlm_notify_kronos_restart.changed
+
+- name: logging-server | start-kibana | Start Kibana
+  become: yes
+  service:
+    name: kibana
+    state: started
+
+# This check is to see if apache is started, if not then
+# we expect that start_reload.yml will start it
+- name: logging-server | start-kibana | Check is apache started
+  become: yes
+  command: "systemctl status apache2"
+  ignore_errors: true
+  register: kronos_is_apache_up_result
+
+# Set kronos_apache_start to true as we now expect it to be started after kibana check
+- name: logging-server | start-kibana | Set kronos_apache_started
+  become: yes
+  set_fact:
+    kronos_apache_started: true
+  when: kronos_is_apache_up_result | failed
+
+# Check if kibana site is enabled
+- name: logging-server | start-kibana | Check if Kibana site is enabled
+  become: yes
+  stat:
+    path: /etc/apache2/sites-enabled/kibana-apache2.conf
+  register: kibana_site_file_result
+
+# Set the fact for reload based on whether kibana site is enabled
+- name: logging-server | start-kibana | Set fact to start based on site enabled check
+  set_fact:
+    kibana_reload_required : True
+  when: not kibana_site_file_result.stat.exists
+
+# Enable kibana site
+- name:  logging-server | start-kibana | Enable Kibana site
+  become: yes
+  command: a2ensite kibana-apache2
+  when: not kibana_site_file_result.stat.exists
+
+# Ensure Apache is reloaded via Apache owned playbook
+- include: "{{ playbook_dir }}/roles/FND-AP2/tasks/start_reload.yml"
+  become: yes
+  vars:
+    apache_reload_requested:
+      "{{ (hlm_notify_kibana_restart is defined
+      and hlm_notify_kibana_restart.changed)
+      or (hlm_notify_kronos_pwd_change is defined
+      and hlm_notify_kronos_pwd_change.changed) 
+      or kibana_reload_required }}"
+    apache_restart_requested:
+      "{{ hlm_notify_kronos_conf_change is defined
+       and hlm_notify_kronos_conf_change.changed 
+       or kibana_restart_required }}"
+
+# Prime Kibana if required
+- name: logging-server | start-kibana | Prime Kibana for use
+  become: yes
+  shell: nohup python {{ opt_kronos_dir }}/esutil.py --prime-kibana &
+  run_once: true

@@ -1,0 +1,94 @@
+#!/bin/bash
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# This script checks the size of /var/log and if it is beyond
+# {{ var_log_high_watermark_percent }} full, it runs logrotate.
+# Also...
+# This script checks the size of /var/audit and if it is beyond
+# {{ var_audit_high_watermark_percent }} full, it runs logrotate.
+
+logfile={{ logrotate_log_path }}
+dt="$(date +"%Y-%m-%d %H:%M:%S")\t\t"
+
+mkdir -p {{ var_kronos_dir }}
+
+# function to find the current used size of the parition
+function get_current_partition_size()
+{
+  echo $(df -h $partition | tail -1 | awk '{print $5}' | grep -Po '[0-9]+' )
+}
+
+function check_high_low_watermarks()
+{
+  current_level=$(get_current_partition_size)
+  if [ $current_level -gt $low_watermark ] && [ $current_level -lt $high_watermark ]; then
+    echo -e "$dt WARNING: $partition running low on disk space, at $current_level% used! (crossed low watermark of $low_watermark%) Logrotate will be forced when usage reaches high watermark of $high_watermark%!" >> $logfile
+  fi
+
+  if [ $current_level -gt $high_watermark ]; then
+    echo -e "$dt ERROR: $partition at $current_level% used is over high watermark of $high_watermark%.  Running logrotate to free disk space..." >> $logfile
+    $bin_name $config
+  fi
+
+  current_level=$(get_current_partition_size)
+  # check if we still need to make space
+  if [ $current_level -gt $high_watermark ]; then
+    echo -e "$dt ERROR: $partition at $current_level% used is still over high watermark of $high_watermark%.  Removing content of deleted files held by running processes (see man lsof)." >> $logfile
+    lsof -w | grep $partition | grep " (deleted)$" | sort -u | awk '{ print ">/proc/" $2 "/fd/" substr($(NF-6),0,length($(NF-6))-1) }' | sh
+  fi
+
+  current_level=$(get_current_partition_size)
+  # check if we still need to make space
+  if [ $current_level -gt $high_watermark ]; then
+    echo -e "$dt ERROR: $partition at $current_level% used is still over high watermark of $high_watermark%.  Please consider increasing the partition size for $partition and/or removing log files.  You may also consider changing the var_${which}_high_watermark_percent and/or var_${which}_low_watermark_percent." >> $logfile
+  fi
+}
+
+echo -e "$dt Running logrotate_if_needed cron script ..." >> $logfile
+
+bin_name={{ logrotate_bin_path }}
+# bail if another instance is running
+if [ $(pidof -x $bin_name | wc -w) -gt 0 ]; then
+  echo -e "$dt Logrotate is already running. Exiting..." >> $logfile
+  exit 2
+fi
+
+# bail if logrotate is not installed
+if [ ! -f $bin_name ]; then
+  echo -e "$dt $bin_name not found. Is logrotate installed? If so, please make sure the logrotate_bin_path variable is set correctly. Exiting..." >> $logfile
+  exit 3
+fi
+
+# ready to see if we need to run logrotate now
+
+partition={{ var_log_partition }}
+which=log
+config=/etc/logrotate.conf
+low_watermark={{ var_log_low_watermark_percent }}
+high_watermark={{ var_log_high_watermark_percent }}
+
+check_high_low_watermarks
+
+partition={{ var_audit_partition }}
+if [ -d "$partition" ]; then
+  which=audit
+  config=/etc/auditlogrotate.conf
+  low_watermark={{ var_audit_low_watermark_percent }}
+  high_watermark={{ var_audit_high_watermark_percent }}
+
+  check_high_low_watermarks
+fi
+

@@ -1,0 +1,80 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+
+- name: KEYMGR-API | _validate_plugins_conf |
+    Configure to default when pkcs11 and kmip plugin is not enabled
+  set_fact:
+    barbican_secretstore_plugins: "store_crypto"
+    barbican_enabled_crypto_plugins: "simple_crypto"
+  when: use_pkcs11_crypto_plugin | bool == False and
+    use_kmip_secretstore_plugin | bool == False
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _validate_plugins_conf |
+    Fail that both pkcs11 and kmip plugins are  enabled
+  fail:
+    msg: "Both pkcs11 and kmip plugin cannot be enabled at the same time"
+  when: use_pkcs11_crypto_plugin | bool == True and
+    use_kmip_secretstore_plugin | bool == True
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _validate_plugins_conf |
+    Fail when library path is not set for pkcs11 plugin
+  fail:
+    msg: "For pkcs11, required pkcs11 library path is not set"
+  when: use_pkcs11_crypto_plugin | is_bool_true and
+    barbican_pkcs11_library_path | is_str_set| bool == False
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _validate_plugins_conf |
+    Fail when needed pkcs11 generate mkek variables are not set
+  fail:
+    msg: "For pkcs11, required pkcs11 library path,
+      passphrase or mkek label is not set"
+  when: barbican_pkcs11_generate_labels | is_bool_true and (
+        barbican_pkcs11_library_path | is_str_set | bool == False or
+        barbican_pkcs11_session_password | is_str_set | bool == False or
+        barbican_pkcs11_mkek_label | is_str_set | bool == False)
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _validate_plugins_conf |
+    Fail when needed pkcs11 generate hmac variables are not set
+  fail:
+    msg: "For pkcs11, required pkcs11 library path, passphrase or mkek label
+      is not set"
+  when: barbican_pkcs11_generate_labels | is_bool_true and (
+        barbican_pkcs11_library_path | is_str_set | bool == False or
+        barbican_pkcs11_session_password | is_str_set | bool == False or
+        barbican_pkcs11_hmac_label | is_str_set | bool == False)
+  tags:
+    - barbican
+
+- name: KEYMGR-API | _validate_plugins_conf |
+    Fail when needed HPE pkcs11 generate conf variables are not set
+  fail:
+    msg: "For HPE pkcs11 conf generation, required kmip host and port
+      is not set"
+  when: barbican_pkcs11_hpe_generate_conf | is_bool_true and (
+        barbican_pkcs11_hpe_kmip_host | is_str_set == False or
+        barbican_pkcs11_hpe_kmip_port | is_str_set == False)
+  tags:
+    - barbican

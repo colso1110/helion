@@ -1,0 +1,89 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+# Setup neutron-ovsvapp-agent specific configuration files.
+---
+- name: neutron-common | _configure_ovsvapp_agent | Decrypt the vCenter password
+  shell: /usr/bin/eon-encrypt -d "{{ vcenter_encrypted_password }}"
+  register: decrypt_result
+  delegate_to: localhost
+  no_log : True
+  any_errors_fatal: True
+  when: vcenter_encrypted_password|default("") != ""
+
+- name: neutron-common | _configure_ovsvapp_agent | Get vcenter password from EON
+  shell: eon get-vcenter-password "{{ vcenter_id }}"
+  register: vcenter_info_result
+  become: yes
+  any_errors_fatal: True
+  environment:
+    OS_USERNAME: "{{ eon_admin_user }}"
+    OS_PASSWORD: "{{ eon_admin_password }}"
+    OS_TENANT_NAME: "{{ eon_admin_tenant_name }}"
+    OS_AUTH_URL: "{{ neutron_auth_uri }}/v2.0"
+    OS_ENDPOINT_TYPE: "internalURL"
+    OS_REGION_NAME: "{{ neutron_api.public_region }}"
+  when: not vcenter_encrypted_password|default("")
+
+- name: neutron-common | _configure_ovsvapp_agent | Assign decrypted vcenter password
+  set_fact:
+    vmware_host_password: "{{ decrypt_result.stdout }}"
+  when: decrypt_result.changed
+
+- name: neutron-common | _configure_ovsvapp_agent | Report Get vCenter password error
+  fail:
+    msg: "{{ vcenter_info_result.stderr }}"
+  when: vcenter_info_result.changed and vcenter_info_result.stderr|length > 0
+
+- name: neutron-common | _configure_ovsvapp_agent | Assign vcenter password vmware_host_password
+  set_fact:
+    vmware_host_password: "{{ vcenter_info_result.stdout }}"
+  when: vcenter_info_result.changed
+
+- include: _write_conf.yml
+  src: "ovsvapp_agent.ini.j2"
+  dest: "ovsvapp_agent.ini"
+
+- name: neutron-common | _configure_ovsvapp_agent | Notify ovsvapp_agent of ovsvapp_agent.ini change
+  command: /bin/true
+  register: hlm_notify_neutron_ovsvapp_agent_restart_required
+  when: write_conf_result.changed==true
+
+- include: _write_conf.yml
+  src: "neutron-ovsvapp-agent.service.j2"
+  dest: "neutron-ovsvapp-agent.service"
+
+- include: _write_conf.yml
+  src: "neutron-ovsvapp-agent-monitor.service.j2"
+  dest: "neutron-ovsvapp-agent-monitor.service"
+
+- include: _write_conf.yml
+  src: "nginx-default.j2"
+  dest: "nginx-default"
+
+- name: neutron-common | _configure_ovsvapp_agent | Notify nginx of nginx-default change
+  command: /bin/true
+  register: hlm_notify_nginx_restart_required
+  when: write_conf_result.changed==true
+
+- include: _write_conf.yml
+  src: "ovsvapp-agent-logging.conf.j2"
+  dest: "ovsvapp-agent-logging.conf"
+
+- name: neutron-common | _configure_ovsvapp_agent | Notify ovsvapp_agent of ovsvapp-agent-logging.conf change
+  command: /bin/true
+  register: hlm_notify_neutron_ovsvapp_agent_restart_required
+  when: write_conf_result.changed==true

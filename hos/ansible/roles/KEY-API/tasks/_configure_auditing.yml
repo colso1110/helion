@@ -1,0 +1,72 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: KEY-API | _configure_auditing  | Enable auditing
+  ini_file:
+      dest: "{{ keystone_conf_dir }}/keystone.conf"
+      section: "oslo_messaging_notifications"
+      option: "driver"
+      value: "log"
+      owner: "{{ keystone_user }}"
+      group: "{{ keystone_group }}"
+      backup: no
+  become: yes
+  when: keystone_api_audit_enable
+  register: hlm_notify_keystone_change
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_auditing | Create auditing logging directory if not there
+  file:
+    path: "{{ keystone_audit_log_base_location }}/keystone"
+    owner: "{{ keystone_user }}"
+    group: "{{ keystone_group }}"
+    mode: 0755
+    state: directory
+  become: yes
+  when: keystone_api_audit_enable | bool
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_auditing | Touch the audit log file
+  file:
+    path: "{{ item }}"
+    owner: "{{ keystone_user }}"
+    group: "adm"
+    mode: 0640
+    state: touch
+  become: yes
+  with_items:
+    - "{{ keystone_audit_log_base_location }}/keystone/keystone-audit.log"
+  when: keystone_api_audit_enable | bool
+  tags:
+    - keystone
+
+- name: KEY-API | _configure_auditing  | Disable auditing
+  ini_file:
+      dest: "{{ keystone_conf_dir }}/keystone.conf"
+      section: "oslo_messaging_notifications"
+      option: "driver"
+      value: "noop"
+      owner: "{{ keystone_user }}"
+      group: "{{ keystone_group }}"
+      backup: no
+  become: yes
+  when: keystone_api_audit_enable == false
+  register: hlm_notify_keystone_change
+  tags:
+    - keystone

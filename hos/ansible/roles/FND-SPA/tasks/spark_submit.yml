@@ -1,0 +1,44 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: FND-SPA | spark_submit | Push quick_sum.py script for validation
+  become: yes
+  copy:
+    src: quick_sum.py
+    dest: "{{ spark_tools_dir }}/quick_sum.py"
+    owner: "{{ spark_user }}"
+    group: "{{ spark_group }}"
+    mode: 0775
+
+- name: FND-SPA | spark_submit | Submit quick_sum.py to spark
+  become_user: "{{ spark_user }}"
+  become: yes
+  shell: >
+    export SPARK_HOME={{ spark_current_dir }} &&
+    spark-submit --supervise --master spark://{{ spark_masters }} quick_sum.py
+  register:  spark_quick_sum_result
+  args:
+    chdir: "{{ spark_tools_dir }}"
+  run_once: True
+
+- name: FND-SPA | spark_submit | Announce quick sum result if failed
+  fail:
+    msg: |
+      Quick sum failed with output -
+      {{ spark_quick_sum_result.stdout }}
+      {{ spark_quick_sum_result.stderr }}
+  when: not ("{{ spark_quick_sum_result.stdout }}" == "Total is 15")
+  run_once: true

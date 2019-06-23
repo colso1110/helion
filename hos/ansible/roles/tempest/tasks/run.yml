@@ -1,0 +1,98 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: tempest | run | Generate the lock_path directory
+  become: yes
+  become_user: "{{ tempest_user }}"
+  command: mktemp -d
+  register: tempest_run_lock_path_result
+
+- name: tempest | run | Set lock_path in Tempest config
+  become: yes
+  become_user: "{{ tempest_user }}"
+  ini_file:
+    dest: "{{ tempest_run.conf_dir }}/{{ tempest_worker.config_filename }}"
+    section: DEFAULT
+    option: lock_path
+    value: "{{ tempest_run_lock_path_result.stdout }}"
+
+- name: tempest | run | Specialise run filter
+  become: yes
+  template:
+    src:  "{{ tempest_run.run_filters }}/{{ run_filter }}.txt.j2"
+    dest: "{{ tempest_run_lock_path_result.stdout }}/{{ run_filter }}.txt"
+    owner: "{{ tempest_user }}"
+    group: "{{ tempest_group }}"
+    mode: 0755
+
+- name: tempest | run | Trigger helion-tempest.sh
+  become: yes
+  become_user: "{{ tempest_user }}"
+  shell: >
+    cd {{ tempest_worker.resource_dir }} &&
+    {{ tempest_run.bin_dir }}/helion-tempest.sh
+    --config {{ tempest_worker.config_filename }}
+    --subunit {{ tempest_run.log_dir }}/{{ tempest_worker.subunit_filename }}
+    --run-filter {{ tempest_run_lock_path_result.stdout }}/{{ run_filter }}.txt
+    --os-test-timeout
+    {% if tempest_available.ironic | bool %}3600{% else %}500{% endif %}
+    >{{ tempest_run.log_dir }}/{{ tempest_worker.testr_log_filename }} 2>&1
+  # This make the shell command continue on failure and suppresses
+  # failed output.
+  failed_when: false
+  async: "{{ tempest_timeout_secs }}"
+  poll: "{{ tempest_poll_secs }}"
+  # This make the async continue on a timeout.
+  # Note: async module ignore 'failed_when' settings.
+  register: tempest_run_result
+  ignore_errors: true
+
+- name: tempest | run | Remove lock_path in Tempest config
+  become: yes
+  become_user: "{{ tempest_user }}"
+  ini_file:
+    dest: "{{ tempest_run.conf_dir }}/{{ tempest_worker.config_filename }}"
+    section: DEFAULT
+    option: lock_path
+    state: absent
+  failed_when: false
+
+- name: tempest | run | Delete lock_path directory
+  file:
+    path: "{{ tempest_run_lock_path_result.stdout }}"
+    state: absent
+  failed_when: false
+
+- name: tempest | run | Output any Tempest test results in Ansible
+  command: >
+    cat {{ tempest_run.log_dir }}/{{ tempest_worker.testr_log_filename }}
+  register: tempest_output_result
+  when: (tempest_run_result | failed)
+
+- name: tempest | run | Output any Tempest test results to user
+  debug:
+    msg: "{{ tempest_output_result.stdout_lines }}"
+  when: (tempest_run_result | failed) and
+        tempest_output_result.stdout != ""
+
+- name: tempest | run | Move Tempest test result to log directory
+  become: yes
+  become_user: "{{ tempest_user }}"
+  command: >
+    mv
+    {{ tempest_worker.resource_dir }}/{{ tempest_worker.log_filename }}
+    {{ tempest_run.log_dir }}/{{ tempest_worker.log_filename }}
+  failed_when: false

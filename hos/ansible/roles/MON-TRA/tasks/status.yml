@@ -1,0 +1,36 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: MON-TRA | status | Print service being checked
+  run_once: true
+  debug:
+    msg: "Running service check for {{ mon_tra_service_name }}"
+
+- name: MON-TRA | status | Check systemd service running
+  command: systemctl status {{ mon_tra_service_name }}
+  ignore_errors: yes
+  changed_when: false
+  register: mon_tra_systemctl_status_result
+
+- name: MON-TRA | status | Report status of "{{ mon_tra_service_name }}"
+  fail:
+    msg: |
+      {{ mon_tra_service_name }} is not running.
+      systemctl status {{ mon_tra_service_name }} output:
+      {{ mon_tra_systemctl_status_result.stdout }}
+      {{ mon_tra_systemctl_status_result.stderr }}
+  when: mon_tra_systemctl_status_result | failed

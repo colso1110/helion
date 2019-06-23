@@ -1,0 +1,44 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+hux_svc_os_group: "{{ ansible_env['USER'] }}"
+hux_svc_os_user: "{{ ansible_env['USER'] }}"
+hux_svc_deployement_path: "/home/{{ ansible_env['USER'] }}/scratch/ansible/next/"
+
+hux_svc_component: hlm-ux-services
+hux_svc_service: "{{ hux_svc_component }}"
+hux_svc_service_venv_name: hlm_ux_services
+hux_svc_log_dir: "/var/log/{{ hux_svc_component }}"
+hux_svc_process_logs_dir: "{{ hux_svc_component | venv_dir }}/logs"
+hux_svc_process_archive_dir: "{{ hux_svc_component | venv_dir }}/archive"
+hux_svc_port: "{{ HUX_SVC.advertises.vips.private[0].port }}"
+hux_svc_internal_service_url:  "{{ HUX_SVC.advertises.vips.private[0].url }}"
+hux_svc_bind_address: "{{ host.bind.HUX_SVC.internal.ip_address }}"
+hux_svc_systemd_path: "/usr/lib/systemd/system/{{ hux_svc_component }}.service"
+hux_svc_perform_upgrade_check: false
+hux_svc_default_log_level: info
+hux_svc_ignore_stop: false
+hux_svc_host_is_deployer: false
+
+keystone:
+  auth_url:  "{{ KEY_API.advertises.vips.private[0].url }}/v3"
+  project_name:  "{{ KEY_API.vars.keystone_admin_tenant }}"
+  project_domain_name:  "{{ KEY_API.vars.keystone_default_domain }}"
+  user_domain_name: "{{ KEY_API.vars.keystone_default_domain }}"
+  username: "{{ KEY_API.vars.keystone_admin_user }}"
+  password: "{{ KEY_API.vars.keystone_admin_pwd }}"
+  ca_cert_file: "/etc/ssl/certs/ca-certificates.crt"

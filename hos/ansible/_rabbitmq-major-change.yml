@@ -1,0 +1,133 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# RabbitMQ 3.4.3-3.6.0 workaround rule.
+- hosts: FND-RMQ
+  gather_facts: no
+  max_fail_percentage: 0
+  roles:
+    - iptables
+    - rabbitmq
+  tasks:
+    - name: rabbitmq | _rabbitmq-major-change | Set fact rabbitmq_major_change
+      set_fact:
+        _rabbitmq_major_change: "{{
+          ((hlm_notify_rabbitmq_major_change | default(false)) and
+            hlm_notify_rabbitmq_major_change.changed) }}"
+
+    # Stop messages entering a node by blocking the '*_listener' ports. Need
+    # to make the cluster go silent to reduce the likelihood of getting an
+    # Erlang Mnesia held lock (OTP-13284).
+    - include: roles/iptables/tasks/iptables-add.yml
+      vars:
+        iptables_chain: "{{ rabbitmq_iptables_chain }}"
+        iptables_ip_port: "{{ rabbitmq_bind_addresses }}"
+      when: (hlm_notify_rabbitmq_workaround_required | default(false)) and
+            hlm_notify_rabbitmq_workaround_required.changed and
+            (_rabbitmq_major_change | bool)
+
+
+# Take the cluster down to a single node for a major configuration change.
+- hosts: FND-RMQ:!{{ rabbitmq_primary_hostname |
+                      default('FND-RMQ--first-member') }}
+  gather_facts: no
+  max_fail_percentage: 0
+  # IMPORTANT: This is performed one host at a time as we must keep quorum as
+  #            we take the cluster down.
+  serial: 1
+  roles:
+    - iptables
+    - rabbitmq
+  tasks:
+    # Stop messages entering a node by blocking the '*_listener' ports. Need
+    # to do this here to stop traffic entering a node that we are
+    # reconfiguring. This gives early indication to the proxy to move any vips
+    # pointing at the node.
+    - include: roles/iptables/tasks/iptables-add.yml
+      vars:
+        iptables_chain: "{{ rabbitmq_iptables_chain }}"
+        iptables_ip_port: "{{ rabbitmq_bind_addresses }}"
+      when: (_rabbitmq_major_change | bool)
+
+    - include: roles/rabbitmq/tasks/stop.yml
+      when: (_rabbitmq_major_change | bool)
+
+
+- hosts: "{{ rabbitmq_primary_hostname |
+              default('FND-RMQ--first-member') }}"
+  gather_facts: no
+  max_fail_percentage: 0
+  roles:
+    - iptables
+    - rabbitmq
+  tasks:
+    # Stop messages entering a node by blocking the '*_listener' ports. Need
+    # to do this here to stop traffic entering a node that we are
+    # reconfiguring. This gives early indication to the proxy to move any vips
+    # pointing at the node.
+    - include: roles/iptables/tasks/iptables-add.yml
+      vars:
+        iptables_chain: "{{ rabbitmq_iptables_chain }}"
+        iptables_ip_port: "{{ rabbitmq_bind_addresses }}"
+      when: (_rabbitmq_major_change | bool)
+
+    # We do not reset the node as it the only node left form a cluster so we
+    # must maintain its database.
+    - include: roles/rabbitmq/tasks/stop.yml
+      vars:
+        rabbitmq_do_not_reset_node: true
+      when: (not
+              ((hlm_notify_rabbitmq_restart_required | default(false)) and
+                hlm_notify_rabbitmq_restart_required.changed)) and
+            (_rabbitmq_major_change | bool)
+
+
+# At this point we are in the situation where the only running node is the
+# rabbitmq primary.
+# Next steps are:
+#   * Write any new config to the system.
+#   * Upgrade all nodes by installing the latest packages if required.
+#     NOTE: This will cause the primary node to be restarted, and perform
+#           the Erlang Mnesia schema change.
+#   * Start all nodes - this will trigger join cluster.
+#   * Remove block on '*_listener' ports.
+- hosts: FND-RMQ
+  gather_facts: no
+  max_fail_percentage: 0
+  roles:
+    - iptables
+    - rabbitmq
+  tasks:
+    - include: roles/rabbitmq/tasks/write-configuration.yml
+      when: (_rabbitmq_major_change | bool)
+
+    - include: roles/rabbitmq/tasks/install.yml
+      when: ((hlm_notify_rabbitmq_restart_required | default(false)) and
+              hlm_notify_rabbitmq_restart_required.changed) and
+            (_rabbitmq_major_change | bool)
+
+    - include: roles/rabbitmq/tasks/start.yml
+      when: (_rabbitmq_major_change | bool)
+
+    # Remove block on '*_listener' ports.
+    - include: roles/iptables/tasks/iptables-delete.yml
+      vars:
+        iptables_chain: "{{ rabbitmq_iptables_chain }}"
+        iptables_ip_port: "{{ rabbitmq_bind_addresses }}"
+      when: (_rabbitmq_major_change | bool)
+
+    - include: roles/rabbitmq/tasks/status.yml
+      when: (_rabbitmq_major_change | bool)

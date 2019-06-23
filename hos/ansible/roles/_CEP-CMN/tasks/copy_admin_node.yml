@@ -1,0 +1,36 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Obtain the ceph admin node fact from localhost, ie the deployer, as it
+# should have already been determined by the deployer
+- name: _CEP-CMN | copy_admin_node | Transfer ceph_active_monitors fact
+  set_fact: ceph_active_monitors="{{
+    hostvars.get('localhost').get('ceph_active_monitors') }}"
+  when: >
+    hostvars.get('localhost') != None
+    and hostvars.get('localhost').get('ceph_active_monitors') is defined
+
+- name: _CEP-CMN | copy_admin_node | Transfer ceph_admin_node fact
+  set_fact: ceph_admin_node="{{
+    hostvars.get('localhost').get('ceph_admin_node') }}"
+  when: >
+    hostvars.get('localhost') != None
+    and hostvars.get('localhost').get('ceph_admin_node') is defined
+
+- name: _CEP-CMN | copy_admin_node | Fail if no ceph admin node
+  fail: msg="ceph_admin_node is undefined"
+  when: ceph_admin_node is not defined

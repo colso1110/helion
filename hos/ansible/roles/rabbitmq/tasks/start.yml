@@ -1,0 +1,100 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: rabbitmq | start | Ensure that RabbitMQ service is started
+  become: yes
+  service:
+    name: rabbitmq-server
+    enabled: no
+    state: started
+  register: _rabbitmq_start_result
+
+# It is possible that RabbitMQ service was started but we are at stop_app
+# so let's guarantee the RabbitMQ application is also started.
+- name: rabbitmq | start | Get RabbitMQ status
+  become: yes
+  command: rabbitmqctl status
+  changed_when: false
+  register: _rabbitmq_start_status_result
+  when: not _rabbitmq_start_result.changed
+
+- name: rabbitmq | start | Run start_app if RabbitMQ application is stopped
+  become: yes
+  command: |
+    timeout {{ rabbitmq_start_app_timeout }}
+    rabbitmqctl start_app
+  register: _rabbitmq_start_app_result
+  when: not _rabbitmq_start_result.changed and
+        not (_rabbitmq_start_status_result.stdout |
+              search('{rabbit,"RabbitMQ",.*},'))
+
+# Wait for the RabbitMQ application to start.
+- name: rabbitmq | start | Wait for the RabbitMQ application to start
+  become: yes
+  command: |
+    timeout {{ rabbitmq_start_timeout }}
+    rabbitmqctl wait {{ rabbitmq_env.pid_file }}
+  changed_when: false
+  when: _rabbitmq_start_result.changed or
+        _rabbitmq_start_app_result.changed
+
+# Configure 'rabbitmq_primary_hostname' RabbitMQ node to be able to form and
+# synchronisable a HA cluster.
+- include: _configure-ha-cluster.yml
+  when: inventory_hostname == rabbitmq_primary_hostname
+
+# We have to work across the cluster here as to join a host at least two must
+# be online and hence this is a serialisation inside the task.
+#
+# The hosts are taken down using the stop play the rabbitmq_primary_hostname
+# is taken down last, so during the cluster rejoin, the other hosts must join
+# to the rabbitmq_primary_hostname host first.
+#
+# Cluster remote to primary.
+- include: _cluster-check.yml
+  when: inventory_hostname == rabbitmq_remote_hostname and
+        (rabbitmq_clustered | bool)
+
+# Cluster nodes that are not primary or remote to primary.
+- include: _cluster-check.yml
+  when: inventory_hostname != rabbitmq_primary_hostname and
+        inventory_hostname != rabbitmq_remote_hostname and
+        (rabbitmq_clustered | bool)
+
+# Cluster primary to remote.
+- include: _cluster-check.yml
+  when: inventory_hostname == rabbitmq_primary_hostname and
+        (rabbitmq_clustered | bool)
+
+# Enable any registered RabbitMQ plugins. This must be done after clustering to
+# correctly set-up the distributed DB used by RabbitMQ. We serialize the
+# install so we always get a master node up for distributed plugins.
+- include: _enable-plugins.yml
+  when: inventory_hostname == rabbitmq_primary_hostname
+
+- include: _enable-plugins.yml
+  when: inventory_hostname != rabbitmq_primary_hostname and
+        (rabbitmq_clustered | bool)
+
+# We retry here as logrotate may be running.
+- name: rabbitmq | start | Rotate the logs on startup
+  become: yes
+  command: logrotate -f /etc/logrotate.d/rabbitmq-server
+  register: _rabbitmq_start_logrotate_result
+  until: (_rabbitmq_start_logrotate_result | success)
+  retries: 5
+  delay: 10
+  when: _rabbitmq_start_result.changed

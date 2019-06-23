@@ -1,0 +1,36 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+#
+# Vars used during monasca custom agent configuration
+#
+
+# Default list of files from which cephlm_check will read metrics.
+cephlm_check_metrics_files:
+  - "/var/cache/cephlm/*.json"
+
+# Default list of subcommands that cephlm_check will use with cephlm-probe.
+# Note: this list must NOT contain whitespace
+cephlm_check_subcommands: []
+
+# Default list of subcommands for which cephlm_check not report measurements
+# with value OK (0).
+cephlm_check_suppress_ok: []
+
+# Ceph capacity alert percentages
+near_full_cap_perc: 75
+full_cap_perc: 85

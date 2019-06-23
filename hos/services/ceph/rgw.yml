@@ -1,0 +1,63 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+  product:
+    version: 2
+
+  service-components:
+  -  name: ceph-radosgw
+     mnemonic: CEP-RGW
+     service: ceph
+
+     endpoints:
+     -  port: 8079
+        has-vip: true
+        vip-options:
+        -  "balance leastconn"
+        -  "option httpchk GET /"
+        -  "mode http"
+        -  "rsprep ^X-Storage-Url:\\ http://(.*)   X-Storage-Url:\\ https://\\1 if { ssl_fc }"
+        roles:
+        -  public
+        -  internal
+        -  admin
+
+     requires:
+     -  name: apache2
+        scope: host
+     # Needed for keystone registration of service.
+     -  name: keystone-client
+        scope: host
+
+     consumes-services:
+     -  service-name: CEP-MON
+     -  service-name: KEY-API
+        relationship-vars:
+        -   name: keystone_rgw_user
+            value: radosgw
+        -   name: keystone_rgw_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+     advertises-to-services:
+     -  service-name: KEY-API
+        entries:
+        -   service-name: ceph-rgw
+            service-type: ceph-object-store
+            service-description: "Ceph Object Storage Service"
+            url-suffix: "/swift/v1"

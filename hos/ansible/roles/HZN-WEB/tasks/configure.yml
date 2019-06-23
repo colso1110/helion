@@ -1,0 +1,60 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Configure horizon
+---
+
+# Create horizon local_settings.py from template
+- name: HZN-WEB | configure | Copy local_settings.py to horizon venv
+  template:
+    src: local_settings.py
+    dest: "{{ horizon_site_packages_dir }}/openstack_dashboard/local/"
+  register: hlm_notify_horizon_config_changed
+
+- name: HZN-WEB | configure | Symlink local_settings.py to horizon/etc
+  file:
+    state: link
+    src: "{{ horizon_site_packages_dir }}/openstack_dashboard/local/local_settings.py"
+    dest: "{{ horizon_conf_dir }}/local_settings.py"
+
+- name: HZN-WEB | configure | Symlink local/enabled to horizon/etc
+  file:
+    state: link
+    src: "{{ horizon_site_packages_dir }}/openstack_dashboard/local/enabled"
+    dest: "{{ horizon_conf_dir }}/enabled"
+
+# Create django secret key
+- name: HZN-WEB | configure | Create django secret key
+  template:
+    src: .secret_key_store
+    dest: "{{ horizon_conf_dir }}"
+  register: hlm_notify_horizon_config_changed
+
+# Create horizon vhost config from template
+- name: HZN-WEB | configure | Create Apache vhost config for Horizon
+  template:
+    src: horizon.conf
+    dest: /etc/apache2/sites-available
+  register: hlm_notify_horizon_apache_config_changed
+
+# This is necessary because it's python logging to this file, and logging is
+# initialized early enough for the file to become root owned otherwise.
+- name: HZN-WEB | configure | Touch horizon-json log file
+  file:
+    path: /var/log/horizon/horizon-json.log
+    owner: "{{ horizon_user }}"
+    group: "{{ horizon_group }}"
+    mode: 0644
+    state: touch

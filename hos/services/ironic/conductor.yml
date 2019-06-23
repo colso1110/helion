@@ -1,0 +1,99 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+product:
+    version: 2
+
+service-components:
+-   name: ironic-conductor
+    mnemonic: IRN-CND
+    service: ironic
+
+    requires:
+    # Required for nova-cloud-configure availability zones set-up and
+    # Ironic deploy image upload to glance.
+    - name: openstack-client
+      scope: host
+    # Needed for keystone registration of service.
+    - name: neutron-client
+      scope: host
+    # Needed to define flavours in cloud-configure
+    - name: nova-client
+      scope: host
+    # swift client for configuration
+    - name: swift-client
+      scope: host
+    # Needed to run ironic vhost for ipxe-http
+    - name: apache2
+      scope: host
+
+    endpoints:
+    -   port: '69'
+        protocol: 'udp'
+        has-vip: false
+        roles:
+        - tftp
+    -   port: '6386'
+        has-vip: false
+        roles:
+        - ipxe_http
+
+    config-set:
+    -   name: IRN-CND
+        ansible-vars:
+        -   name: swift_temp_url_key
+            value: '%random-password%'
+            properties:
+                min-length: 32
+                max-length: 32
+                # basic alphanumeric
+                available-chars: abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
+
+    consumes-services:
+    -   service-name: FND-MDB
+    -   service-name: FND-RMQ
+    -   service-name: GLA-API
+    -   service-name: IRN-API
+    -   service-name: NEU-SVR
+    -   service-name: SWF-PRX
+        optional: true
+    -   service-name: KEY-API
+        relationship-vars:
+        -   name: keystone_glance_user
+            value: glance
+        -   name: keystone_glance_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: keystone_ironic_user
+            value: ironic
+        -   name: keystone_ironic_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8
+
+        -   name: keystone_glance_swift_user
+            value: glance-swift
+        -   name: keystone_glance_swift_tenant
+            value: glance-swift
+        -   name: keystone_glance_swift_password
+            value: '%random-password%'
+            properties:
+                max-length: 12
+                min-length: 8

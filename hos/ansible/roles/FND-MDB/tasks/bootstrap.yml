@@ -1,0 +1,85 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Confidential computer software. Valid license from HPE required for
+# possession, use or copying. Consistent with FAR 12.211 and 12.212,
+# Commercial Computer Software, Computer Software Documentation, and
+# Technical Data for Commercial Items are licensed to the U.S.
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: FND-MDB | bootstrap | Bootstrap MDB Master
+  become: yes
+  command: '/etc/init.d/mysql restart-bootstrap'
+  register: mysql_bootstrap_result
+  run_once_per: verb_hosts.FND_MDB
+  when: not (mysql_bootstrapped | bool)
+
+- name: FND-MDB | bootstrap | Make sure MDB Master started
+  become: yes
+  service:
+    name: "{{ item }}"
+    state: started
+  with_items: mysql
+  when: (mysql_bootstrapped | bool)
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | bootstrap | Create initialisation file
+  become: yes
+  delegate_to: "{{ item }}"
+  file:
+    path: "{{ mysql_initialised }}"
+    state: touch
+    mode: 0660
+    owner: mysql
+    group: mysql
+  with_items: "{{ mysql_mdb_hosts }}"
+  when: mysql_bootstrap_result | success
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | bootstrap | Wait for MDB master
+  wait_for:
+    host: "{{ mysql_bind_address }}"
+    port: "{{ mysql_server_port }}"
+    timeout: 30
+  run_once_per: verb_hosts.FND_MDB
+
+# Restart here so that service mysql status indicates mysql
+# is up
+- name: FND-MDB | bootstrap | Restart MDB Master
+  become: yes
+  service:
+    name: "{{ item }}"
+    state: restarted
+  with_items: mysql
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | bootstrap | Wait for MDB master
+  wait_for:
+    host: "{{ mysql_bind_address }}"
+    port: "{{ mysql_server_port }}"
+    timeout: 30
+  run_once_per: verb_hosts.FND_MDB
+
+# Check here to see if database is really up
+# For now don't fail here but try to keep going if some nodes not up
+# A failure here however probably indicates a hard failure so ignore_errors
+# should be removed if all codepaths show this
+- name: FND-MDB | bootstrap | Check if I can connect to the database
+  become: yes
+  shell: mysql -e "select 1"
+  register: mysql_connect_result
+  until: mysql_connect_result | success
+  retries: 10
+  delay: 4
+  ignore_errors: yes

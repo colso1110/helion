@@ -1,0 +1,34 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Validate play and lock any configuration required.
+- include: _rabbitmq-validate.yml
+
+- hosts: FND-RMQ
+  max_fail_percentage: 0
+  gather_facts: no
+  roles:
+    - rabbitmq
+  tasks:
+    # Sets-up 'check-upgraded-pkgs' value.
+    - include: roles/hlm-upgrade-tools/tasks/pkg-query.yml
+    # based on the result of 'check-upgraded-pkgs'
+    # hlm_notify_rabbitmq_major_change.changed may be set here to determine
+    # which upgrade is run in _rabbitmq_change below.
+    - include: roles/rabbitmq/tasks/check-upgraded-pkgs.yml
+
+# Change the RabbitMQ configuration.
+- include: _rabbitmq-change.yml

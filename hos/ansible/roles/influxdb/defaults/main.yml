@@ -1,0 +1,33 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+influxdb_raft_port: 8088
+influxdb_hostname: "{{ host.bind.FND_IDB.internal.ip_address }}"
+
+run_mode: Deploy
+skip_install: False
+
+influxdb_bind_address: "{{ host.bind.FND_IDB.internal.ip_address }}"
+influxdb_client_port: "{{ FND_IDB.members.private[0].port }}"
+influxdb_node_count: "{{ FND_IDB.members.private | length }}"
+influxdb_admin: "{{ FND_IDB.vars.influxdb_admin_user_name | default('root') }}"
+influxdb_admin_password: "{{ FND_IDB.vars.influxdb_admin_user_password | default('root') }}"
+influxdb_url: http://{{ influxdb_bind_address }}:{{ influxdb_client_port }}
+influxdb_data_dir: "/var/opt/influxdb"
+influxdb_log_dir: "/var/log/influxdb"
+influxdb_https_enabled: "false"
+influxdb_http_cert: "/etc/ssl/influxdb.pem"
+influxdb_conf_dir: "/etc/influxdb"

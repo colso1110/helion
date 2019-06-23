@@ -1,0 +1,37 @@
+#
+# (c) Copyright 2015, 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- include: _osconfig-base.yml
+
+- include: network_interface-deploy.yml
+
+- include: osconfig-iptables-deploy.yml
+
+- hosts: "{{ osconfig_resources | default('resources') }}:&NTP-SVR"
+  roles:
+    - osconfig
+  tasks:
+  - include: roles/osconfig-ntp-server/tasks/install.yml
+  - include: roles/osconfig-ntp-server/tasks/configure.yml
+  - include: roles/osconfig-ntp-server/tasks/start.yml
+
+- hosts: "{{ osconfig_resources | default('resources') }}:&NTP-CLI"
+  roles:
+    - osconfig
+  tasks:
+  - include: roles/osconfig-ntp-client/tasks/install.yml
+  - include: roles/osconfig-ntp-client/tasks/configure.yml
+  - include: roles/osconfig-ntp-client/tasks/start.yml

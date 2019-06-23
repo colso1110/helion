@@ -1,0 +1,37 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: eon-common | remove_cobbler_node | check if cobbler installed
+  become: yes
+  stat:
+    path: /usr/bin/cobbler
+  register: cobbler_installed_result
+  tags: register
+
+- name: eon-common | remove_cobbler_node | get cobbler provisioned nodes
+  become: yes
+  shell: cobbler system list
+  register: cobbler_system_list_result
+  tags: register
+  when: cobbler_installed_result.stat.exists == True
+
+- name: eon-common | remove_cobbler_node |
+    remove provisoned node from cobbler db
+  become: yes
+  command: cobbler system remove --name="{{ nodename }}"
+  when: cobbler_installed_result.stat.exists == True and
+    nodename in cobbler_system_list_result.stdout

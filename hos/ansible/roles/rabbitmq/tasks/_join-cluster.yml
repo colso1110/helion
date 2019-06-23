@@ -1,0 +1,82 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: rabbitmq | _join-cluster | Stop the RabbitMQ application for clustering
+  become: yes
+  command: |
+    timeout {{ rabbitmq_stop_app_timeout }}
+    rabbitmqctl stop_app
+
+# If RC is zero we have joined the cluster correctly.
+# If RC is non-zero then the remote node may think we are already in cluster
+# with the local node.
+- name: rabbitmq | _join-cluster | Join the RabbitMQ cluster
+  become: yes
+  command: |
+    timeout {{ rabbitmq_join_cluster_timeout }}
+    rabbitmqctl join_cluster "{{ rabbitmq_remote_nodename }}"
+  register: _rabbitmq_join_result
+  failed_when: >
+    (_rabbitmq_join_result | failed) and
+    (not (_rabbitmq_join_result.stdout | search("already_member"))) and
+    (not (_rabbitmq_join_result.stderr | search("already_member")))
+
+# If the join cluster command fail the remote may think we are already in
+# cluster. This is a different scenario from join_cluster since the node
+# does not need to become a member of the cluster. The need for this
+# command is motivated by the fact that clusters can change while a node
+# is offline. This in effect make the node become running.
+- name: rabbitmq | _join-cluster | Join the RabbitMQ update_cluster_nodes
+  become: yes
+  command: |
+    rabbitmqctl update_cluster_nodes "{{ rabbitmq_remote_nodename }}"
+  when: (_rabbitmq_join_result | failed)
+
+- name: rabbitmq | _join-cluster | Start the RabbitMQ application
+  become: yes
+  command: |
+    timeout {{ rabbitmq_start_app_timeout }}
+    rabbitmqctl start_app
+
+- name: rabbitmq | _join-cluster | Wait for RabbitMQ application to start
+  become: yes
+  command: |
+    timeout {{ rabbitmq_start_timeout }}
+    rabbitmqctl wait {{ rabbitmq_env.pid_file }}
+  changed_when: false
+
+# Check the remote host and local host thinks we are now in cluster.
+# This is done remotely as locally we would have failed update_cluster_nodes
+# or join_cluster and stopped.
+- name: rabbitmq | _join-cluster | Check RabbitMQ is in a cluster
+  become: yes
+  delegate_to: "{{ item.ansible_host }}"
+  shell: >
+    rabbitmqctl cluster_status 2>/dev/null |
+    awk '/running_nodes,\[[^]]+,/,/]},/' |
+    sed 's/,\([^[]\)/,\n\1/g'
+  register: _rabbitmq_join_status_result
+  changed_when: false
+  failed_when: >
+    (_rabbitmq_join_status_result | success) and
+    (not (_rabbitmq_join_status_result.stdout |
+          search(item.hlm_host)))
+  with_items:
+    - ansible_host: "{{ rabbitmq_remote_host }}"
+      hlm_host: "{{ rabbitmq_nodename }}"
+
+    - ansible_host: "{{ inventory_hostname }}"
+      hlm_host: "{{ rabbitmq_remote_nodename }}"

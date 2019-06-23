@@ -1,0 +1,66 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: eon-common | configure_user_keys | set hlmuser and hlmuser home
+  set_fact:
+    hlmuser : "{{ hlm_user }}"
+    hlmuser_home: "{{ hlm_user_home }}"
+
+- name: eon-common | configure_user_keys | set public key path
+  set_fact:
+    lookup_file: "{{ hlmuser_home }}/.ssh/id_rsa.pub"
+
+- name: eon-common | configure_user_keys | Add system user group
+  become: yes
+  group:
+    name: "{{ hlmuser }}"
+
+- name: eon-common | configure_user_keys | Add system user account
+  become: yes
+  user:
+    name: "{{ hlmuser }}"
+    groups: "{{ hlmuser }}"
+    home: "{{ hlmuser_home }}"
+    shell: "/bin/bash"
+    system: True
+    password: "{{ hlmpassword|password_hash('sha512') }}"
+
+- name: eon-common | configure_user_keys | configure user for sudoers
+  become: yes
+  lineinfile:
+    dest: "/etc/sudoers"
+    backup: "yes"
+    state: "present"
+    insertafter: "^# %wheel"
+    line: "{{ hlmuser }} ALL=(ALL) NOPASSWD: ALL"
+  tags: config-sudoers
+
+- name: eon-common | configure_user_keys | create ssh directory
+  file:
+    path: "{{ hlmuser_home }}/.ssh"
+    owner: "{{ hlmuser }}"
+    group: "{{ hlmuser }}"
+    mode: 0700
+    state: "directory"
+
+- name: eon-common | configure_user_keys | add public key to authorized keys
+  authorized_key:
+    user: "{{ hlmuser }}"
+    key: "{{ item }}"
+    state: "present"
+  with_file:
+    - "{{ lookup_file }}"

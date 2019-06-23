@@ -1,0 +1,55 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- hosts: KEYMGR-API
+  gather_facts: True
+  roles:
+    - KEYMGR-API
+  tasks:
+    - include: roles/KEYMGR-API/tasks/configure.yml
+
+- hosts: KEYMGR-WKR
+  roles:
+    - KEYMGR-WKR
+  tasks:
+    - include: roles/KEYMGR-WKR/tasks/configure.yml
+
+# Register necessary user, barbican roles, role assignment for api service.
+- hosts: KEYMGR-API
+  roles:
+    - role: KEYMGR-API
+  tasks:
+    - include: roles/KEYMGR-API/tasks/keystone_conf.yml
+      ansible_python_interpreter:
+        "{{ KEY_CLI.vars.keystone_client_python_interpreter }}"
+
+# Split the tasks to enable serial restart
+- hosts: KEYMGR-API
+  serial: "50%"
+  roles:
+    - role: KEYMGR-API
+  tasks:
+    - include: roles/KEYMGR-API/tasks/start.yml
+
+- hosts: KEYMGR-WKR
+  serial: "50%"
+  roles:
+    - role: KEYMGR-WKR
+  tasks:
+    - include: roles/KEYMGR-WKR/tasks/start.yml
+
+- include: barbican-configure-monasca.yml

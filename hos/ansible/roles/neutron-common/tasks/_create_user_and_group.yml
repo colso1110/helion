@@ -1,0 +1,57 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- name: neutron-common | _create_user_and_group |
+    Check for presence of group neutron_group
+  command: "grep -q {{ neutron_group }} /etc/group"
+  register: group_chk_result
+  ignore_errors: True
+
+- name: neutron-common | _create_user_and_group | Add group neutron_group
+  become: yes
+  group:
+    name: "{{ neutron_group }}"
+    system: yes
+  when: group_chk_result|failed
+
+- name: neutron-common | _create_user_and_group |
+    Check for presence of user neutron_user
+  command: "id {{ neutron_user }}"
+  register: user_chk_result
+  ignore_errors: True
+
+- name: neutron-common | _create_user_and_group | Add user neutron_user
+  become: yes
+  user:
+    name: "{{ neutron_user }}"
+    group: "{{ neutron_group }}"
+    system: yes
+    createhome: no
+    home: /var/lib/neutron
+    shell: /bin/false
+  when: user_chk_result|failed
+
+- name: neutron-common | _create_user_and_group |
+    Set permissions of neutron hierarchy under installation_directory
+  become: yes
+  file:
+    path: "{{ installation_directory }}/neutron"
+    owner: "{{ neutron_user }}"
+    group: "{{ neutron_group }}"
+    mode: 0755
+    state: directory
+    recurse: yes

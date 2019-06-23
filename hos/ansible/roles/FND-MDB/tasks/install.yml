@@ -1,0 +1,47 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- include: check_install.yml
+
+- name: FND-MDB | install | Print latest available version
+  debug:
+    msg: "percona_latest_avail_version {{ percona_latest_avail_version }}"
+
+- name: FND-MDB | install | Install MDB packages
+  become: yes
+  apt:
+    pkg: "{{ item }}"
+    force: yes
+  with_items:
+    - percona-xtradb-cluster-server-{{ percona_latest_avail_version }}
+    - python-mysqldb
+    - xinetd # for clustercheck
+    - curl
+  register: packages_installed_result
+  when: not ( mysql_is_major_upgrade | bool )
+
+- include: stop.yml
+  when: packages_installed_result.changed or ( mysql_is_major_upgrade | bool )
+
+- name: FND-MDB | install | Ensure restart xinetd
+  become: yes
+  meta: flush_handlers
+
+- name: FND-MDB | install | Enable MDB services
+  become: yes
+  command: systemctl enable {{ item }}.service
+  with_items:
+    - mysql

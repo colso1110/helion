@@ -1,0 +1,34 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+phys_dev_mappings: "{% set temp_list = [] %}
+                       {%- if network_pci_pt_sriov_interfaces is defined -%}
+                           {%- for pci_interface in network_pci_pt_sriov_interfaces -%}
+                               {%- if pci_interface.tags is defined and pci_interface.vf_count is defined and (pci_interface.vf_count | int) > 0 -%}
+                                   {%- for tag in pci_interface.tags -%}
+                                       {%- if tag.tag == 'neutron.networks.flat' or tag.tag == 'neutron.networks.vlan' -%}
+                                           {%- if tag.data_values -%}
+                                               {%- if 'provider-physical-network' in tag.data_values -%}
+                                                   {%- set mapping = tag.data_values['provider-physical-network']+':'+pci_interface.device -%}
+                                                   {%- if temp_list.append( mapping ) -%}{%- endif -%}
+                                               {%- endif -%}
+                                           {%- endif -%}
+                                       {%- endif -%}
+                                   {%- endfor -%}
+                               {%- endif -%}
+                           {%- endfor -%}
+                       {%- endif -%}
+                       {{ temp_list|unique|join(',')}}"

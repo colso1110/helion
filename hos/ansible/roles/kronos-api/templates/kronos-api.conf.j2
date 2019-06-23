@@ -1,0 +1,59 @@
+{#
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+[DEFAULT]
+# logging, make sure that the user under whom the server runs has permission
+# to write to the directory.
+debug = {{ kronos_api_debug }}
+log_dir = {{ kronos_log_dir }}
+log_file = {{ kronos_api_log_file }}
+
+# Dispatchers to be loaded to serve restful APIs
+[dispatcher]
+logs = monasca_log_api.reference.v2.logs:Logs
+logs_v3 = monasca_log_api.reference.v3.logs:Logs
+versions = monasca_log_api.reference.versions:Versions
+healthchecks = monasca_log_api.reference.healthchecks:HealthChecks
+
+[service]
+region = 'region-one'
+max_log_size = {{ kronos_api_max_log_size }}
+
+[log_publisher]
+topics = {{ kronos_kafka_topic }}
+kafka_url = {{ kronos_kafka_hosts }}
+
+[keystone_authtoken]
+admin_user = {{ kronos_api_user }}
+admin_password = {{ kronos_api_password }}
+admin_tenant_name = {{ kronos_project }}
+identity_uri = {{ keystone_admin_identity_uri }}
+auth_uri = {{ keystone_admin_auth_uri }}
+cafile = {{ keystone_admin_authtoken_cafile }}
+certfile = {{ keystone_admin_authtoken_certfile }}
+keyfile = {{ keystone_admin_authtoken_keyfile }}
+insecure = {{ keystone_admin_authtoken_insecure }}
+
+[kafka_healthcheck]
+topics = {{ kronos_kafka_topic }}
+kafka_url = {{ kronos_kafka_hosts }}
+
+[roles_middleware]
+path = /v2.0/log
+path = /v3.0/logs
+agent_roles = {{ kronos_api_middleware_agent_roles }}
+default_roles =  {{ kronos_api_middleware_default_roles }}

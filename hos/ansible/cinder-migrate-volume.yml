@@ -1,0 +1,154 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Usage:
+# If the storage input model is not being used specify the index of the host
+# which will run the Cinder volume and backup services in the cinder control
+# plane specific fact file. The fact files for each control plane are on the
+# lifecycle-manager in the /etc/ansible/facts.d directory. Each fact file
+# should only contain the index number of the host which will run the
+# Cinder volume and backup services. The host index numbers can be obtained
+# by running the cinder-show-volume-hosts.yml playbook.
+#
+# If the storage input model is being used specify the assignment of backends
+# to hosts in the /etc/ansible/facts.d/cinder_backend_assignment.fact file.
+# The assignment should be specified in json format as follows:
+#{
+#  "<BACKEND_NAME>": "<HOSTNAME>",
+#  "<BACKEND_NAME>": "<HOSTNAME>",
+#  "<BACKEND_NAME>": "<HOSTNAME>",
+#  "<BACKEND_NAME>": "<HOSTNAME>"
+#}
+# After the relevant fact file(s) have been edited run the cinder migration
+# playbook as follows:
+#   ansible-playbook -i hosts/verb_hosts cinder-migrate-volume.yml \
+#   --limit=<LIMIT_PATTERN>
+# where LIMIT_PATTERN is the pattern used to limit the hosts selected to a
+# specific control plane. The cinder-migrate-volume.yml has to be run for
+# each control plane where migrations are needed.
+
+
+# Verify that the specified host index is valid before
+# performing migrate
+- hosts: CND-VOL
+  max_fail_percentage: 0
+  roles:
+    - guard-cluster
+    - _CND-CMN
+  tasks:
+    - include: roles/_CND-CMN/tasks/check_migrate_hostindex.yml
+
+# Confirm that Cinder volume and backup are being migrated
+# to the expected host
+# During CI tests, confirm_cinder_migrate is set to false
+# and the migrate_confirmation playbook is not executed.
+- hosts: CND-VOL
+  vars:
+    confirm_cinder_migrate: true
+  roles:
+    - _CND-CMN
+  tasks:
+      - include: roles/_CND-CMN/tasks/migrate_confirmation.yml
+        when: confirm_cinder_migrate
+
+# Stop cinder volume monitoring on all CND-VOL hosts.
+# - avoid false alarms during migration
+- hosts: CND-VOL:&MON-AGN
+  become: yes
+  roles:
+    - {role: monasca-agent, run_mode: Use}
+    - cinder-monitor
+  tasks:
+    - include: roles/cinder-monitor/tasks/monasca_alarms.yml
+      vars:
+        cinder_volume_monitor_state: absent
+
+# Stop cinder volume on all CND-VOL hosts.
+- hosts: CND-VOL
+  become: yes
+  roles:
+    - CND-VOL
+  tasks:
+    - include: roles/CND-VOL/tasks/stop.yml
+
+# Stop Cinder Backup on all CND-BCK hosts
+- hosts: CND-BCK
+  become: yes
+  roles:
+    - CND-BCK
+  tasks:
+    - include: roles/CND-BCK/tasks/stop.yml
+
+# The enabled_backends configuration in cinder.conf may be
+# updated by the migrate. Calling the CND-API and CND-SCH
+# configure tasks so that the cinder.conf files in all
+# cinder venvs are consistent
+
+- hosts: CND-API
+  become: yes
+  roles:
+    - CND-API
+  tasks:
+    - include: roles/CND-API/tasks/configure.yml
+
+- hosts: CND-SCH
+  become: yes
+  roles:
+    - CND-SCH
+  tasks:
+    - include: roles/CND-SCH/tasks/configure.yml
+
+# If config_data.CND is not defined the Cinder volume
+# and backup services will only be started on the host
+# specified in the cinder control plane specific fact file.
+# If config_data.CND is defined Cinder Volume and Backup
+# will be started on all CND-VOL hosts
+
+- hosts: CND-VOL
+  become: yes
+  roles:
+    - CND-VOL
+  tasks:
+    - include: roles/CND-VOL/tasks/configure.yml
+    - include: roles/CND-VOL/tasks/start.yml
+    - include: roles/CND-VOL/tasks/populate.yml
+
+- hosts: CND-BCK
+  become: yes
+  roles:
+    - CND-BCK
+  tasks:
+    - include: roles/CND-BCK/tasks/configure.yml
+    - include: roles/CND-BCK/tasks/start.yml
+    - include: roles/CND-BCK/tasks/populate.yml
+
+# Start cinder volume monitoring on all CND-VOL hosts.
+- hosts: CND-VOL:&MON-AGN
+  become: yes
+  roles:
+    - {role: monasca-agent, run_mode: Use}
+    - cinder-monitor
+  tasks:
+    - include: roles/cinder-monitor/tasks/monasca_alarms.yml
+      vars:
+        cinder_volume_monitor_state: present
+
+# Mark variable for clearing from fact cache
+- hosts: CND-VOL
+  roles:
+    - _CND-CMN
+  tasks:
+    - include: roles/_CND-CMN/tasks/_clear_cached_variable.yml

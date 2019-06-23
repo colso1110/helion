@@ -1,0 +1,65 @@
+#
+# (c) Copyright 2015,2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+- name: monasca-default-alarms | main | Setup default notification method
+  monasca_notification_method:
+    name: "{{ notification_name }}"
+    type: "{{ notification_type }}"
+    address: "{{ notification_address }}"
+    keystone_url: "{{ monasca_keystone_url }}"
+    keystone_user: "{{ monasca_keystone_user }}"
+    keystone_password: "{{ monasca_keystone_password }}"
+    keystone_project: "{{ monasca_keystone_project }}"
+    monasca_api_url: "{{ monasca_api_url }}"
+  no_log: True
+  tags:
+    - system_alarms
+    - monasca_alarms
+    - openstack_alarms
+  register: default_notification_result
+  until: not default_notification_result | failed
+  retries: "{{ monasca_client_retries }}"
+  delay: "{{ monasca_client_retry_delay }}"
+
+- name: monasca-default-alarms | main | Create Alarm Definitions
+  monasca_alarm_definition:
+    name: "{{ item.name }}"
+    description: "{{ item.description | default('') }}"
+    expression: "{{ item.expression }}"
+    keystone_token: "{{ default_notification_result.keystone_token }}"
+    match_by: "{{ item.match_by | default(['hostname']) }}"
+    monasca_api_url: "{{ default_notification_result.monasca_api_url }}"
+    severity: "{{ item.severity | default('LOW') }}"
+    alarm_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    ok_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+    undetermined_actions:
+      - "{{ default_notification_result.notification_method_id }}"
+  register: monasca_system_alarms_result
+  until: not monasca_system_alarms_result | failed
+  retries: "{{ monasca_client_retries }}"
+  delay: "{{ monasca_client_retry_delay }}"
+  with_flattened:
+    - monasca_alarm_definitions_system
+    - monasca_alarm_definitions_monasca
+    - monasca_alarm_definitions_openstack
+    - monasca_alarm_definitions_misc_services
+  when: monasca_create_definitions
+
+# Add alarm cleanup tasks
+- include: cleanup.yml tags=openstack_alarms
+  when: monasca_create_definitions

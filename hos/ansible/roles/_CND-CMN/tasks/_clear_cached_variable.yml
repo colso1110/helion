@@ -1,0 +1,31 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# Mark the hlm_notify_cinder_restart_required variable for clearing from the
+# persistent fact cache. This variable is needed in each of the individual
+# services start tasks so we hold off on marking it for clearing until after
+# these start tasks have run. The "is defined" check will mark the variable
+# for clearing at the end of the play or else at the beginning of the next
+# play.
+
+- name: _CND-CMN | _clear_cached_variable | Mark hlm_notify_cinder_restart_required to be cleared from fact cache
+  debug:
+    msg: >-
+      Marking hlm_notify_cinder_restart_required to be cleared
+      from the fact cache
+  when: hlm_notify_cinder_restart_required is defined
+

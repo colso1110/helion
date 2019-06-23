@@ -1,0 +1,209 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+# perform setup tasks common to all VMs first so if any failures do
+# occur we minimise the manual cleanup, if any, that may be required
+- include: ../../../roles/cobbler/tasks/set-vars.yml
+
+- name: vmfactory-vms | _create | determine block device to expand
+  become: yes
+  command: virt-filesystems --pvs --no-title -a "{{ vmf_dest_image }}"
+  register: vmf_blockdev_to_expand_result
+
+- name: vmfactory-vms | _create | create a temporary directory
+  become: yes
+  command: mktemp -d
+  register: vmf_vm_tmpdir_result
+
+- name: vmfactory-vms | _create | copy common interfaces file to temp dir
+  become: yes
+  copy:
+    src: interfaces
+    dest: "{{ vmf_vm_tmpdir_result.stdout }}/interfaces"
+    mode: 0644
+  when: not vmf_create_status.failed
+  register: vmf_copy_basic_ifaces_result
+  ignore_errors: True
+
+- name: vmfactory-vms | _create | update status fact if copy failed
+  set_fact:
+    vmf_create_status:
+      "{{ vmf_create_status | update( { 'failed': True,
+                                        'stage': 'common',
+                                        'vms': vmf_vms_to_create,
+                                        'msg': 'Failed to copy basic interfaces file' } ) }}"
+  when: vmf_copy_basic_ifaces_result | failed
+
+- name: vmfactory-vms | _create | generate common sources list file
+  become: yes
+  template:
+      src: sources.list.j2
+      dest: "{{ vmf_vm_tmpdir_result.stdout }}/sources.list"
+      mode: 0644
+  when: not vmf_create_status.failed
+  register: vmf_template_sources_list_result
+  ignore_errors: True
+
+- name: vmfactory-vms | _create | update status fact if template of sources.list failed
+  set_fact:
+    vmf_create_status:
+      "{{ vmf_create_status | update( { 'failed': True,
+                                        'stage': 'common',
+                                        'vms': vmf_vms_to_create,
+                                        'msg': 'Failed to template sources.list file' } ) }}"
+  when: vmf_template_sources_list_result | failed
+
+# setup this VM specific file first, so if it fails we leave no
+# orphaned qdow2 device files to be cleaned up.
+- name: vmfactory-vms | _create | setup ansible interface
+  become: yes
+  template:
+    src: interface.j2
+    dest: "{{ vmf_vm_tmpdir_result.stdout }}/{{ item.vm }}_interface"
+    mode: 0644
+  with_items: vmf_vms_to_create
+  when: not vmf_create_status.failed
+  register: vmf_template_ansible_iface_result
+  ignore_errors: True
+
+- name: vmfactory-vms | _create | update status fact if template of ansible iface failed
+  set_fact:
+    vmf_create_status:
+      "{{ vmf_create_status | update( { 'failed': True,
+                                        'stage': 'common',
+                                        'vms': vmf_vms_to_create,
+                                        'msg': 'Failed to template ansible interface file' } ) }}"
+  when: vmf_template_ansible_iface_result | failed
+
+# now we perform the remaining per-VM setup tasks, which will leave
+# one or more orphaned qcow2 devices around if a failure occurs
+- name: vmfactory-vms | _create | create qcow2 devices for each vm
+  become: yes
+  command:
+    qemu-img create -f qcow2 -o {{ vmf_qcow2_opts }}
+        {{ vmf_dest_image_path }}/{{ item.0.vm }}disk{{ item.1.name
+           | basename | replace('_root','') }}.qcow2
+        {{ item.1.size }}
+  with_subelements:
+     - vmf_vms_to_create
+     - disks
+  when: not vmf_create_status.failed
+  register: vmf_create_qcow2_devices_result
+  ignore_errors: True
+
+- name: vmfactory-vms | _create | update status fact if template of ansible iface failed
+  set_fact:
+    vmf_create_status:
+      "{{ vmf_create_status | update( { 'failed': True,
+                                        'stage': 'qcow2s',
+                                        'vms': vmf_vms_to_create,
+                                        'msg': 'Failed to template ansible interface file' } ) }}"
+  when: vmf_create_qcow2_devices_result | failed
+
+- name: vmfactory-vms | _create | copy and expand image to vm root qcow2
+  become: yes
+  command:
+    virt-resize
+        --expand {{ vmf_blockdev_to_expand_result.stdout }}
+        {{ vmf_dest_image }}
+        {{ vmf_dest_image_path }}/{{ item.0.vm }}disk{{ item.1.name
+           | basename | replace('_root','') }}.qcow2
+  with_subelements:
+     - vmf_vms_to_create
+     - disks
+  when: not vmf_create_status.failed and item.1.name == "/dev/vda_root"
+  register: vmf_copy_expand_root_dev_result
+  ignore_errors: True
+
+- name: vmfactory-vms | _create | update status fact if failed to copy & expand vm root qcow2
+  set_fact:
+    vmf_create_status:
+      "{{ vmf_create_status | update( { 'failed': True,
+                                        'stage': 'qcow2s',
+                                        'vms': vmf_vms_to_create,
+                                        'msg': 'Failed to copy and expand image to vm root qcow2' } ) }}"
+  when: vmf_copy_expand_root_dev_result | failed
+
+- name: vmfactory-vms | _create | define virtual machine.
+  become: yes
+  virt:
+    name: "{{ item.vm }}"
+    command: define
+    xml: "{{ lookup('template', '../templates/vm.j2') }}"
+    uri: qemu:///system
+  with_items: vmf_vms_to_create
+  when: not vmf_create_status.failed
+  register: vmf_define_vm_result
+  ignore_errors: True
+
+- name: vmfactory-vms | _create | update status fact if libvirt define failed for vm
+  set_fact:
+    vmf_create_status:
+      "{{ vmf_create_status | update( { 'failed': True,
+                                        'stage': 'defined',
+                                        'vms': vmf_vms_to_create,
+                                        'msg': 'Failed to define vm in libvirt' } ) }}"
+  when: vmf_define_vm_result | failed
+
+- name: vmfactory-vms | _create | copy config files into vm
+  become: yes
+  copy_in:
+      vmname: "{{ item.0.vm }}"
+      image: "{{ vmf_dest_image_path }}/{{ item.0.vm }}disk{{ item.1.name
+                 | basename | replace('_root','') }}.qcow2"
+      infile:
+        - "{{ vmf_vm_tmpdir_result.stdout }}/sources.list"
+        - "{{ vmf_vm_tmpdir_result.stdout }}/interfaces"
+        - "{{ vmf_vm_tmpdir_result.stdout }}/{{ item.0.vm }}_interface"
+        - "/home/{{ vmf_vm_ansible_user }}/.ssh/authorized_keys"
+      outfile:
+        - /etc/apt/sources.list
+        - /etc/network/interfaces
+        - /etc/network/interfaces.d/eth0
+        - "/home/{{ vmf_vm_ansible_user }}/.ssh/authorized_keys"
+  with_subelements:
+     - vmf_vms_to_create
+     - disks
+  when: not vmf_create_status.failed and item.1.name == "/dev/vda_root"
+  register: vmf_copy_in_config_files_result
+  ignore_errors: True
+
+- name: vmfactory-vms | _create | update status fact if failed to copy config files into vm
+  set_fact:
+    vmf_create_status:
+      "{{ vmf_create_status | update( { 'failed': True,
+                                        'stage': 'defined',
+                                        'vms': vmf_vms_to_create,
+                                        'msg': 'Failed to copy config files into a vm' } ) }}"
+  when: vmf_copy_in_config_files_result | failed
+
+- name: vmfactory-vms | _create | remove temporary directory
+  become: yes
+  file:
+    state: absent
+    path: "{{ vmf_vm_tmpdir_result.stdout }}"
+
+- name: vmfactory-vms | _create | cleanup vms on failure
+  include: _cleanup.yml
+  vars:
+    vmf_vms_to_cleanup: "{{ vmf_vms_to_create }}"
+  when: vmf_create_status.failed
+
+- name: vmfactory-vms | _create | fail if an earlier failure was caught
+  fail:
+    msg: "{{ vmf_create_status.msg }}"
+  when: vmf_create_status.failed

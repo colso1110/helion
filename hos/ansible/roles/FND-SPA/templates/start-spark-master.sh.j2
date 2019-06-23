@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+{#
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+#}
+. {{ spark_current_dir }}/conf/spark-env.sh
+export EXEC_CLASS=org.apache.spark.deploy.master.Master
+export INSTANCE_ID=1
+export SPARK_CLASSPATH={{ spark_current_dir }}/conf/:{{ spark_current_dir }}/lib/spark-assembly-{{ spark_ver }}-hadoop{{ spark_hadoop_ver }}.0.jar:{{ spark_current_dir }}/lib/datanucleus-core-3.2.10.jar:{{ spark_current_dir }}/lib/datanucleus-rdbms-3.2.9.jar:{{ spark_current_dir }}/lib/datanucleus-api-jdo-3.2.6.jar
+export SPARK_HOME={{ spark_current_dir }}
+
+start-stop-daemon -c {{ spark_user }}:{{ spark_group }} --pidfile /{{ spark_run_dir }}/{{ spark_user }}-{{ spark_group }}-"$EXEC_CLASS"-"$INSTANCE_ID".pid --name spark-master --start --exec  /usr/bin/java -- -cp $SPARK_CLASSPATH $SPARK_DAEMON_JAVA_OPTS "$EXEC_CLASS" --ip "$SPARK_MASTER_IP" --port "$SPARK_MASTER_PORT" --webui-port "$SPARK_MASTER_WEBUI_PORT" >> "{{ spark_master_log_file }}" 2>&1 < /dev/null

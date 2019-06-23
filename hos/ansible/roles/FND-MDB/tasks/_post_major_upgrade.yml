@@ -1,0 +1,44 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+# Make sure it went down the order I want;  first one down last
+# Should be ok if status checked all were up before we upgraded
+
+- name: FND-MDB | _post_major_upgrade | upgrade_configuration
+  include: upgrade_configuration.yml
+
+- name: FND-MDB | _post_major_upgrade | stop on package change
+  include: stop.yml
+
+- name: FND-MDB | _post_major_upgrade | cluster_node
+  include: cluster_node.yml
+
+# Re-Initialise and force a bootstrap here
+
+- name: FND-MDB | _post_major_upgrade | initialise
+  include: initialise.yml
+
+- name: FND-MDB | _post_major_upgrade | set bootstrapped to false
+  set_fact:
+    mysql_bootstrapped: false
+  run_once_per: verb_hosts.FND_MDB
+
+- name: FND-MDB | _post_major_upgrade | Notify I am bootstrapping
+  set_fact:
+    mysql_bootstrapping: true
+
+- name: FND-MDB | _post_major_upgrade | bootstrap
+  include: bootstrap.yml

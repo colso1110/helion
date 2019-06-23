@@ -1,0 +1,68 @@
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+---
+nic_mappings: []
+network_ether_interfaces: []
+network_bridge_interfaces: []
+network_bond_interfaces: []
+ovs_bridge_interfaces: []
+network_vlan_interfaces: []
+udev_prefix_nic_mapping: 90
+order_prefix_bond: 15
+order_prefix_ether: 25
+order_prefix_vlan: 35
+order_prefix_bridge: 45
+rhel_prefix: ifcfg
+dpdk_driver_file: '99-dpdk-driver'
+interface_file_marker: '# HELION-MANAGED - Managed by Helion - Do not edit'
+dpdk_kernel_module_file: /etc/modules-load.d/helion_dpdk-modules.conf
+
+passthrough_max_mtu: "{%- set ptn_mtu_list = [0] -%}
+                      {%- if host.my_network_groups is defined -%}
+                          {%- for netgroup, net_list in host.my_network_groups.iteritems() -%}
+                              {%- for network_attrs in net_list -%}
+                                  {%- if 'passthrough-mtu' in network_attrs -%}
+                                      {%- if ptn_mtu_list.append(network_attrs['passthrough-mtu']) -%}{%- endif -%}
+                                  {%- endif -%}
+                              {%- endfor -%}
+                          {%- endfor -%}
+                      {%- endif -%}
+                      {{ ptn_mtu_list | max }}"
+
+multi_port_sriov_interfaces: "{% set temp_list = [] %}
+                           {%- if network_pci_pt_sriov_interfaces is defined -%}
+                               {%- for interface in network_pci_pt_sriov_interfaces -%}
+                                   {%- if interface.type == 'multi-port' and
+                                          interface.vf_count is defined and
+                                          interface.config_script is defined -%}
+                                       {%- if temp_list.append( interface ) -%}
+                                       {%- endif -%}
+                                   {%- endif -%}
+                               {%- endfor -%}
+                           {%- endif -%}
+                           {{ temp_list }}"
+
+simple_port_sriov_interfaces: "{% set temp_list = [] %}
+                            {%- if network_pci_pt_sriov_interfaces is defined -%}
+                                {%- for interface in network_pci_pt_sriov_interfaces -%}
+                                    {%- if interface.type == 'simple-port' and
+                                           interface.vf_count is defined and
+                                           interface.config_script is defined -%}
+                                        {%- if temp_list.append( interface ) -%}
+                                        {%- endif -%}
+                                    {%- endif -%}
+                                {%- endfor -%}
+                            {%- endif -%}
+                            {{ temp_list }}"
+
+sriov_interfaces: "{{ simple_port_sriov_interfaces + multi_port_sriov_interfaces }}"

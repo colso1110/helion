@@ -1,0 +1,125 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# neutron-common | configure rootwrap
+---
+- name: neutron-common | _configure_rootwrap | Set ownership and permissions of neutron rootwrap filters directory
+  become: yes
+  file:
+    path: "{{ neutron_rootwrap_filters_dir }}"
+    owner: "root"
+    group: "root"
+    mode: "0755"
+    state: directory
+
+# Customize rootwrap dhcp.filters
+- include: _write_conf.yml
+  write_conf_file_owner: "root"
+  write_conf_file_group: "root"
+  src: "../templates/dhcp.filters.j2"
+  dest: "rootwrap.d/dhcp.filters"
+  mode: "0644"
+
+- name: neutron-common | _configure_rootwrap | Notify dhcp_agent dhcp.filters changed
+  command: /bin/true
+  register: hlm_notify_neutron_dhcp_agent_restart_required
+  when: write_conf_result.changed==true
+
+# Customize rootwrap l3.filters
+- include: _write_conf.yml
+  write_conf_file_owner: "root"
+  write_conf_file_group: "root"
+  src: "../templates/l3.filters.j2"
+  dest: "rootwrap.d/l3.filters"
+  mode: "0644"
+
+- name: neutron-common | _configure_rootwrap | Notify l3_agent l3.filters changed
+  command: /bin/true
+  register: hlm_notify_neutron_l3_agent_restart_required
+  when: write_conf_result.changed==true
+
+- name: neutron-common | _configure_rootwrap | Notify vpn_agent l3.filters changed
+  command: /bin/true
+  register: hlm_notify_neutron_vpn_agent_restart_required
+  when: write_conf_result.changed==true
+
+- name: neutron-common | _configure_rootwrap | Customize neutron rootwrap filters
+  become: yes
+  template:
+    src: "{{ item }}.j2"
+    dest: "{{ neutron_rootwrap_filters_dir }}/{{ item }}"
+    owner: "root"
+    group: "root"
+    mode: 0644
+  with_items:
+    - debug.filters
+    - dibbler.filters
+    - ebtables.filters
+    - ipset-firewall.filters
+    - iptables-firewall.filters
+    - linuxbridge-plugin.filters
+    - openvswitch-plugin.filters
+
+- name: neutron-common | _configure_rootwrap | Customize neutron-lbaas rootwrap filters
+  become: yes
+  template:
+    src: "{{ item }}.j2"
+    dest: "{{ neutron_rootwrap_filters_dir }}/{{ item }}"
+    owner: "root"
+    group: "root"
+    mode: "0644"
+  with_items:
+    - lbaas-haproxy.filters
+  register: hlm_notify_lbaasv2_agent_restart_required
+
+- name: neutron-common | _configure_rootwrap | Customize neutron-vpnaas rootwrap filters
+  become: yes
+  template:
+    src: "{{ item }}.j2"
+    dest: "{{ neutron_rootwrap_filters_dir }}/{{ item }}"
+    owner: "root"
+    group: "root"
+    mode: "0644"
+  with_items:
+    - vpnaas.filters
+  register: hlm_notify_vpn_agent_restart_required
+
+# Customize rootwrap.conf
+- include: _write_conf.yml
+  write_conf_file_owner: "root"
+  write_conf_file_group: "root"
+  src: "../templates/rootwrap.conf.j2"
+  dest: "rootwrap.conf"
+  mode: "0644"
+
+- name: neutron-common | _configure_rootwrap | Notify dhcp_agent rootwrap.conf changed
+  command: /bin/true
+  register: hlm_notify_neutron_dhcp_agent_restart_required
+  when: write_conf_result.changed
+
+- name: neutron-common | _configure_rootwrap | Notify l3_agent rootwrap.conf changed
+  command: /bin/true
+  register: hlm_notify_neutron_l3_agent_restart_required
+  when: write_conf_result.changed
+
+- name: neutron-common | _configure_rootwrap | Notify lbaasv2_agent rootwrap.conf changed
+  command: /bin/true
+  register: hlm_notify_neutron_lbaasv2_agent_restart_required
+  when: write_conf_result.changed
+
+- name: neutron-common | _configure_rootwrap | Notify vpn_agent rootwrap.conf changed
+  command: /bin/true
+  register: hlm_notify_neutron_vpn_agent_restart_required
+  when: write_conf_result.changed

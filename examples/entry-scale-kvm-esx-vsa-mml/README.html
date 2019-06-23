@@ -1,0 +1,79 @@
+<ol start="3" style="list-style-type: lower-alpha">
+<h2 id="helion-single-region-entry-scale-mml-esxkvmvsa-cloud-model">Helion Single Region Entry-scale-mml ESX+KVM+VSA Cloud model</h2>
+<h3 id="introduction">Introduction</h3>
+<p>This entry-scale model is intended as a template for a moderate sized cloud with few limitation like single management network and swift + neutron on control plane itself. The Control plane is made up of multiple server clusters to provide sufficient computational, network and IOPS capacity for a mid-size production style cloud.</p>
+<p>The Helion entry-scale-kvm-esx-vsa-mml model is architected as follows:</p>
+<h4 id="control-plane">Control plane</h4>
+<ul>
+<li><p>Core cluster: Runs Core OpenStack Services, (e.g. keystone, nova api, glance api, neutron api, horizon, heat api). Default configuration is two nodes of role type CORE-ROLE</p></li>
+<li><p>Metering &amp; Monitoring cluster: Runs the OpenStack Services for metering &amp; monitoring (e.g. celiometer, monasca &amp; logging). Default configuration is three nodes of role type MTRMON-ROLE</p></li>
+<li><p>Database &amp; Message Queue Cluster: Runs clustered MySQL and RabbitMQ services to support the Helion cloud infrastructure. Default configuration is three nodes of role type DBMQ-ROLE. Three nodes are required for high availability.</p></li>
+</ul>
+<h4 id="resource-nodes">Resource nodes</h4>
+<ul>
+<li>Compute:
+<ul>
+<li>KVM: Runs nova compute sand associated services. Runs on nodes of role type COMPUTE-ROLE. The example lists 3 nodes, one node is required at a minimum.</li>
+<li>ESX: (below listed resources will be provisioned in all activated clusters)
+<ul>
+<li>Nova compute proxy nodes runs nova compute services.</li>
+<li>OVSvApp nodes run neutron related services.</li>
+</ul></li>
+</ul></li>
+<li>Vsa: Runs the Store Virtual VSA appliance. Runs on nodes of role type VSA-ROLE. One node minimum is required for demo purposes, three for high availability. The example lists 1 node.</li>
+</ul>
+<p><em>EON service will add required information related to nova compute proxy and OVSvApp Nodes. The user need not add them</em></p>
+<p><em>Minimal Swift Resources are provided by the control plane</em></p>
+<h3 id="networking">Networking</h3>
+<p>The example requires the following networks:</p>
+<p>IMPI/iLO network, connected to the deployer and the IPMI/iLO ports of all servers</p>
+<p>A network connected to a dedicated NIC on each server used to install the OS and install and configure Helion. In a future Beta release this network can be subsumed into system networks (below).</p>
+<p>A pair of bonded NICs which are used used by the following networks:</p>
+<ul>
+<li>External API - This is the network that users will use to make requests to the cloud</li>
+<li>Internal API - This is the network that will be used within the cloud for API access between services</li>
+<li>External VM - This is the network that will be used to provide access to VMs (via floating IP addresses)</li>
+<li>Guest - This is the network that will carry traffic between VMs on private networks within the cloud</li>
+<li>Cloud Management - This is the network that will be used for all internal traffic between the cloud services. In the example this is shown as untagged. It can be tagged if needed.</li>
+</ul>
+<p>Note that the EXTERNAL_API network must be reachable from the EXTERNAL_VM network if you want VMS to be able to make API calls to the cloud.</p>
+<p>TRUNK network is the network that will be used to apply security group rules on tenant traffic. It is managed internally by Helion cloud and is restricted to the vCenter environment.</p>
+<p>ESX-CONF-NET network (of ESX-CONF network-group) represents a network that is used only to configure the ESX compute nodes in the cloud. This deployer network should be different from the pxe-based deployer network used by cobbler to standup the cloud controller cluster.</p>
+<p>The Data Center Management network (which hosts the vcenter server) must be reachable from the Cloud Management network so that the controllers, compute proxy and OVSvApp nodes can communicate to the vcenter server.</p>
+<p>An example set of networks are defined in <strong><em>data/networks.yml</em></strong>. You will need to modify this file to reflect your environment.</p>
+<p>The example uses bonded network for control planes, KVM computes, VSA, DBMQ &amp; MTRMON nodes. If you need to modify these for your environment they are defined in <strong><em>data/net_interfaces.yml</em></strong></p>
+<h3 id="adapting-the-entry-scale-model-to-fit-your-environment">Adapting the entry-scale model to fit your environment</h3>
+<p>The minimum set of changes you need to make to adapt the model for your environment are:</p>
+<ul>
+<li><p>Update servers.yml to list the details of your bare metal servers (i.e ILO access info) If You need to perform this step if you are using the HLM supplied Cobber playbooks to install hLinux on your servers.</p></li>
+<li><p>Update the networks.yml file to replace network CIDRs and VLANs with site specific values</p></li>
+<li><p>Update the nic_mappings.yml file to ensure that network devices are mapped to the correct physical port(s)</p></li>
+<li><p>Review the disk models (disks_*.yml) and confirm that the associated servers have the number of disks required by the disk model. The device names in the disk models might need to be adjusted to match the probe order of your servers. Disk models are provided as follows:</p></li>
+<li>DISK SET CONTROLLER: Minimum 1 disk</li>
+<li>DISK SET DBMQ: Minimum 3 disks</li>
+<li>DISK SET COMPUTE: Minimum 2 disks</li>
+<li><p>DISK SET VSA: Minimum 3 disks</p></li>
+</ul>
+<p><em>DISK_SET used by Nova compute proxy and OVSvApp is not recommended to modify by user</em></p>
+<ul>
+<li><p>Update the net interfaces.yml file to match the server NICs used in your configuration. This file has a separate interface model definition for each of the following:</p></li>
+<li>INTERFACE SET CONTROLLER</li>
+<li>INTERFACE SET MTRMON</li>
+<li>INTERFACE SET DBMQ</li>
+<li>INTERFACE SET COMPUTE</li>
+<li>INTERFACE SET VSA</li>
+<li>INTERFACE SET ESX-COMPUTE</li>
+<li><p>INTERFACE SET OVSVAPP</p></li>
+</ul>
+<footer>
+  <small>(c) Copyright 2016 Hewlett Packard Enterprise Development LP
+  <small>Licensed under the Apache License, Version 2.0 (the "License"); you may </small>
+  <small>not use this file except in compliance with the License. You may obtain </small>
+  <small>a copy of the License at<br><br></small>
+  <small>http://www.apache.org/licenses/LICENSE-2.0<br><br></small>
+  <small>Unless required by applicable law or agreed to in writing, software </small>
+  <small>distributed under the License is distributed on an "AS IS" BASIS, WITHOUT </small>
+  <small>WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the </small>
+  <small>License for the specific language governing permissions and limitations </small>
+  <small>under the License.<br></small>
+</footer>

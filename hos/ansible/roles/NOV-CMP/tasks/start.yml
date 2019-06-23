@@ -1,0 +1,46 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+# Restart or start the nova-compute service
+---
+- name: NOV-CMP | start | Activate the latest installed version
+  become: yes
+  install_package:
+    name: nova
+    service: nova-compute
+    activate: act_on
+    version: "{{ hlm_notify_nova_compute_install_result.version }}"
+  when: not (hlm_notify_nova_compute_install_result is not defined)
+
+- name: NOV-CMP | start | register persistent fact of activate
+  command: /bin/true
+  register: hlm_notify_nova_compute_restart_required
+  when: hlm_notify_nova_compute_install_result is defined and
+        hlm_notify_nova_compute_install_result.changed
+
+- name: NOV-CMP | start | Restart nova-compute service
+  become: yes
+  service:
+    name: nova-compute
+    state: restarted
+  when: hlm_notify_nova_restart_required.changed or
+        (hlm_notify_nova_compute_restart_required is defined and
+        hlm_notify_nova_compute_restart_required.changed)
+
+- name: NOV-CMP | start | Ensure nova-compute service started
+  become: yes
+  service:
+    name: nova-compute
+    state: started

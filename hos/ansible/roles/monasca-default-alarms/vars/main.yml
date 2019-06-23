@@ -1,0 +1,207 @@
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+monasca_alarm_definitions_system:
+  - name: "Host Status"
+    description: "Alarms when the specified host is down or not reachable"
+    severity: "HIGH"
+    expression: "host_alive_status > 0"
+    match_by:
+      - "target_host"
+      - "hostname"
+  - name: "HTTP Status"
+    description: >
+      "Alarms when the specified HTTP endpoint is down or not reachable"
+    severity: "HIGH"
+    expression: "http_status > 0"
+    match_by:
+      - "service"
+      - "component"
+      - "hostname"
+      - "url"
+  - name: "CPU Usage"
+    description: "Alarms when CPU usage is high"
+    expression: "avg(cpu.idle_perc) < 10 times 3"
+  - name: "High CPU IOWait"
+    description: "Alarms when CPU IOWait is high, possible slow disk issue"
+    expression: "avg(cpu.wait_perc) > 40 times 3"
+    match_by:
+      - "hostname"
+  - name: "Disk Inode Usage"
+    description: "Alarms when disk inode usage is high"
+    expression: "disk.inode_used_perc > 90"
+    match_by:
+      - "hostname"
+      - "device"
+    severity: "HIGH"
+  - name: "Disk Usage"
+    description: "Alarms when disk usage is high"
+    expression: "disk.space_used_perc > 90"
+    match_by:
+      - "hostname"
+      - "device"
+    severity: "HIGH"
+  - name: "Memory Usage"
+    description: "Alarms when memory usage is high"
+    severity: "HIGH"
+    expression: "avg(mem.usable_perc) < 10 times 3"
+  - name: "Network Errors"
+    description: >
+      "Alarms when either incoming or outgoing network errors are high"
+    severity: "MEDIUM"
+    expression: "net.in_errors_sec > 5 or net.out_errors_sec > 5"
+  - name: "Process Check"
+    description: "Alarms when the specified process is not running"
+    severity: "HIGH"
+    expression: "process.pid_count < 1"
+    match_by:
+      - "process_name"
+      - "hostname"
+  - name: "Crash Dump Count"
+    description: "Alarms when a crash directory is found"
+    severity: "MEDIUM"
+    expression: "crash.dump_count > 0"
+    match_by:
+      - "hostname"
+
+monasca_alarm_definitions_monasca:
+  - name: "Kafka Persister Metric Consumer Lag"
+    description: "Alarms when the Persister consumer group is not keeping \
+                  up with the incoming messages on the metric topic"
+    severity: "MEDIUM"
+    expression:
+      "avg(kafka.consumer_lag{consumer_group=1_metrics}) > \
+      {{ monasca_kafka_persister_metrics_max_lag }} times 3"
+    match_by:
+      - "hostname"
+  - name: "Kafka Alarm Transition Consumer Lag"
+    description: "Alarms when the specified consumer group is not keeping \
+                  up with the incoming messages on the \
+                  alarm state transistion topic"
+    severity: "MEDIUM"
+    expression:
+      "avg(kafka.consumer_lag{topic=alarm-state-transitions}) > \
+      {{ monasca_kafka_alarms_max_lag }} times 3"
+    match_by:
+      - "consumer_group"
+      - "hostname"
+  - name: "Monasca Agent Collection Time"
+    description: "Alarms when the elapsed time the Monasca Agent takes to \
+                    collect metrics is high"
+    expression: >
+      avg(monasca.collection_time_sec) > {{ monasca_agent_check_frequency }}
+      times 3
+  - name: "Vertica Over Recommended Disk Usage"
+    description: "Alarms when Vertica exceeds the recommended disk utilization"
+    severity: "LOW"
+    expression: "max(disk.space_used_perc{mount_point=/var/vertica}) > 70"
+    match_by:
+      - "hostname"
+  - name: "Vertica Very High Disk Usage"
+    description: "Alarms when Vertica exceeds 80% disk utilization"
+    severity: "HIGH"
+    expression: "max(disk.space_used_perc{mount_point=/var/vertica}) > 80"
+    match_by:
+      - "hostname"
+  - name: "Vertica Connection Status"
+    description: "Alarms when there is no connection to Vertica"
+    severity: "HIGH"
+    expression: "max(vertica.connection_status,deterministic) > 0"
+    match_by:
+     - "hostname"
+  - name: "Vertica Node Status"
+    description: "Alarms when the Vertica node is not up"
+    severity: "HIGH"
+    expression: "vertica.node_status > 0"
+    match_by:
+     - "hostname"
+  - name: "Vertica Projection Ros Count"
+    description: "Alarms when ros count for a projection goes over the limit"
+    severity: "MEDIUM"
+    expression: "vertica.projection.ros_count > 1024"
+    match_by:
+     - "hostname"
+     - "projection_name"
+  - name: "Vertica Resource Rejection"
+    description: "Alarms when a resource rejection occurs"
+    severity: "HIGH"
+    expression: "vertica.resource.pool.rejection_count > 0"
+    match_by:
+     - "hostname"
+     - "resource_pool"
+  - name: "Vertica Disk Rejection"
+    description: "Alarms when vertica can not write to disk"
+    severity: "HIGH"
+    expression: "vertica.resource.disk_space_rejections > 0"
+    match_by:
+     - "hostname"
+  - name: "Vertica High Watermark License Usage"
+    description: "Alarms when vertica database is taking up 90 percent of the license size"
+    severity: "HIGH"
+    expression: "vertica.license_usage_percent > 90"
+    match_by:
+     - "control_plane"
+  - name: "Vertica Low Watermark License Usage"
+    description: "Alarms when vertica database is taking up 70 percent of the license size"
+    severity: "MEDIUM"
+    expression: "vertica.license_usage_percent > 70"
+    match_by:
+     - "control_plane"
+  - name: "ZooKeeper Latency"
+    description: "Alarms when the ZooKeeper latency is high"
+    expression: "avg(zookeeper.avg_latency_sec) > 1 times 3"
+
+monasca_alarm_definitions_openstack:
+  - name: "Instance CPU Usage"
+    description: >
+      "Alarms when the CPU usage of the specified instance is high"
+    expression: "avg(cpu.utilization_perc) > 90 times 3"
+    match_by:
+      - resource_id
+monasca_alarm_definitions_misc_services:
+  - name: "MySQL Slow Query Rate"
+    description: "Alarms when the slow query rate is high"
+    expression: "avg(mysql.performance.slow_queries) > 10 times 3"
+  - name: "Apache Status"
+    description: "Alarms on failure to reach the Apache status endpoint"
+    expression: "apache.status > 0"
+    severity: "HIGH"
+  - name: "Apache Idle Worker Count"
+    description: >
+      "Alarms when there are no idle workers in the Apache server"
+    expression: "avg(apache.performance.idle_worker_count) < 1 times 3"
+    severity: "MEDIUM"
+  - name: "NTP Time Sync"
+    description: "Alarms when the NTP time offset is high"
+    expression: "ntp.offset > 5 or ntp.offset < -5"
+  - name: "NTP Connection Status"
+    description: "Alarms when the connection failed to the NTP server"
+    expression: "ntp.connection_status > 0"
+  - name: "Certificate Expiration Warning"
+    description: >
+      Alarms when the certificate for an URL is close to expiring
+    expression: >
+      MIN(https.cert_expire_days, {{ monasca_cert_check_period }}) <
+      {{ monasca_warn_cert_expire_days }}
+    match_by: "url"
+  - name: "Certificate Expiration Critical"
+    description: >
+      Alarms when the certificate for an URL is extremely close to expiring
+    expression: >
+      MIN(https.cert_expire_days, {{ monasca_cert_check_period }}) <
+      {{ monasca_critical_cert_expire_days }}
+    match_by: "url"
+    severity: "HIGH"
+

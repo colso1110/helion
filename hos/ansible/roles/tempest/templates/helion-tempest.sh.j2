@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+
+set -eu
+set -o pipefail
+
+SCRIPT_NAME=$(basename $0)
+
+TEMPEST_CONFIG_FILENAME=""
+TEMPEST_SUBUNIT_FILENAME="testrepository.subunit"
+TEMPEST_RUN_FILTER=""
+
+usage() {
+    echo "$SCRIPT_NAME [--config-file] [options]"
+    echo
+    echo "Runs Tempest against a deployed Helion OpenStack cloud."
+    echo
+    echo "--config           -- Tempest config file to run on the cloud."
+    echo
+    echo "Optional:"
+    echo "--subunit          -- Name of the subunit output file to be used."
+    echo "                      Default to: testrepository.subunit"
+    echo "--run-filter       -- The run filter to restrict test suite."
+    echo "                      Default to: {{ run_filter }}."
+    echo "--os-test-path     -- Path to Tempest test_discover to be used"
+    echo "                      Default to: {{ tempest_site_dir }}/tempest/test_discover"
+    echo "--os-test-timeout  -- Set Tempest timeout"
+    echo "                      Default to: 500 seconds"
+    echo
+}
+
+OPTIONS=help,config,subunit,run-filter,os-test-path,os-test-timeout
+TEMP=$(getopt -o -h -l $OPTIONS -n $SCRIPT_NAME -- "$@")
+if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
+
+# Note the quotes around `$TEMP': they are essential!
+eval set -- "$TEMP"
+
+while true ; do
+    case "$1" in
+        -h | --help) usage ; exit 0 ;;
+        --config) TEMPEST_CONFIG_FILENAME=$2; shift 2 ;;
+        --subunit)  TEMPEST_SUBUNIT_FILENAME=$2; shift 2 ;;
+        --run-filter) TEMPEST_RUN_FILTER=$2; shift 2 ;;
+        --os-test-path) OS_TEST_PATH=$2; shift 2 ;;
+        --os-test-timeout) OS_TEST_TIMEOUT=$2; shift 2 ;;
+        --) shift ; break;;
+        *) break ;;
+    esac
+done
+
+if [ -z "$TEMPEST_CONFIG_FILENAME" ]; then
+  usage; exit 1;
+fi
+
+set -x
+
+# Environment variable may be overridden by the caller.
+export OS_TEST_PATH="${OS_TEST_PATH:-{{ tempest_site_dir }}/tempest/test_discover}"
+export OS_TEST_TIMEOUT="${OS_TEST_TIMEOUT:-500}"
+
+export OS_TOP_LEVEL="{{ tempest_site_dir }}"
+
+export TEMPEST_CONFIG="{{ tempest_run.conf_dir }}/$TEMPEST_CONFIG_FILENAME"
+export TESTR="{{ tempest_bin_dir }}/testr"
+export PYTHON="{{ tempest_bin_dir }}/python"
+export TESTS_TO_SKIP_BIN="{{ tempest_run.bin_dir }}/tests2skip.py"
+
+if [ -e "$TEMPEST_RUN_FILTER" ]; then
+    export RUN_FILTER="$TEMPEST_RUN_FILTER"
+else
+    export RUN_FILTER="{{ tempest_run.dir }}/run_filters/${TEMPEST_RUN_FILTER:-{{ run_filter }}}.txt"
+fi
+
+echo "Run filter used: $RUN_FILTER"
+cat "$RUN_FILTER"
+echo
+
+if [ "$TEMPEST_RUN_FILTER" = "lbaas" ]; then
+   export OS_TEST_PATH="{{ tempest_site_dir }}/neutron_lbaas/tests/tempest/v3"
+fi
+
+if [ "$TEMPEST_RUN_FILTER" = "neutron-api" ]; then
+   export OS_TEST_PATH="{{ tempest_site_dir }}/neutron/tests/api"
+fi
+
+FILTERS=$(${PYTHON} "${TESTS_TO_SKIP_BIN}" "${RUN_FILTER}")
+
+# Copy in the testr.conf for tempest.
+if [ ! -e ".testr.conf" ]; then
+    cp "{{ tempest_run.dir }}/.testr.conf" .
+fi
+if [ ! -e ".testrepository" ]; then
+    $TESTR init
+fi
+
+# Unset any proxy details in the enviroment.
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+
+# Run the tempest tests.
+# Any failing test will cause testr to return non-zero;
+# we unconditionally want to run subunit afterwards.
+exit_res=0
+if ! \
+    $TESTR run \
+        --subunit \
+        --parallel \
+        --concurrency {{ run_concurrency }} \
+        "${FILTERS}" |
+            {{ tempest_bin_dir }}/subunit-trace \
+            --no-failure-debug \
+            -f; then
+exit_res=1
+fi
+
+# Generate a subunit file from the testrepository database.
+{{ tempest_run.bin_dir }}/generate-subunit.sh "$TEMPEST_SUBUNIT_FILENAME"
+
+exit $exit_res

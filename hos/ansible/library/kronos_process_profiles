@@ -1,0 +1,182 @@
+#!/usr/bin/python
+#
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+import os
+import platform
+
+# Actions namespace
+actions = type('Actions', (), {
+    'rotation': 'rotation',
+    'logging': 'logging',
+    'auditing': 'auditing'
+})
+
+# Keys namespace for ease of maintenance
+keys = type('Keys', (), {
+    'name':'name',
+    'files':'files',
+    'format':'format',
+    'service':'service',
+    'enabled':'enabled',
+    'rotate':'log_rotate',
+    'os_family':'os_family',
+    'options':'logging_options',
+    'logging':'centralized_logging',
+    'auditing':'centralized_audit_logging'
+})
+
+def config_rotation(module, action, profile):
+    """Configure logging rotation for given profile
+    :module: ansible helper module
+    :action: action to perform
+    :profile: document describing service
+    :returns: True when something has changed
+    """
+    changed = False
+    params = type('Params', (), module.params)
+    filename = os.path.join(params.logrotate_conf_dir, profile[keys.name])
+
+    # Read in any existing configuration for comparison
+    data = None
+    if os.path.exists(filename):
+        with open(filename, 'r') as f: data = f.read()
+
+    # Construct new config file
+    conf = ""
+    for opt in [x for x in profile[keys.options] if keys.rotate in x]:
+
+        # Basic validation
+        error = ''
+        combo = " ".join(opt[keys.rotate])
+        if combo.find('rotate') == -1: error = 'rotate'
+        if combo.find('maxsize') == -1: error = 'maxsize'
+        if error: module.fail_json(msg="Error: missing '{}' rotation param".format(error))
+
+        # Add files to conf
+        for f in opt[keys.files]:
+            conf += "{}\n".format(f)
+        conf += "{\n"
+
+        # Add rotate settings for files
+        for rotate_opt in opt[keys.rotate]:
+            conf += "  {}\n".format(rotate_opt)
+            if rotate_opt.strip().startswith('create') and 'nosu' not in opt:
+                conf += "  su {} {}\n".format(rotate_opt.strip().split()[-2], rotate_opt.strip().split()[-1])
+        conf += "}\n\n"
+
+    # Write out the configuration
+    if conf and conf != data:
+        with open(filename, 'w') as f: f.write(conf)
+        changed = True
+
+    return changed
+
+def config_logging(module, action, profile):
+    """Configure centralized logging/auditing for given profile
+    :module: ansible helper module
+    :action: action to perform
+    :profile: document describing service
+    :returns: True when something has changed
+    """
+    changed = False
+    params = type('Params', (), module.params)
+    audit = True if action == actions.auditing else False
+    filename = "{}{}.conf".format(os.path.join(params.beaver_conf_dir, profile[keys.name]), "-audit" if audit else "")
+
+    # Read in any existing configuration for comparison
+    data = None
+    if os.path.exists(filename):
+        with open(filename, 'r') as f: data = f.read()
+
+    # Construct new beaver config file
+    conf = ""
+    key = keys.auditing if audit else keys.logging
+    for opt in [x for x in profile[keys.options] if key in x and x[key][keys.enabled]]:
+
+        # Add files to conf
+        for f in opt[keys.files]:
+            conf += "[{}]\n".format(os.path.join(params.audit_log_dir, f) if audit else f)
+            conf += "type={}\n".format(profile[keys.name])
+            conf += "format={}\n".format(opt[key][keys.format])
+            conf += "add_field=control_plane,{},cluster,{},cloud_name,{},service,{}{}\n".format(
+                params.control_plane, params.cluster, params.cloud_name, profile[keys.service], ",log_type,audit" if audit else "")
+            conf += "start_position=beginning\n"
+            if f != opt[keys.files][-1]: conf += "\n"
+
+    # Write out the configuration
+    if conf and conf != data:
+        with open(filename, 'w') as f: f.write(conf)
+        changed = True
+
+    # Remove the configuration
+    if not conf and data:
+        os.remove(filename)
+
+    return changed
+
+# Map the possible actions to call from ansible
+action_methods = {
+    actions.rotation: config_rotation,
+    actions.logging: config_logging,
+    actions.auditing: config_logging
+}
+
+# Determine which logging profiles apply to the current hosts
+#-------------------------------------------------------------------------------
+def main():
+    module = AnsibleModule(
+        argument_spec=dict(
+            profiles = dict(required=True),         # output of filter_profiles
+            control_plane = dict(required=True),    # host.my_dimensions.control_plane
+            cluster = dict(required=True),          # host.my_dimensions.cluster
+            cloud_name = dict(required=True),       # host.my_dimensions.cloud_name
+            audit_log_dir = dict(default="/var/audit"),
+            beaver_conf_dir = dict(default="/etc/beaver/conf.d"),
+            logrotate_conf_dir = dict(default="/etc/logrotate.d"),
+            config_actions = dict(default="{},{}".format(actions.logging,actions.auditing))
+        ),
+        supports_check_mode=False
+    )
+
+    try:
+        changed = False
+        os_family = platform.dist()[0].lower()
+        params = type('Params', (), module.params)
+
+        # Process each profile
+        for filename in params.profiles:
+            profile = params.profiles[filename]
+
+            # Skip if os_family doesn't match
+            if keys.os_family in profile:
+                if os_family != profile[keys.os_family].lower(): continue
+
+            # Configure logging for service
+            for action in params.config_actions.split(","):
+                if action not in action_methods:
+                    raise Exception("Non-existent action {}".format(action))
+                changed += action_methods[action](module, action, profile)
+
+    except Exception, e:
+        module.fail_json(msg="{}".format(e))
+    finally:
+        module.exit_json(changed=changed)
+
+# Execute main as an Ansible module
+#-------------------------------------------------------------------------------
+from ansible.module_utils.basic import *
+if __name__ == '__main__':
+    main()

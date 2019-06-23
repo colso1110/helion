@@ -1,0 +1,68 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+
+- hosts: FRE-AGN
+  roles:
+    - freezer-jobs
+  tasks:
+    - include_vars: roles/freezer-jobs/defaults/activate.yml
+    - include: roles/freezer-jobs/tasks/_pre_manage_jobs.yml
+      when: freezer_create_backup_jobs or freezer_create_restore_jobs
+    - include: roles/freezer-jobs/tasks/_deploy_ssh_key.yml
+  serial: "{{ freezer_serialization | default(3) | int }}"
+
+- hosts: FND-MDB:&FRE-AGN
+  roles:
+    - freezer-jobs
+  tasks:
+    - include: roles/freezer-jobs/tasks/_mysql_credentials.yml
+      when: freezer_create_backup_jobs and jobs['mysql']['enabled']
+    - include: roles/freezer-jobs/tasks/_manage_job.yml job_name=mysql
+  serial: "{{ freezer_serialization | default(3) | int }}"
+
+- hosts: SWF-PRX[0]:&FRE-AGN
+  roles:
+    - freezer-jobs
+  tasks:
+    - include: roles/freezer-jobs/tasks/_manage_job.yml job_name=swift
+
+- hosts: OPS-LM:&FRE-AGN
+  roles:
+    - freezer-jobs
+  tasks:
+    - name: freezer-jobs | manage_job | Get the hostname of the active Lifecycle Manager
+      local_action: command hostname
+      register: active_lifecycle_manager_hostname
+      run_once: true
+    - include: roles/freezer-jobs/tasks/_manage_job.yml job_name=deployer
+      when: ansible_hostname == active_lifecycle_manager_hostname.stdout
+
+- hosts: FRE-AGN
+  roles:
+    - freezer-jobs
+  tasks:
+    - name: freezer-jobs | manage_job | Check for audit log directory presence
+      become: yes
+      stat:
+        path: "{{ FRE.audit.dir }}"
+      register: var_audit_presence_result
+      ignore_errors: true
+    - include: roles/freezer-jobs/tasks/_manage_job.yml job_name=audit
+      vars:
+        freezer_audit_dir: "{{ FRE.audit.dir }}"
+      when: var_audit_presence_result and var_audit_presence_result.stat.exists
+  serial: "{{ freezer_serialization | default(3) | int }}"
