@@ -1,0 +1,48 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development Company LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+  product:
+    version: 2
+
+  networks:
+    - name: HOST-NFV-MANO-NET
+      #vlanid: 175
+      tagged-vlan: false
+      cidr: 192.168.177.0/24
+      gateway-ip: 192.168.177.1
+      network-group: HOST-NFV-MANO
+      addresses:
+        - 192.168.177.141-192.168.177.142
+
+    - name: HOST-OAM-NET
+      #vlanid: 191
+      tagged-vlan: false
+      cidr: 192.168.146.0/24
+      gateway-ip: 192.168.146.1
+      network-group: HOST-OAM
+      addresses:
+        - 192.168.146.10-192.168.146.11
+
+    - name: HOST-ILO-NET
+      tagged-vlan: false
+      network-group: HOST-ILO
+
+    - name: VM-NFV-MANO-NET
+      vlanid: 148
+      tagged-vlan: true
+#      tagged-vlan: false
+      network-group: VM-NFV-MANO
+

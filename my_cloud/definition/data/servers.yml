@@ -13,25 +13,27 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 #
+
+
 ---
   product:
     version: 2
+  baremetal:
+    subnet: 192.168.177.0
+    netmask: 255.255.255.0
 
-  cloud:
-    name: entry-scale-kvm-vsa
+  servers:
+    # Controllers
+    - id: controller1
+      role: CONTROLLER-ROLE
+      server-group: RACK1
+      ip-addr: 192.168.177.141
+      nic-mapping: CONTROLLER-NIC-MAPPING
+#      ip-addr: 60.13.175.19
+      mac-addr: "52:54:00:69:52:07"
+      ilo-ip: 30.40.0.101
+      ilo-password: hpinvent
+      ilo-user: admin
+      hostname: OSC01
 
-    # The following values are used when
-    # building hostnames
-    hostname-data:
-        host-prefix: helion
-        member-prefix: -m
-
-    # List of ntp servers for your site
-    ntp-servers:
-        - 192.168.177.254
-
-
-    firewall-settings:
-        enable: false
-        logging: true
 

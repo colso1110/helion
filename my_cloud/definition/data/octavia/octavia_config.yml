@@ -1,5 +1,5 @@
 #
-# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+# (c) Copyright 2016 Hewlett Packard Enterprise Development LP
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -17,21 +17,9 @@
   product:
     version: 2
 
-  cloud:
-    name: entry-scale-kvm-vsa
-
-    # The following values are used when
-    # building hostnames
-    hostname-data:
-        host-prefix: helion
-        member-prefix: -m
-
-    # List of ntp servers for your site
-    ntp-servers:
-        - 192.168.177.254
-
-
-    firewall-settings:
-        enable: false
-        logging: true
-
+  configuration-data:
+    - name: OCTAVIA-CONFIG-CP1
+      services:
+        - octavia
+      data:
+        amp_network_name: OCTAVIA-MGMT-NET

@@ -1,0 +1,116 @@
+#
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+#
+---
+  product:
+    version: 2
+
+  disk-models:
+  - name: COMMON-CONTROL-600GB-DISKS
+
+    volume-groups:
+      - name: hlm-vg
+        physical-volumes:
+          - /dev/sda_root
+
+        logical-volumes:
+          - name: root
+            size: 95%
+            fstype: ext4
+            mount: /
+
+      - name: hlm-vg01
+        physical-volumes:
+          - /dev/sdb
+
+        logical-volumes:
+          # Reserved space for kernel crash dumps
+          # Should evaluate to a value that is slightly larger that
+          # the memory size of your server
+          - name: crash
+            size: 6%
+            mount: /var/crash
+            fstype: ext4
+            mkfs-opts: -O large_file
+
+#          # Database storage for event monitoring (Monasca).  Events are generally
+#          # small data objects.
+#          - name: vertica
+#            size: 13%
+#            mount: /var/vertica
+#            fstype: ext4
+#            mkfs-opts: -O large_file
+#            consumer:
+#              name: vertica
+#
+#          # Messaging system for monitoring.
+#          - name: kafka
+#            size: 11%
+#            mount: /var/kafka
+#            fstype: ext4
+#            mkfs-opts: -O large_file
+#            consumer:
+#              name: kafka
+
+          # Local Log files.
+          - name: log
+            size: 22%
+            mount: /var/log
+            fstype: ext4
+            mkfs-opts: -O large_file
+
+          # Mysql Database.  All persistent state from OpenStack services
+          # is saved here.  Although the individual objects are small the
+          # accumulated data can grow over time
+          - name: mysql
+            size: 20%
+            mount: /var/lib/mysql
+            fstype: ext4
+            mkfs-opts: -O large_file
+            consumer:
+              name: mysql
+
+          # Rabbitmq works mostly in memory, but needs to be able to persist
+          # messages to disc under high load. This area should evaluate to a value
+          # that is slightly larger than the memory size of your server
+          - name: rabbitmq
+            size: 10%
+            mount: /var/lib/rabbitmq
+            fstype: ext4
+            mkfs-opts: -O large_file
+            consumer:
+              name: rabbitmq
+              rabbitmq_env: home
+
+
+#          # Data storage for centralized logging. This holds log entries from all
+#          # servers in the cloud and hence can require a lot of disk space.
+#          - name: elasticsearch
+#            size: 21%
+#            mount: /var/lib/elasticsearch
+#            fstype: ext4
+#
+#          # Zookeeper is used to provide cluster co-ordination in the monitoring
+#          # system.  Although not a high user of disc space we have seen issues
+#          # with zookeeper snapshots filling up filesystems so we keep it in its
+#          # own space for stability.
+#          - name: zookeeper
+#            size: 1%
+#            mount: /var/lib/zookeeper
+#            fstype: ext4
+
+        consumer:
+           name: os
+

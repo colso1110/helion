@@ -1,5 +1,5 @@
 #
-# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development LP
+# (c) Copyright 2015-2016 Hewlett Packard Enterprise Development Company LP
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -17,21 +17,13 @@
   product:
     version: 2
 
-  cloud:
-    name: entry-scale-kvm-vsa
+  server-roles:
 
-    # The following values are used when
-    # building hostnames
-    hostname-data:
-        host-prefix: helion
-        member-prefix: -m
+#    - name: LIFECYCLE-MANAGER-ROLE
+#      interface-model: LIFECYCLE-MANAGER-INTERFACES
+#      disk-model: LIFECYCLE-MANAGER-DISKS
 
-    # List of ntp servers for your site
-    ntp-servers:
-        - 192.168.177.254
-
-
-    firewall-settings:
-        enable: false
-        logging: true
+    - name: CONTROLLER-ROLE
+      interface-model: CONTROLLER-INTERFACES
+      disk-model: COMMON-CONTROL-600GB-DISKS
 

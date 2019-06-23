@@ -13,25 +13,45 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 #
+
 ---
   product:
     version: 2
 
-  cloud:
-    name: entry-scale-kvm-vsa
+  server-groups:
 
-    # The following values are used when
-    # building hostnames
-    hostname-data:
-        host-prefix: helion
-        member-prefix: -m
+    #
+    # Inter AZ networks
+    #
+    - name: CLOUD
+      server-groups:
+        - AZ1
+        - AZ2
+        - AZ3
+      networks:
+        - HOST-NFV-MANO-NET
+        - HOST-OAM-NET
+        - HOST-ILO-NET
+        - VM-NFV-MANO-NET
 
-    # List of ntp servers for your site
-    ntp-servers:
-        - 192.168.177.254
+    #
+    # Failure Zones
+    #
+    - name: AZ1
+      server-groups:
+        - RACK1
 
+    - name: AZ2
+      server-groups:
+        - RACK2
 
-    firewall-settings:
-        enable: false
-        logging: true
+    - name: AZ3
+      server-groups:
+        - RACK3
+
+    - name: RACK1
+
+    - name: RACK2
+
+    - name: RACK3
 
